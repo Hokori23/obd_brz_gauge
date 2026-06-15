@@ -27,6 +27,9 @@
 /* 应用层 */
 #include "bsp_obd_dsp/bsp_board.h"
 #include "bsp_obd_dsp/elm327_ble_client.h"
+#include "bsp_obd_dsp/racechrono_ble_diy.h"
+#include "bsp_obd_dsp/rs485_brake_temp.h"
+#include "bsp_obd_dsp/ads1115_oil_pressure.h"
 #include "app_obd_dsp/obd_data_cache.h"
 #include "app_obd_dsp/vehicle_profiles.h"
 
@@ -253,7 +256,18 @@ void app_main(void)
     ESP_LOGI(TAG, "BLE target device: %s", ble_name);
     elm327_ble_start_default(ble_name);
 
-    /* 9. 里程统计任务 */
+     /* 8.5 启动 RaceChrono BLE DIY 服务（同一 BT 栈下并行，向手机输出传感器数据）
+         延迟 500ms 让 OBD 初始扫描稳定后再启动，避免 GAP 状态混乱 */
+     vTaskDelay(pdMS_TO_TICKS(500));
+    racechrono_ble_diy_start();
+
+    /* 9. 启动 RS485 刹车温度采集 */
+    rs485_brake_temp_start();
+
+    /* 9.5 启动油压采集（ESP32 ADC 直连） */
+    oil_pressure_start();
+
+    /* 10. 里程统计任务 */
     vMileageDataStatisticTask();
 }
 

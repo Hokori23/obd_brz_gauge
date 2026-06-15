@@ -77,6 +77,29 @@ void elm327_ble_disconnect(void);
 // 获取当前连接/目标设备名称
 const char *elm327_ble_get_connected_name(void);
 
+// ---- 油温校准接口 ----
+// 设置油温偏移量（补偿校准值），单位：°C
+// 例如：实际油温 90°C，但读数显示 92°C，应设置 offset = -2
+void elm327_oil_temp_set_offset(int8_t offset_c);
+
+// 获取当前油温偏移量
+int8_t elm327_oil_temp_get_offset(void);
+
+// 获取油温诊断信息（用于 UI 显示or调试）
+typedef struct {
+    uint32_t mode0_ok;    // Mode 01 5C 成功次数
+    uint32_t mode1_ok;    // Mode 22 10 17 成功次数
+    uint32_t mode2_ok;    // Mode 21 01 成功次数
+    uint32_t mode0_fail;  // 失败次数
+    uint32_t mode1_fail;
+    uint32_t mode2_fail;
+    int16_t last_raw;     // 最后一次原始读数
+    int16_t last_filtered; // 最后一次过滤后读数
+    uint8_t current_mode; // 当前查询模式 (0-2)
+} elm327_oil_diag_t;
+
+void elm327_oil_temp_get_diag(elm327_oil_diag_t *out);
+
 #ifdef __cplusplus
 }
 #endif

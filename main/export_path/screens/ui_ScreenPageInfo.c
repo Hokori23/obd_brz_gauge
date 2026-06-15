@@ -12,6 +12,9 @@ lv_obj_t *ui_LabelInfoIAT    = NULL;
 lv_obj_t *ui_LabelInfoLoad   = NULL;
 lv_obj_t *ui_LabelInfoTPS    = NULL;
 lv_obj_t *ui_LabelInfoOil    = NULL;  // 机油温度 °C (SSM 22 10 17)
+lv_obj_t *ui_LabelInfoValue[5] = {NULL, NULL, NULL, NULL, NULL};
+lv_obj_t *ui_LabelInfoName[5]  = {NULL, NULL, NULL, NULL, NULL};
+lv_obj_t *ui_LabelInfoUnit[5]  = {NULL, NULL, NULL, NULL, NULL};
 
 // Helper: create one data tile (name + value + unit) at a given offset from center
 // Tile internal layout (relative to cy):
@@ -20,6 +23,8 @@ lv_obj_t *ui_LabelInfoOil    = NULL;  // 机油温度 °C (SSM 22 10 17)
 //   unit  center: cy + 34  (font Size16, ~16px tall)  gap between value bottom and unit top ≈ 8px
 // Total tile height ≈ 80px
 static lv_obj_t *create_info_tile(lv_obj_t *parent,
+                                   lv_obj_t **name_out,
+                                   lv_obj_t **unit_out,
                                    const char *name, lv_color_t name_color,
                                    const char *unit,
                                    lv_coord_t cx, lv_coord_t cy)
@@ -30,6 +35,7 @@ static lv_obj_t *create_info_tile(lv_obj_t *parent,
     lv_obj_set_style_text_font(lbl_name, &ui_font_FontTypoderSize16, LV_PART_MAIN);
     lv_obj_set_style_text_color(lbl_name, name_color, LV_PART_MAIN);
     lv_obj_align(lbl_name, LV_ALIGN_CENTER, cx, cy - 28);
+    if (name_out) *name_out = lbl_name;
 
     // Value label (returned so caller can update it)
     lv_obj_t *lbl_val = lv_label_create(parent);
@@ -46,6 +52,7 @@ static lv_obj_t *create_info_tile(lv_obj_t *parent,
     lv_obj_set_style_text_font(lbl_unit, &ui_font_FontTypoderSize16, LV_PART_MAIN);
     lv_obj_set_style_text_color(lbl_unit, lv_color_hex(0x888888), LV_PART_MAIN);
     lv_obj_align(lbl_unit, LV_ALIGN_CENTER, cx, cy + 34);
+    if (unit_out) *unit_out = lbl_unit;
 
     return lbl_val;
 }
@@ -119,27 +126,38 @@ void ui_ScreenPageInfo_screen_init(void)
     // ── Row 1 ──  cy = -84  (name pixel≈68, value≈96, unit≈126)
     // CLT: left column cx=-82
     ui_LabelInfoCLT  = create_info_tile(ui_ScreenPageInfo,
+                                        &ui_LabelInfoName[0], &ui_LabelInfoUnit[0],
                                         "CLT", lv_color_hex(0x44AAFF), "'C",
                                         -82, -84);
     // OIL: right column cx=+82
     ui_LabelInfoOil  = create_info_tile(ui_ScreenPageInfo,
+                                        &ui_LabelInfoName[1], &ui_LabelInfoUnit[1],
                                         "OIL", lv_color_hex(0xFF7722), "'C",
                                         +82, -84);
 
     // ── Row 2 ──  cy = +22  (name pixel≈174, value≈202, unit≈232)
     // LOAD: left column
     ui_LabelInfoLoad = create_info_tile(ui_ScreenPageInfo,
+                                        &ui_LabelInfoName[2], &ui_LabelInfoUnit[2],
                                         "LOAD", lv_color_hex(0xFFCC00), "%",
                                         -82, +22);
     // TPS: right column
     ui_LabelInfoTPS  = create_info_tile(ui_ScreenPageInfo,
+                                        &ui_LabelInfoName[3], &ui_LabelInfoUnit[3],
                                         "TPS", lv_color_hex(0xFF8844), "%",
                                         +82, +22);
 
     // ── Row 3: IAT centered ──  cy = +112
     ui_LabelInfoIAT  = create_info_tile(ui_ScreenPageInfo,
+                                        &ui_LabelInfoName[4], &ui_LabelInfoUnit[4],
                                         "IAT", lv_color_hex(0x44FF88), "'C",
                                         0, +112);
+
+    ui_LabelInfoValue[0] = ui_LabelInfoCLT;
+    ui_LabelInfoValue[1] = ui_LabelInfoOil;
+    ui_LabelInfoValue[2] = ui_LabelInfoLoad;
+    ui_LabelInfoValue[3] = ui_LabelInfoTPS;
+    ui_LabelInfoValue[4] = ui_LabelInfoIAT;
 
     // Black ear image at top
     lv_obj_t *black_ear = lv_img_create(ui_ScreenPageInfo);

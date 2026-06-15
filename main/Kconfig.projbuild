@@ -3,4 +3,29 @@ menu "OBD DSP Configuration"
     # LCD: ST77916 (360x360 QSPI)
     # Touch: CST816 (I2C)
     # IO Expander: TCA9554PWR
+
+    config OBD_RS485_TX_GPIO
+        int "RS485 TX GPIO"
+        range 0 48
+        default 13
+        help
+            UART TX pin used by the RS485 brake temperature module.
+            Do not use GPIO43/44 on this board because they are typically tied to
+            the onboard USB-UART bridge.
+
+    config OBD_RS485_RX_GPIO
+        int "RS485 RX GPIO"
+        range 0 48
+        default 12
+        help
+            UART RX pin used by the RS485 brake temperature module.
+
+    config OBD_RS485_DE_RE_GPIO
+        int "RS485 DE/RE GPIO (-1 disables direction control)"
+        range -1 48
+        default -1
+        help
+            Optional GPIO to control RS485 transceiver direction.
+            Set HIGH when transmitting and LOW when receiving.
+            Keep -1 if your USB/RS485 module handles direction automatically.
 endmenu

@@ -7,6 +7,9 @@
 lv_obj_t *ui_LabelCoolantTempText = NULL;
 lv_obj_t *ui_LabelOilTempText     = NULL;  // 真实机油温度 °C (SSM 22 10 17, A-40)
 lv_obj_t *ui_LabelIntakeTempText  = NULL;
+lv_obj_t *ui_LabelTempValue[3]    = {NULL, NULL, NULL};
+lv_obj_t *ui_LabelTempName[3]     = {NULL, NULL, NULL};
+lv_obj_t *ui_LabelTempUnit[3]     = {NULL, NULL, NULL};
 
 // Helper: colored circle dot
 static lv_obj_t *create_color_dot(lv_obj_t *parent, lv_color_t color, lv_coord_t x, lv_coord_t y)
@@ -17,38 +20,49 @@ static lv_obj_t *create_color_dot(lv_obj_t *parent, lv_color_t color, lv_coord_t
     lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_bg_color(dot, color, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(dot, 255, LV_PART_MAIN);
-    lv_obj_set_align(dot, LV_ALIGN_CENTER);
-    lv_obj_set_pos(dot, x, y);
+    lv_obj_align(dot, LV_ALIGN_LEFT_MID, x, y);
     lv_obj_clear_flag(dot, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     return dot;
 }
 
 // Helper: create one data row (dot + name + value label + unit)
-static void make_row(lv_obj_t *parent, lv_obj_t **val_out,
+static void make_row(lv_obj_t *parent, lv_obj_t **name_out, lv_obj_t **val_out, lv_obj_t **unit_out,
                      lv_coord_t cy, lv_color_t color,
                      const char *name_str, const char *unit_str)
 {
-    create_color_dot(parent, color, -105, cy);
-
-    lv_obj_t *lbl_name = lv_label_create(parent);
-    lv_label_set_text(lbl_name, name_str);
-    lv_obj_set_style_text_font(lbl_name, &ui_font_FontTypoderSize16, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_name, color, LV_PART_MAIN);
-    lv_obj_align(lbl_name, LV_ALIGN_CENTER, -65, cy);
-
+    // Left column: value
+    // Left boundary = 70px (matches divider line edge, safe for all row Y positions)
     *val_out = lv_label_create(parent);
+    lv_label_set_long_mode(*val_out, LV_LABEL_LONG_CLIP);   // 数值过长不换行
     lv_label_set_text(*val_out, "--");
     lv_obj_set_style_text_font(*val_out, &ui_font_FontTypoderSize36, LV_PART_MAIN);
     lv_obj_set_style_text_color(*val_out, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_width(*val_out, 110);
-    lv_obj_set_style_text_align(*val_out, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
-    lv_obj_align(*val_out, LV_ALIGN_CENTER, 30, cy);
+    lv_obj_set_style_text_align(*val_out, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+    lv_obj_align(*val_out, LV_ALIGN_LEFT_MID, 70, cy);
 
-    lv_obj_t *lbl_unit = lv_label_create(parent);
-    lv_label_set_text(lbl_unit, unit_str);
-    lv_obj_set_style_text_font(lbl_unit, &ui_font_FontTypoderSize16, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_unit, lv_color_hex(0x666666), LV_PART_MAIN);
-    lv_obj_align(lbl_unit, LV_ALIGN_CENTER, 104, cy);
+    // Right column: dot + name + unit
+    // Right boundary = 290px (x=360-70, matches divider line edge)
+    // dot left=185, name left=200..244, unit right=290
+    create_color_dot(parent, color, 185, cy);
+
+    *name_out = lv_label_create(parent);
+    lv_label_set_long_mode(*name_out, LV_LABEL_LONG_CLIP);   // 不换行
+    lv_label_set_text(*name_out, name_str);
+    lv_obj_set_style_text_font(*name_out, &ui_font_FontTypoderSize16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(*name_out, color, LV_PART_MAIN);
+    lv_obj_set_width(*name_out, LV_SIZE_CONTENT);            // 宽度随文字, 长名(BOOST/SPEED)不换行
+    lv_obj_set_style_text_align(*name_out, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+    lv_obj_align(*name_out, LV_ALIGN_LEFT_MID, 200, cy);
+
+    *unit_out = lv_label_create(parent);
+    lv_label_set_long_mode(*unit_out, LV_LABEL_LONG_CLIP);   // 不换行
+    lv_label_set_text(*unit_out, unit_str);
+    lv_obj_set_style_text_font(*unit_out, &ui_font_FontTypoderSize16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(*unit_out, lv_color_hex(0x666666), LV_PART_MAIN);
+    lv_obj_set_width(*unit_out, LV_SIZE_CONTENT);            // 宽度随文字 (km/h 等)
+    lv_obj_set_style_text_align(*unit_out, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+    lv_obj_align(*unit_out, LV_ALIGN_RIGHT_MID, -70, cy);
 }
 
 // Helper: horizontal divider line
@@ -102,15 +116,20 @@ void ui_ScreenPageTemp_screen_init(void)
     lv_obj_set_style_bg_opa(arc_bg, 0, LV_PART_KNOB | LV_STATE_DEFAULT);
 
     // ====== Row 1 (cy=-65): CLT - Blue ======
-    make_row(ui_ScreenPageTemp, &ui_LabelCoolantTempText, -65, lv_color_hex(0x44AAFF), "CLT", "'C");
+    make_row(ui_ScreenPageTemp, &ui_LabelTempName[0], &ui_LabelTempValue[0], &ui_LabelTempUnit[0], -65, lv_color_hex(0x44AAFF), "CLT", "'C");
     make_hdiv(ui_ScreenPageTemp, -30, 220);
 
     // ====== Row 2 (cy=+5): IAT - Green ======
-    make_row(ui_ScreenPageTemp, &ui_LabelIntakeTempText, +5, lv_color_hex(0x44FF88), "IAT", "'C");
+    make_row(ui_ScreenPageTemp, &ui_LabelTempName[1], &ui_LabelTempValue[1], &ui_LabelTempUnit[1], +5, lv_color_hex(0x44FF88), "IAT", "'C");
     make_hdiv(ui_ScreenPageTemp, +40, 220);
 
     // ====== Row 3 (cy=+75): OIL - Amber (SSM 22 10 17) ======
-    make_row(ui_ScreenPageTemp, &ui_LabelOilTempText, +75, lv_color_hex(0xFF7722), "OIL", "'C");
+    make_row(ui_ScreenPageTemp, &ui_LabelTempName[2], &ui_LabelTempValue[2], &ui_LabelTempUnit[2], +75, lv_color_hex(0xFF7722), "OIL", "'C");
+
+    // Backward compatibility for existing update code
+    ui_LabelCoolantTempText = ui_LabelTempValue[0];
+    ui_LabelIntakeTempText = ui_LabelTempValue[1];
+    ui_LabelOilTempText = ui_LabelTempValue[2];
 
     // Black ear image at top
     lv_obj_t *black_ear = lv_img_create(ui_ScreenPageTemp);

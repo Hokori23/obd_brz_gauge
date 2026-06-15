@@ -14,22 +14,59 @@ static const vehicle_profile_t s_profiles[] = {
         .gear_count = 6,
         .gear_ratios = {0, 3.626f, 2.188f, 1.541f, 1.213f, 1.000f, 0.767f},
         .gear_tolerance = 0.15f,
+        .oil_temp_strategy = {
+            .primary = OIL_TEMP_MODE_TOYOTA_21_01,  // BRZ ZC6 固定 Mode 21(单一模式，不回退)
+            .secondary = OIL_TEMP_MODE_NONE,
+            .tertiary = OIL_TEMP_MODE_NONE,
+            .offset_c = 0,  // 无偏移
+        },
     },
     {
-        .name = "LANCER V3",
-        .final_drive_ratio = 4.052f,
-        .tire_rolling_radius_m = 0.298f,   // 195/55R15
-        .gear_count = 5,
-        .gear_ratios = {0, 3.545f, 2.095f, 1.452f, 1.107f, 0.882f},
-        .gear_tolerance = 0.15f,
-    },
-    {
-        .name = "CIVIC FD2",
-        .final_drive_ratio = 4.764f,
-        .tire_rolling_radius_m = 0.307f,   // 215/45R17
+        .name = "BRZ ZD8",
+        .final_drive_ratio = 3.700f,       // ZD8 新代差速比
+        .tire_rolling_radius_m = 0.318f,   // 225/40R18
         .gear_count = 6,
-        .gear_ratios = {0, 3.267f, 2.130f, 1.517f, 1.147f, 0.921f, 0.738f},
+        .gear_ratios = {0, 3.765f, 2.476f, 1.633f, 1.190f, 0.932f, 0.751f},
         .gear_tolerance = 0.15f,
+        .oil_temp_strategy = {
+            .primary = OIL_TEMP_MODE_PID_5C,        // ZD8 固定标准 PID(单一模式，不回退)
+            .secondary = OIL_TEMP_MODE_NONE,
+            .tertiary = OIL_TEMP_MODE_NONE,
+            .offset_c = 0,
+        },
+    },
+    {
+        .name = "MX-5 ND",
+        .final_drive_ratio = 2.866f,       // ND 6MT（所有手动一致，自动为 3.583）
+        .tire_rolling_radius_m = 0.300f,   // 195/50R16
+        .gear_count = 6,
+        .gear_ratios = {0, 5.087f, 2.991f, 2.035f, 1.594f, 1.286f, 1.000f},
+        .gear_tolerance = 0.15f,
+        .oil_temp_strategy = {
+            // 先试 PID 1310(双字节)，连续失败则回退到 111F(单字节)——两种已知 Mazda 油温 PID 都覆盖
+            .primary = OIL_TEMP_MODE_MAZDA_22_1310,
+            .secondary = OIL_TEMP_MODE_MAZDA_22_111F,
+            .tertiary = OIL_TEMP_MODE_NONE,
+            .offset_c = 0,
+        },
+        // .has_boost 默认 false (自吸)
+    },
+    {
+        .name = "BMW G",
+        .final_drive_ratio = 2.813f,       // G20 330i 主减速比
+        .tire_rolling_radius_m = 0.330f,   // 225/45R18
+        .gear_count = 8,                   // ZF 8HP 8速
+        .gear_ratios = {0, 5.250f, 3.360f, 2.172f, 1.720f, 1.316f, 1.000f, 0.822f, 0.640f},
+        .gear_tolerance = 0.12f,
+        .oil_temp_strategy = {
+            // BMW 油温多需厂商协议(F系 Mode 22 PID 4402, B-64)，通用 OBD 下常读不到，
+            // 这里先用标准 PID 兜底，读不到则显示无效，后续可加 BMW 专用模式。
+            .primary = OIL_TEMP_MODE_PID_5C,
+            .secondary = OIL_TEMP_MODE_NONE,
+            .tertiary = OIL_TEMP_MODE_NONE,
+            .offset_c = 0,
+        },
+        .has_boost = true,                 // 涡轮增压(B48/B58)，读取涡轮压力
     },
 };
 
@@ -102,4 +139,11 @@ const gear_ratio_range_t *vehicle_profile_get_gear_ranges(uint8_t *count)
     }
     if (count) *count = s_gear_range_count;
     return s_gear_ranges;
+}
+
+const oil_temp_strategy_t *vehicle_profile_get_oil_temp_strategy(void)
+{
+    const vehicle_profile_t *p = vehicle_profile_get_active();
+    if (!p) return NULL;
+    return &p->oil_temp_strategy;
 }

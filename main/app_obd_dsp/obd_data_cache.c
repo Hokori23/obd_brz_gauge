@@ -18,6 +18,10 @@ static volatile int16_t  s_intake_temp = -40;
 static volatile int16_t  s_load_pct = -1;   // 发动机负荷 0~100%, -1=无效
 static volatile int16_t  s_tps = -1;         // 节气门开度 0~100%, -1=无效
 static volatile int32_t  s_bat_mv = -1;     // 电压 mV, -1=无效
+static volatile int16_t  s_oil_pressure_x10 = -1; // 油压, 0.1bar, -1=无效
+static volatile int16_t  s_brake_temp_x10 = -1000; // 刹车温度, 0.1°C, -1000=无效
+static volatile int16_t  s_boost_x10 = -32768; // 涡轮表压, 0.1bar(可为负=真空), -32768=无效
+static volatile brake_rs485_status_t s_brake_rs485_status = BRAKE_RS485_IDLE;
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
 void obd_data_set_rpm(uint16_t rpm)
@@ -186,6 +190,76 @@ int32_t obd_data_get_bat_mv(void)
     int32_t val;
     portENTER_CRITICAL(&s_mux);
     val = s_bat_mv;
+    portEXIT_CRITICAL(&s_mux);
+    return val;
+}
+
+void obd_data_set_oil_pressure_x10(int16_t pressure_x10)
+{
+    // 合理范围: 0.0bar ~ 20.0bar
+    if (pressure_x10 < 0 || pressure_x10 > 200) return;
+    portENTER_CRITICAL(&s_mux);
+    s_oil_pressure_x10 = pressure_x10;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+int16_t obd_data_get_oil_pressure_x10(void)
+{
+    int16_t val;
+    portENTER_CRITICAL(&s_mux);
+    val = s_oil_pressure_x10;
+    portEXIT_CRITICAL(&s_mux);
+    return val;
+}
+
+void obd_data_set_boost_x10(int16_t boost_x10)
+{
+    // 涡轮表压合理范围: -1.5bar(真空) ~ +30.0bar
+    if (boost_x10 < -15 || boost_x10 > 300) return;
+    portENTER_CRITICAL(&s_mux);
+    s_boost_x10 = boost_x10;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+int16_t obd_data_get_boost_x10(void)
+{
+    int16_t val;
+    portENTER_CRITICAL(&s_mux);
+    val = s_boost_x10;
+    portEXIT_CRITICAL(&s_mux);
+    return val;
+}
+
+void obd_data_set_brake_temp_x10(int16_t temp_x10)
+{
+    // 合理范围: -50.0°C ~ 1200.0°C
+    if (temp_x10 < -500 || temp_x10 > 12000) return;
+    portENTER_CRITICAL(&s_mux);
+    s_brake_temp_x10 = temp_x10;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+void obd_data_set_brake_rs485_status(brake_rs485_status_t status)
+{
+    portENTER_CRITICAL(&s_mux);
+    s_brake_rs485_status = status;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+int16_t obd_data_get_brake_temp_x10(void)
+{
+    int16_t val;
+    portENTER_CRITICAL(&s_mux);
+    val = s_brake_temp_x10;
+    portEXIT_CRITICAL(&s_mux);
+    return val;
+}
+
+brake_rs485_status_t obd_data_get_brake_rs485_status(void)
+{
+    brake_rs485_status_t val;
+    portENTER_CRITICAL(&s_mux);
+    val = s_brake_rs485_status;
     portEXIT_CRITICAL(&s_mux);
     return val;
 }

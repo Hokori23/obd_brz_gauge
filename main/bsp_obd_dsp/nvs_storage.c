@@ -7,6 +7,7 @@
 #include "freertos/semphr.h"
 #include <string.h>
 #include "export_path/ui.h"
+#include "app_obd_dsp/vehicle_profiles.h"
 
 #define TAG                   "nvs_storage"
 #define NS_CFG                "cfg"
@@ -16,11 +17,15 @@
 #define STAT_FLUSH_PERIOD_MS  30000 //30s 落盘
 
 static nvs_user_cfg_t s_cfg =   { 
-                        .protocol = 4, //车辆OBD的协议类型选择 0:自动,1~9:固定协议 默认为 4
+                        .protocol = 0, //车辆OBD的协议类型选择 0:自动,1~9:固定协议 默认为自动
                         .theme_cfg.theme = 1,//主题配置
                         .theme_cfg.user_theme_domiant_color = COLOR_DOMIANT_PINK,//主题主色调颜色
                         .theme_cfg.user_theme_secondary_color = COLOR_SECONDARY_PINK,//主题副色调颜色
                         .ble_device_name = "", // 空串=使用默认 "OBDII"
+                        .temp_display_map = {0, 1, 2}, // CLT, IAT, OIL
+                        .info_display_map = {0, 2, 3, 4, 1}, // CLT, OIL, LOAD, TPS, IAT
+                        .brake_temp_warn_c = 600,
+                        .oil_pressure_warn_x10 = 80,
                     };
 static nvs_stat_t     s_stat = {0};
 static bool           s_stat_dirty = false;
@@ -46,8 +51,25 @@ esp_err_t nvs_storage_init(void)
 
     /* 新增字段默认值修复 (旧NVS数据中rsv[x]全为0) */
     if(s_cfg.brightness_day == 0) s_cfg.brightness_day = 100;
-    if(s_cfg.default_page > 5) s_cfg.default_page = 0; // Temp
-    if(s_cfg.vehicle_profile_idx > 10) s_cfg.vehicle_profile_idx = 0; // BRZ
+    if(s_cfg.default_page > 4) s_cfg.default_page = 0; // 0=Temp,1=Info,2=Brake,3=OilP,4=Needle
+    if(s_cfg.needle_source_idx >= 10) s_cfg.needle_source_idx = 0; // DISP_ITEM_COUNT=10
+    // 车型索引按已注册的 profile 数量限界（越界归零到 ZC6）
+    uint8_t vehicle_count = 0;
+    vehicle_profile_get_all(&vehicle_count);
+    if(vehicle_count > 0 && s_cfg.vehicle_profile_idx >= vehicle_count) s_cfg.vehicle_profile_idx = 0;
+    if(s_cfg.brake_temp_warn_c < 10 || s_cfg.brake_temp_warn_c > 1200) s_cfg.brake_temp_warn_c = 600;
+    if(s_cfg.oil_pressure_warn_x10 > 100) s_cfg.oil_pressure_warn_x10 = 80;
+
+    // TEMP/INFO 自定义显示项映射范围校验: 0~9
+    for (int i = 0; i < 3; ++i) {
+        if (s_cfg.temp_display_map[i] > 9) s_cfg.temp_display_map[i] = (uint8_t)i;
+    }
+    for (int i = 0; i < 5; ++i) {
+        if (s_cfg.info_display_map[i] > 9) {
+            static const uint8_t def_map[5] = {0, 2, 3, 4, 1};
+            s_cfg.info_display_map[i] = def_map[i];
+        }
+    }
 
     s_mux = xSemaphoreCreateMutex();
     xTaskCreate(stat_flush_task, "nvs_flush", 2048, NULL, 4, NULL);

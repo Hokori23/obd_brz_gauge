@@ -102,9 +102,25 @@ lv_obj_t * ui_ScreenPageBLEScan;
 void ui_ScreenPageTemp_screen_init(void);
 lv_obj_t * ui_ScreenPageTemp;
 
+// SCREEN: ui_ScreenPageTempCustom
+void ui_ScreenPageTempCustom_screen_init(void);
+lv_obj_t * ui_ScreenPageTempCustom;
+
+// SCREEN: ui_ScreenPageBrakeTemp
+void ui_ScreenPageBrakeTemp_screen_init(void);
+lv_obj_t * ui_ScreenPageBrakeTemp;
+
+// SCREEN: ui_ScreenPageOilPressure
+void ui_ScreenPageOilPressure_screen_init(void);
+lv_obj_t * ui_ScreenPageOilPressure;
+
 // SCREEN: ui_ScreenPageInfo
 void ui_ScreenPageInfo_screen_init(void);
 extern lv_obj_t * ui_ScreenPageInfo;
+
+// SCREEN: ui_ScreenPageInfoCustom
+void ui_ScreenPageInfoCustom_screen_init(void);
+lv_obj_t * ui_ScreenPageInfoCustom;
 // labels defined in ui_ScreenPageInfo.c
 // CUSTOM VARIABLES
 
@@ -112,6 +128,29 @@ extern lv_obj_t * ui_ScreenPageInfo;
 void ui_ScreenPageSettings_screen_init(void);
 lv_obj_t * ui_ScreenPageSettings;
 // CUSTOM VARIABLES
+
+// SCREEN: ui_ScreenPageBrakeWarn
+void ui_ScreenPageBrakeWarn_screen_init(void);
+lv_obj_t * ui_ScreenPageBrakeWarn;
+// CUSTOM VARIABLES
+
+// SCREEN: ui_ScreenPageOilWarn
+void ui_ScreenPageOilWarn_screen_init(void);
+lv_obj_t * ui_ScreenPageOilWarn;
+// CUSTOM VARIABLES
+
+// SCREEN: ui_ScreenPageNeedle (指针式可配置仪表)
+void ui_ScreenPageNeedle_screen_init(void);
+lv_obj_t * ui_ScreenPageNeedle;
+lv_meter_scale_t * ui_NeedleScale;
+lv_meter_indicator_t * ui_NeedleIndic;
+lv_obj_t * ui_NeedleMeter;
+lv_obj_t * ui_NeedleValueLabel;
+lv_obj_t * ui_NeedleNameLabel;
+lv_obj_t * ui_NeedleUnitLabel;
+// SCREEN: ui_ScreenPageNeedleConfig
+void ui_ScreenPageNeedleConfig_screen_init(void);
+lv_obj_t * ui_ScreenPageNeedleConfig;
 
 // SCREEN: ui_ScreenPageODBProtocal
 void ui_ScreenPageODBProtocal_screen_init(void);
@@ -144,12 +183,333 @@ static uint16_t usSaveProtTimeCnt = 0; //OBD协议保存计时
 #define SWEEP_STEPS_UP   6      // 上升步数 (6×200ms = 1.2s)
 #define SWEEP_STEPS_DOWN 6      // 下降步数
 #define SWEEP_TOTAL      (SWEEP_STEPS_UP + SWEEP_STEPS_DOWN)
+#define BRAKE_TEMP_TREND_POINTS 30
+#define BRAKE_TEMP_TREND_SAMPLE_MS 1000
+#define BRAKE_TEMP_TREND_INVALID (-1000)
+#define BRAKE_TEMP_ABS_MAX_C 1200
+#define OIL_PRESS_TREND_POINTS 30
+#define OIL_PRESS_TREND_SAMPLE_MS 1000
+#define OIL_PRESS_TREND_INVALID (-1)
+#define OIL_PRESS_MAX_BAR_X10 100
 static int  s_sweep_step = 0;           // 0=关闭, 1~SWEEP_TOTAL=动画中
 static bool s_sweep_pending = false;    // BLE 在 Logo 期间连上，Logo 消失后再触发
 static bool s_prev_ble_connected = false;
+static int16_t s_brake_temp_trend[BRAKE_TEMP_TREND_POINTS];
+static bool s_brake_temp_trend_ready = false;
+static uint32_t s_brake_temp_trend_tick = 0;
+static int16_t s_oil_pressure_trend[OIL_PRESS_TREND_POINTS];
+static bool s_oil_pressure_trend_ready = false;
+static uint32_t s_oil_pressure_trend_tick = 0;
+
+typedef enum {
+    DISP_ITEM_CLT = 0,
+    DISP_ITEM_IAT,
+    DISP_ITEM_OIL,
+    DISP_ITEM_LOAD,
+    DISP_ITEM_TPS,
+    DISP_ITEM_RPM,
+    DISP_ITEM_SPEED,
+    DISP_ITEM_BAT,
+    DISP_ITEM_OILP,
+    DISP_ITEM_BKT,
+    DISP_ITEM_BOOST,
+    DISP_ITEM_COUNT
+} disp_item_t;
+
+typedef struct {
+    const char *name;
+    const char *unit;
+    uint32_t color;
+} disp_item_meta_t;
+
+static const disp_item_meta_t s_disp_meta[DISP_ITEM_COUNT] = {
+    {"CLT", "'C", 0x44AAFF},
+    {"IAT", "'C", 0x44FF88},
+    {"OIL", "'C", 0xFF7722},
+    {"LOD", "%", 0xFFCC00},
+    {"TPS", "%", 0xFF8844},
+    {"RPM", "rpm", 0x66CCFF},
+    {"SPD", "km/h", 0xFFFFFF},
+    {"BAT", "V", 0xAACCFF},
+    {"OIP", "bar", 0xFFD166},
+    {"BKT", "'C", 0xFF5A5A},
+    {"BST", "bar", 0x00DD88},
+};
+
+static bool disp_item_read_value(disp_item_t item,
+                                 int16_t clt, int16_t iat, int16_t oil,
+                                 int16_t load_pct, int16_t tps, int32_t bat_mv, int16_t oilp_x10, int16_t brake_x10,
+                                 uint16_t rpm, uint16_t speed, int16_t boost_x10,
+                                 int32_t *out)
+{
+    if (!out) return false;
+    switch (item) {
+        case DISP_ITEM_CLT: if (clt > -40) { *out = clt; return true; } return false;
+        case DISP_ITEM_IAT: if (iat > -40) { *out = iat; return true; } return false;
+        case DISP_ITEM_OIL: if (oil > -41) { *out = oil; return true; } return false;
+        case DISP_ITEM_LOAD: if (load_pct >= 0) { *out = load_pct; return true; } return false;
+        case DISP_ITEM_TPS: if (tps >= 0) { *out = tps; return true; } return false;
+        case DISP_ITEM_RPM: *out = rpm; return true;
+        case DISP_ITEM_SPEED: *out = speed; return true;
+        case DISP_ITEM_BAT: if (bat_mv > 0) { *out = bat_mv; return true; } return false;
+        case DISP_ITEM_OILP: if (oilp_x10 >= 0) { *out = oilp_x10; return true; } return false;
+        case DISP_ITEM_BKT: if (brake_x10 > -1000) { *out = brake_x10; return true; } return false;
+        case DISP_ITEM_BOOST: if (boost_x10 != -32768) { *out = boost_x10; return true; } return false;
+        default: return false;
+    }
+}
+
+static int32_t disp_item_sweep_value(disp_item_t item, float r)
+{
+    switch (item) {
+        case DISP_ITEM_CLT:
+        case DISP_ITEM_IAT:
+        case DISP_ITEM_OIL:
+            return (int32_t)(120.0f * r);
+        case DISP_ITEM_LOAD:
+        case DISP_ITEM_TPS:
+            return (int32_t)(100.0f * r);
+        case DISP_ITEM_RPM:
+            return (int32_t)(SWEEP_RPM_PEAK * r);
+        case DISP_ITEM_SPEED:
+            return (int32_t)(SWEEP_SPEED_PEAK * r);
+        case DISP_ITEM_BAT:
+            return (int32_t)(12000.0f + 2400.0f * r); // 12.0~14.4V
+        case DISP_ITEM_OILP:
+            return (int32_t)(100.0f * r); // 0.0~10.0bar (x10)
+        case DISP_ITEM_BKT:
+            return (int32_t)(600.0f * r); // 0.0~60.0'C (x10)
+        case DISP_ITEM_BOOST:
+            return (int32_t)(20.0f * r); // 0.0~2.0bar 表压 (x10)
+        default:
+            return 0;
+    }
+}
+
+static void disp_item_set_text(lv_obj_t *label, disp_item_t item, int32_t value, bool valid)
+{
+    if (!label) return;
+    lv_obj_set_style_text_font(label, &ui_font_FontTypoderSize36, LV_PART_MAIN);
+
+    if (!valid) {
+        lv_label_set_text(label, "--");
+        return;
+    }
+
+    if (item == DISP_ITEM_BAT) {
+        lv_label_set_text_fmt(label, "%d.%d", (int)(value / 1000), (int)((value % 1000) / 100));
+    } else if (item == DISP_ITEM_OILP) {
+        int32_t abs_val = (value < 0) ? -value : value;
+        lv_label_set_text_fmt(label, "%d.%d", (int)(value / 10), (int)(abs_val % 10));
+    } else if (item == DISP_ITEM_BKT) {
+        lv_label_set_text_fmt(label, "%ld", (long)(value / 10));
+    } else if (item == DISP_ITEM_BOOST) {
+        // 表压可为负(真空)，带符号显示一位小数, e.g. -0.6 / 1.2
+        int32_t a = (value < 0) ? -value : value;
+        lv_label_set_text_fmt(label, "%s%d.%d", (value < 0) ? "-" : "", (int)(a / 10), (int)(a % 10));
+    } else {
+        lv_label_set_text_fmt(label, "%ld", (long)value);
+    }
+}
+
+static void disp_item_set_value_color(lv_obj_t *label, disp_item_t item, int32_t value, bool valid,
+                                      int16_t brake_warn_x10, int16_t oil_warn_x10)
+{
+    if (!label) return;
+
+    lv_color_t color = lv_color_hex(0xFFFFFF);
+    if (valid && item == DISP_ITEM_BKT && value >= brake_warn_x10) {
+        color = lv_color_hex(0xFF4D4D);
+    } else if (valid && item == DISP_ITEM_OILP && value >= oil_warn_x10) {
+        color = lv_color_hex(0xFF4D4D);
+    }
+    lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
+}
+
+// ============ 指针页 (Needle) 运行时逻辑，复用上面的 disp_item 系统 ============
+// 每个数据项的指针量程：nmin/nmax 为自然单位（同时用于刻度数字与指针位置），
+// div 把缓存原始值换算成自然单位 (BAT:mV→V, OILP/BKT:0.1单位→整数)。
+typedef struct {
+    int32_t nmin;
+    int32_t nmax;
+    int32_t div;
+} needle_scale_meta_t;
+
+static const needle_scale_meta_t s_needle_scale_meta[DISP_ITEM_COUNT] = {
+    [DISP_ITEM_CLT]   = {-20, 130, 1},
+    [DISP_ITEM_IAT]   = {-20, 100, 1},
+    [DISP_ITEM_OIL]   = {-20, 160, 1},
+    [DISP_ITEM_LOAD]  = {0, 100, 1},
+    [DISP_ITEM_TPS]   = {0, 100, 1},
+    [DISP_ITEM_RPM]   = {0, 8000, 1},
+    [DISP_ITEM_SPEED] = {0, 240, 1},
+    [DISP_ITEM_BAT]   = {8, 16, 1000},
+    [DISP_ITEM_OILP]  = {0, 10, 10},
+    [DISP_ITEM_BKT]   = {0, 800, 10},
+    [DISP_ITEM_BOOST] = {0, 20, 1},   // 量程以 0.1bar 计: 0 ~ +2.0 bar 表压(不显示负压)
+};
+
+const char *ui_disp_item_name(uint8_t item)
+{
+    if (item >= DISP_ITEM_COUNT) return "";
+    return s_disp_meta[item].name;
+}
+
+static uint8_t needle_active_source(void)
+{
+    uint8_t src = nvs_cfg_get()->needle_source_idx;
+    if (src >= DISP_ITEM_COUNT) src = DISP_ITEM_CLT;
+    return src;
+}
+
+void ui_needle_apply_source(void)
+{
+    if (!ui_NeedleMeter || !ui_NeedleScale) return;
+    uint8_t src = needle_active_source();
+    const needle_scale_meta_t *ns = &s_needle_scale_meta[src];
+    // 270° 扫角，起始角 135°（开口朝下居中），与经典机械仪表一致
+    lv_meter_set_scale_range(ui_NeedleMeter, ui_NeedleScale, ns->nmin, ns->nmax, 270, 135);
+    lv_meter_set_indicator_value(ui_NeedleMeter, ui_NeedleIndic, ns->nmin);
+    if (ui_NeedleNameLabel) lv_label_set_text(ui_NeedleNameLabel, s_disp_meta[src].name);
+    if (ui_NeedleUnitLabel) lv_label_set_text(ui_NeedleUnitLabel, s_disp_meta[src].unit);
+}
+
+void ui_needle_page_update(float sweep_ratio)
+{
+    if (!ui_ScreenPageNeedle || !ui_NeedleMeter || !ui_NeedleIndic) return;
+    uint8_t src = needle_active_source();
+    const needle_scale_meta_t *ns = &s_needle_scale_meta[src];
+
+    // 连接成功后的刷表自检：指针 nmin→nmax→nmin 全程扫动
+    if (sweep_ratio >= 0.0f) {
+        if (sweep_ratio > 1.0f) sweep_ratio = 1.0f;
+        int32_t nval = ns->nmin + (int32_t)((float)(ns->nmax - ns->nmin) * sweep_ratio);
+        lv_meter_set_indicator_value(ui_NeedleMeter, ui_NeedleIndic, nval);
+        disp_item_set_text(ui_NeedleValueLabel, src, nval * ns->div, true);
+        return;
+    }
+
+    int32_t raw = 0;
+    bool valid = disp_item_read_value(src,
+        obd_data_get_coolant_temp(), obd_data_get_intake_temp(), obd_data_get_oil_temp(),
+        obd_data_get_load_pct(), obd_data_get_tps(), obd_data_get_bat_mv(),
+        obd_data_get_oil_pressure_x10(), obd_data_get_brake_temp_x10(),
+        obd_data_get_rpm(), obd_data_get_speed(), obd_data_get_boost_x10(), &raw);
+
+    int32_t nval = valid ? (raw / ns->div) : ns->nmin;
+    if (nval < ns->nmin) nval = ns->nmin;
+    if (nval > ns->nmax) nval = ns->nmax;
+    lv_meter_set_indicator_value(ui_NeedleMeter, ui_NeedleIndic, nval);
+
+    disp_item_set_text(ui_NeedleValueLabel, src, raw, valid);
+}
+
+static void brake_temp_trend_init(void)
+{
+    if (s_brake_temp_trend_ready) return;
+
+    for (uint32_t i = 0; i < BRAKE_TEMP_TREND_POINTS; ++i) {
+        s_brake_temp_trend[i] = BRAKE_TEMP_TREND_INVALID;
+    }
+
+    s_brake_temp_trend_ready = true;
+}
+
+static void brake_temp_trend_push(int16_t sample_x10)
+{
+    brake_temp_trend_init();
+
+    for (uint32_t i = 0; i < BRAKE_TEMP_TREND_POINTS - 1; ++i) {
+        s_brake_temp_trend[i] = s_brake_temp_trend[i + 1];
+    }
+    s_brake_temp_trend[BRAKE_TEMP_TREND_POINTS - 1] = sample_x10;
+}
+
+static void brake_temp_chart_refresh(void)
+{
+    if (!ui_ChartBrakeTemp || !ui_BrakeTempChartSeries) return;
+
+    int16_t last_valid = 0;
+    bool has_last = false;
+
+    lv_chart_set_range(ui_ChartBrakeTemp, LV_CHART_AXIS_PRIMARY_Y, 0, BRAKE_TEMP_ABS_MAX_C);
+
+    for (uint32_t i = 0; i < BRAKE_TEMP_TREND_POINTS; ++i) {
+        int16_t sample = s_brake_temp_trend[i];
+        int32_t celsius;
+
+        if (sample >= 0) {
+            last_valid = sample;
+            has_last = true;
+        }
+
+        celsius = has_last ? (last_valid / 10) : 0;
+        if (celsius < 0) celsius = 0;
+        if (celsius > BRAKE_TEMP_ABS_MAX_C) celsius = BRAKE_TEMP_ABS_MAX_C;
+
+        lv_chart_set_value_by_id(ui_ChartBrakeTemp,
+                                 ui_BrakeTempChartSeries,
+                                 i,
+                                 celsius);
+    }
+
+    lv_chart_refresh(ui_ChartBrakeTemp);
+}
+
+static void oil_pressure_trend_init(void)
+{
+    if (s_oil_pressure_trend_ready) return;
+
+    for (uint32_t i = 0; i < OIL_PRESS_TREND_POINTS; ++i) {
+        s_oil_pressure_trend[i] = OIL_PRESS_TREND_INVALID;
+    }
+
+    s_oil_pressure_trend_ready = true;
+}
+
+static void oil_pressure_trend_push(int16_t sample_x10)
+{
+    oil_pressure_trend_init();
+
+    for (uint32_t i = 0; i < OIL_PRESS_TREND_POINTS - 1; ++i) {
+        s_oil_pressure_trend[i] = s_oil_pressure_trend[i + 1];
+    }
+    s_oil_pressure_trend[OIL_PRESS_TREND_POINTS - 1] = sample_x10;
+}
+
+static void oil_pressure_chart_refresh(void)
+{
+    if (!ui_ChartOilPressure || !ui_OilPressureChartSeries) return;
+
+    int16_t last_valid = 0;
+    bool has_last = false;
+
+    lv_chart_set_range(ui_ChartOilPressure, LV_CHART_AXIS_PRIMARY_Y, 0, OIL_PRESS_MAX_BAR_X10);
+
+    for (uint32_t i = 0; i < OIL_PRESS_TREND_POINTS; ++i) {
+        int16_t sample = s_oil_pressure_trend[i];
+        int32_t pressure_x10;
+
+        if (sample >= 0) {
+            last_valid = sample;
+            has_last = true;
+        }
+
+        pressure_x10 = has_last ? last_valid : 0;
+        if (pressure_x10 < 0) pressure_x10 = 0;
+        if (pressure_x10 > OIL_PRESS_MAX_BAR_X10) pressure_x10 = OIL_PRESS_MAX_BAR_X10;
+
+        lv_chart_set_value_by_id(ui_ChartOilPressure,
+                                 ui_OilPressureChartSeries,
+                                 i,
+                                 pressure_x10);
+    }
+
+    lv_chart_refresh(ui_ChartOilPressure);
+}
+
 void my_timerMain(lv_timer_t * timer)
 {
-    char *pGearNum[] = {"N","1", "2", "3", "4", "5", "6"};  // 6档支持
     static uint16_t usRpm = 0;
     static uint16_t ucSpeed = 0;  // uint16_t 以支持刷表时的999
     static enGear eGear = GEAR_NEUTRAL;
@@ -160,8 +520,15 @@ void my_timerMain(lv_timer_t * timer)
     int16_t clt      = obd_data_get_coolant_temp();
     int16_t iat      = obd_data_get_intake_temp();
     int16_t oil      = obd_data_get_oil_temp();      // 真实机油温度 °C (SSM 22 10 17), -100=无效
+    int16_t oilp_x10 = obd_data_get_oil_pressure_x10(); // 机油压力 0.1bar, -1=无效
+    int16_t brake_x10 = obd_data_get_brake_temp_x10(); // 刹车温度 0.1°C
     int16_t load_pct = obd_data_get_load_pct();      // 发动机负荷 0~100%, -1=无效
     int16_t tps      = obd_data_get_tps();
+    int32_t bat_mv   = obd_data_get_bat_mv();
+    int16_t boost_x10 = obd_data_get_boost_x10(); // 涡轮表压 0.1bar, -32768=无效
+    const nvs_user_cfg_t *user_cfg = nvs_cfg_get();
+    int16_t brake_warn_x10 = (int16_t)(user_cfg->brake_temp_warn_c * 10);
+    int16_t oil_warn_x10 = (int16_t)user_cfg->oil_pressure_warn_x10;
 
     /* ---- 检测 BLE 连接，触发刷表 ---- */
     bool ble_now = elm327_ble_is_connected();
@@ -175,6 +542,7 @@ void my_timerMain(lv_timer_t * timer)
     s_prev_ble_connected = ble_now;
 
     /* ---- 数据来源：刷表 or 真实 OBD ---- */
+    float sweep_ratio = -1.0f;   // <0 = 非刷表(实时数据)
     if(s_sweep_step > 0) {
         int step = s_sweep_step;
         float ratio;
@@ -183,6 +551,7 @@ void my_timerMain(lv_timer_t * timer)
         } else {
             ratio = (float)(SWEEP_TOTAL - step) / (float)SWEEP_STEPS_DOWN; // 1→0
         }
+        sweep_ratio = ratio;
         usRpm   = (uint16_t)(SWEEP_RPM_PEAK * ratio);
         ucSpeed = (uint16_t)(SWEEP_SPEED_PEAK * ratio); // uint16_t 以支持999
         eGear   = (enGear)((int)(6.0f * ratio + 0.5f)); // 最高6档
@@ -193,77 +562,169 @@ void my_timerMain(lv_timer_t * timer)
         ucSpeed = obd_data_get_speed();
         eGear   = calculate_gear(usRpm, ucSpeed);
     }
-    /*主页面*/
-    lv_label_set_text_fmt(ui_LabelGeningRpmText, "%d", usRpm);
-    lv_label_set_text_fmt(ui_LabelCarSpeedText, "%d", ucSpeed);
-    lv_label_set_text_fmt (ui_LabelGearNumText, pGearNum[eGear]);
-    if(s_info_mode == INFO_TRIP && usClearTripDataTimeCnt != 0)//清除TRIP数据时，显示清除进度
-    {
-        lv_arc_set_value(ui_ArcGearNumBack, (uint16_t)100*usClearTripDataTimeCnt/(CLEAR_TRIP_TIME/100));      
-    }
-    else//正常显示档位
-    {
-        lv_arc_set_value(ui_ArcGearNumBack, (uint16_t)eGear*100/6);  // 6档满盘
-    }
+    /* Main/Gear/Rpm/Speed 页面已删除，相关刷新逻辑随之移除。
+       usRpm/ucSpeed/eGear 仍在上方计算，供指针页与 disp_item 数据项使用。 */
+    (void)eGear;
 
-/*档位页面*/
-    lv_label_set_text_fmt(ui_GearPageArcLabelGearNumText, pGearNum[eGear]);
-    lv_arc_set_value(ui_GearPageArcGearNumBack, (uint16_t)eGear*100/6);  // 6档满盘
- /*转速页面*/
-    lv_label_set_text_fmt(ui_RpmPageArcLabelRpmText, "%d", usRpm);
-    lv_arc_set_value(ui_RpmPageArcRpmBack, (uint32_t)usRpm*100/RPM_MAX);
- /*速度页面*/
-    lv_label_set_text_fmt(ui_SpeedPageArcLabelSpeedText, "%d", ucSpeed);
-    lv_arc_set_value(ui_SpeedPageArcSpeedBack, (uint32_t)ucSpeed*100/SPEED_MAX);
+ /*指针页 (可配置数据源, 刷表时同步扫表)*/
+    ui_needle_page_update(sweep_ratio);
 
  /*温度页面*/
-    if(ui_LabelCoolantTempText) {
+    if(ui_LabelTempValue[0]) {
         if(s_sweep_step > 0) {
-            // 刷表期间: CLT/IAT/OIL 0→120→0°C
             int step = s_sweep_step - 1; // already incremented
             float r;
             if(step <= SWEEP_STEPS_UP) r = (float)step / (float)SWEEP_STEPS_UP;
             else r = (float)(SWEEP_TOTAL - step) / (float)SWEEP_STEPS_DOWN;
-            int16_t sweep_temp = (int16_t)(120.0f * r);
-            lv_label_set_text_fmt(ui_LabelCoolantTempText, "%d", sweep_temp);
-            lv_label_set_text_fmt(ui_LabelIntakeTempText,  "%d", sweep_temp);
-            lv_label_set_text_fmt(ui_LabelOilTempText,     "%d", sweep_temp);
+
+            for (int i = 0; i < 3; ++i) {
+                disp_item_t item = (disp_item_t)(user_cfg->temp_display_map[i] % DISP_ITEM_COUNT);
+                lv_label_set_text(ui_LabelTempName[i], s_disp_meta[item].name);
+                lv_label_set_text(ui_LabelTempUnit[i], s_disp_meta[item].unit);
+                lv_obj_set_style_text_color(ui_LabelTempName[i], lv_color_hex(s_disp_meta[item].color), LV_PART_MAIN);
+
+                int32_t sw = disp_item_sweep_value(item, r);
+                disp_item_set_text(ui_LabelTempValue[i], item, sw, true);
+                disp_item_set_value_color(ui_LabelTempValue[i], item, sw, true, brake_warn_x10, oil_warn_x10);
+            }
         } else {
-            if(clt > -40)  lv_label_set_text_fmt(ui_LabelCoolantTempText, "%d", clt);
-            else           lv_label_set_text(ui_LabelCoolantTempText, "--");
-            if(iat > -40)  lv_label_set_text_fmt(ui_LabelIntakeTempText, "%d", iat);
-            else           lv_label_set_text(ui_LabelIntakeTempText, "--");
-            if(oil > -41)  lv_label_set_text_fmt(ui_LabelOilTempText, "%d", oil);
-            else           lv_label_set_text(ui_LabelOilTempText, "--");
+            for (int i = 0; i < 3; ++i) {
+                disp_item_t item = (disp_item_t)(user_cfg->temp_display_map[i] % DISP_ITEM_COUNT);
+                lv_label_set_text(ui_LabelTempName[i], s_disp_meta[item].name);
+                lv_label_set_text(ui_LabelTempUnit[i], s_disp_meta[item].unit);
+                lv_obj_set_style_text_color(ui_LabelTempName[i], lv_color_hex(s_disp_meta[item].color), LV_PART_MAIN);
+
+                int32_t value = 0;
+                bool valid = disp_item_read_value(item, clt, iat, oil, load_pct, tps, bat_mv, oilp_x10, brake_x10, usRpm, ucSpeed, boost_x10, &value);
+                disp_item_set_text(ui_LabelTempValue[i], item, value, valid);
+                disp_item_set_value_color(ui_LabelTempValue[i], item, value, valid, brake_warn_x10, oil_warn_x10);
+            }
         }
     }
 
-    /* Info 页更新 */
-    if (ui_LabelInfoCLT) {
+    /* 油压页面更新 */
+    if (ui_LabelOilPressureText) {
+        int16_t display_oilp_x10 = -1;
+        lv_color_t oilp_color = lv_color_hex(0xFFFFFF);
+
         if (s_sweep_step > 0) {
-            // 刷表动画: CLT/IAT 0→120→0°C, LOAD/TPS 0→100→0%, BAT 12.0→14.4→12.0V
+            int step = s_sweep_step - 1;
+            float r;
+            if (step <= SWEEP_STEPS_UP) r = (float)step / (float)SWEEP_STEPS_UP;
+            else r = (float)(SWEEP_TOTAL - step) / (float)SWEEP_STEPS_DOWN;
+            int16_t sw_oilp_x10 = (int16_t)(100.0f * r);
+            lv_label_set_text_fmt(ui_LabelOilPressureText, "%d.%d", (int)(sw_oilp_x10 / 10), (int)(sw_oilp_x10 % 10));
+            display_oilp_x10 = sw_oilp_x10;
+        } else {
+            if (oilp_x10 >= 0) {
+                int16_t abs_val = (oilp_x10 < 0) ? (int16_t)(-oilp_x10) : oilp_x10;
+                lv_label_set_text_fmt(ui_LabelOilPressureText, "%d.%d", (int)(oilp_x10 / 10), (int)(abs_val % 10));
+                display_oilp_x10 = oilp_x10;
+            } else {
+                lv_label_set_text(ui_LabelOilPressureText, "--.-");
+            }
+        }
+
+        if (display_oilp_x10 >= oil_warn_x10 && display_oilp_x10 >= 0) {
+            oilp_color = lv_color_hex(0xFF4D4D);
+        }
+        lv_obj_set_style_text_color(ui_LabelOilPressureText, oilp_color, LV_PART_MAIN);
+
+        uint32_t now = lv_tick_get();
+        if (s_oil_pressure_trend_tick == 0) {
+            oil_pressure_trend_init();
+            s_oil_pressure_trend_tick = now;
+        }
+        while ((now - s_oil_pressure_trend_tick) >= OIL_PRESS_TREND_SAMPLE_MS) {
+            oil_pressure_trend_push(display_oilp_x10);
+            s_oil_pressure_trend_tick += OIL_PRESS_TREND_SAMPLE_MS;
+        }
+
+        oil_pressure_chart_refresh();
+    }
+
+    /* 刹车温度页面更新 */
+    if (ui_LabelBrakeTempText) {
+        int16_t display_brake_x10 = BRAKE_TEMP_TREND_INVALID;
+        const lv_font_t *temp_font = &ui_font_FontTypoderSize28;
+        lv_color_t temp_color = lv_color_hex(0xFFFFFF);
+        if (s_sweep_step > 0) {
+            int step = s_sweep_step - 1;
+            float r;
+            if (step <= SWEEP_STEPS_UP) r = (float)step / (float)SWEEP_STEPS_UP;
+            else r = (float)(SWEEP_TOTAL - step) / (float)SWEEP_STEPS_DOWN;
+            int16_t sw_brake_x10 = (int16_t)(600.0f * r); // 0.0 -> 60.0 -> 0.0
+            int16_t abs_val = (sw_brake_x10 < 0) ? (int16_t)(-sw_brake_x10) : sw_brake_x10;
+            lv_label_set_text_fmt(ui_LabelBrakeTempText, "%d.%d", (int)(sw_brake_x10 / 10), (int)(abs_val % 10));
+            display_brake_x10 = sw_brake_x10;
+        } else {
+            if (brake_x10 > -1000) {
+                int16_t abs_val = (brake_x10 < 0) ? (int16_t)(-brake_x10) : brake_x10;
+                lv_label_set_text_fmt(ui_LabelBrakeTempText, "%d.%d", (int)(brake_x10 / 10), (int)(abs_val % 10));
+                display_brake_x10 = brake_x10;
+            } else {
+                lv_label_set_text(ui_LabelBrakeTempText, "--.-");
+            }
+        }
+
+        if (display_brake_x10 >= 10000 || display_brake_x10 <= -10000) {
+            temp_font = &ui_font_FontTypoderSize24;
+        } else if (display_brake_x10 >= 1000 || display_brake_x10 <= -1000) {
+            temp_font = &ui_font_FontTypoderSize28;
+        } else {
+            temp_font = &ui_font_FontTypoderSize32;
+        }
+
+        if (display_brake_x10 >= brake_warn_x10) {
+            temp_color = lv_color_hex(0xFF4D4D);
+        }
+
+        lv_obj_set_style_text_font(ui_LabelBrakeTempText, temp_font, LV_PART_MAIN);
+        lv_obj_set_style_text_color(ui_LabelBrakeTempText, temp_color, LV_PART_MAIN);
+
+        uint32_t now = lv_tick_get();
+        if (s_brake_temp_trend_tick == 0) {
+            brake_temp_trend_init();
+            s_brake_temp_trend_tick = now;
+        }
+        while ((now - s_brake_temp_trend_tick) >= BRAKE_TEMP_TREND_SAMPLE_MS) {
+            brake_temp_trend_push(display_brake_x10);
+            s_brake_temp_trend_tick += BRAKE_TEMP_TREND_SAMPLE_MS;
+        }
+
+        brake_temp_chart_refresh();
+    }
+
+    /* Info 页更新 */
+    if (ui_LabelInfoValue[0]) {
+        if (s_sweep_step > 0) {
             int step = s_sweep_step - 1; // already incremented above
             float r;
             if (step <= SWEEP_STEPS_UP) r = (float)step / (float)SWEEP_STEPS_UP;
             else r = (float)(SWEEP_TOTAL - step) / (float)SWEEP_STEPS_DOWN;
-            int16_t  sw_temp = (int16_t)(120.0f * r);
-            int16_t  sw_pct  = (int16_t)(100.0f * r);
-            lv_label_set_text_fmt(ui_LabelInfoCLT,  "%d", sw_temp);
-            lv_label_set_text_fmt(ui_LabelInfoIAT,  "%d", sw_temp);
-            lv_label_set_text_fmt(ui_LabelInfoLoad, "%d", sw_pct);
-            lv_label_set_text_fmt(ui_LabelInfoTPS,  "%d", sw_pct);
-            lv_label_set_text_fmt(ui_LabelInfoOil, "%d", sw_temp);  // 刷表时用温度动画
+
+            for (int i = 0; i < 5; ++i) {
+                disp_item_t item = (disp_item_t)(user_cfg->info_display_map[i] % DISP_ITEM_COUNT);
+                lv_label_set_text(ui_LabelInfoName[i], s_disp_meta[item].name);
+                lv_label_set_text(ui_LabelInfoUnit[i], s_disp_meta[item].unit);
+                lv_obj_set_style_text_color(ui_LabelInfoName[i], lv_color_hex(s_disp_meta[item].color), LV_PART_MAIN);
+
+                int32_t sw = disp_item_sweep_value(item, r);
+                disp_item_set_text(ui_LabelInfoValue[i], item, sw, true);
+                disp_item_set_value_color(ui_LabelInfoValue[i], item, sw, true, brake_warn_x10, oil_warn_x10);
+            }
         } else {
-            if (clt  > -40) lv_label_set_text_fmt(ui_LabelInfoCLT,  "%d", clt);
-            else            lv_label_set_text(ui_LabelInfoCLT,  "--");
-            if (iat  > -40) lv_label_set_text_fmt(ui_LabelInfoIAT,  "%d", iat);
-            else            lv_label_set_text(ui_LabelInfoIAT,  "--");
-            if (load_pct >= 0)   lv_label_set_text_fmt(ui_LabelInfoLoad, "%d", load_pct);
-            else                  lv_label_set_text(ui_LabelInfoLoad, "--");
-            if (tps  >= 0)  lv_label_set_text_fmt(ui_LabelInfoTPS,  "%d", tps);
-            else            lv_label_set_text(ui_LabelInfoTPS,  "--");
-            if (oil  > -41) lv_label_set_text_fmt(ui_LabelInfoOil, "%d", oil);
-            else            lv_label_set_text(ui_LabelInfoOil, "--");
+            for (int i = 0; i < 5; ++i) {
+                disp_item_t item = (disp_item_t)(user_cfg->info_display_map[i] % DISP_ITEM_COUNT);
+                lv_label_set_text(ui_LabelInfoName[i], s_disp_meta[item].name);
+                lv_label_set_text(ui_LabelInfoUnit[i], s_disp_meta[item].unit);
+                lv_obj_set_style_text_color(ui_LabelInfoName[i], lv_color_hex(s_disp_meta[item].color), LV_PART_MAIN);
+
+                int32_t value = 0;
+                bool valid = disp_item_read_value(item, clt, iat, oil, load_pct, tps, bat_mv, oilp_x10, brake_x10, usRpm, ucSpeed, boost_x10, &value);
+                disp_item_set_text(ui_LabelInfoValue[i], item, value, valid);
+                disp_item_set_value_color(ui_LabelInfoValue[i], item, value, valid, brake_warn_x10, oil_warn_x10);
+            }
         }
     }
 
@@ -300,47 +761,8 @@ void my_timerMain(lv_timer_t * timer)
         }
 #endif
 
-    /* 底部信息栏更新 */
-    nvs_stat_t stat = nvs_stat_get_mileage();
-    switch(s_info_mode){
-        case INFO_NONE:
-            lv_obj_add_flag(ui_ContainerMainPageMlieageBlock, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(ui_LabelGearNumText, LV_OBJ_FLAG_HIDDEN);
-            break;
-        case INFO_TRIP:
-            lv_obj_clear_flag(ui_ContainerMainPageMlieageBlock, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(ui_LabelGearNumText, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text_fmt(ui_LabelMainMlieageText, "%lld.%lld", stat.trip_m/1000, stat.trip_m/100%10);
-            lv_label_set_text(ui_LabelMainMieageNum, "TRIP");
-            break;
-        case INFO_ODO:
-            lv_obj_clear_flag(ui_ContainerMainPageMlieageBlock, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(ui_LabelGearNumText, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text_fmt(ui_LabelMainMlieageText, "%lld", stat.odometer_m/1000);
-            lv_label_set_text(ui_LabelMainMieageNum, "ODO");
-            break;
-        case INFO_MAX:
-            lv_obj_clear_flag(ui_ContainerMainPageMlieageBlock, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(ui_LabelGearNumText, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text_fmt(ui_LabelMainMlieageText, "%d", stat.max_speed_kmh);
-            lv_label_set_text(ui_LabelMainMieageNum, "MAX");
-            break;
-        case INFO_AVG:
-            lv_obj_clear_flag(ui_ContainerMainPageMlieageBlock, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(ui_LabelGearNumText, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text_fmt(ui_LabelMainMlieageText, "%d", stat.avg_speed_kmh);
-            lv_label_set_text(ui_LabelMainMieageNum, "AVG");
-            break;
-        case INFO_TIME:
-            lv_obj_clear_flag(ui_ContainerMainPageMlieageBlock, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(ui_LabelGearNumText, LV_OBJ_FLAG_HIDDEN);
-            uint32_t hrs = stat.run_time_s/3600;
-            uint32_t mins = (stat.run_time_s%3600)/60;
-            lv_label_set_text_fmt(ui_LabelMainMlieageText, "%02ld:%02ld", hrs, mins);
-            lv_label_set_text(ui_LabelMainMieageNum, "TIME");
-            break;
-        default: break;
-    }
+    /* 底部信息栏(TRIP/ODO/MAX/AVG/TIME)原属已删除的 Main 页面，随之移除。
+       里程统计仍由后台任务持续累计，可在其它页面或后续重新接入展示。 */
 
     //在logo 页面 3s后自动跳转默认页面，并删除 Logo 屏幕释放内存
     if(ui_ScreenPageLogo)
@@ -353,13 +775,13 @@ void my_timerMain(lv_timer_t * timer)
             const nvs_user_cfg_t *pg_cfg = nvs_cfg_get();
             lv_obj_t **target_scr = NULL;
             void (*target_init)(void) = NULL;
+            // 默认页: 0=Temp, 1=Info, 2=Brake, 3=OilP, 4=Needle (Main/Gear/Rpm/Speed 已删除)
             switch(pg_cfg->default_page) {
                 case 0: target_scr = &ui_ScreenPageTemp;  target_init = ui_ScreenPageTemp_screen_init;  break;
-                case 1: target_scr = &ui_ScreenPageMain;  target_init = ui_ScreenPageMain_screen_init;  break;
-                case 2: target_scr = &ui_ScreenPageGear;  target_init = ui_ScreenPageGear_screen_init;  break;
-                case 3: target_scr = &ui_ScreenPageRpm;   target_init = ui_ScreenPageRpm_screen_init;   break;
-                case 4: target_scr = &ui_ScreenPageSpeed; target_init = ui_ScreenPageSpeed_screen_init; break;
-                case 5: target_scr = &ui_ScreenPageInfo;  target_init = ui_ScreenPageInfo_screen_init;  break;
+                case 1: target_scr = &ui_ScreenPageInfo;  target_init = ui_ScreenPageInfo_screen_init;  break;
+                case 2: target_scr = &ui_ScreenPageBrakeTemp; target_init = ui_ScreenPageBrakeTemp_screen_init;  break;
+                case 3: target_scr = &ui_ScreenPageOilPressure; target_init = ui_ScreenPageOilPressure_screen_init;  break;
+                case 4: target_scr = &ui_ScreenPageNeedle; target_init = ui_ScreenPageNeedle_screen_init;  break;
                 default: target_scr = &ui_ScreenPageTemp; target_init = ui_ScreenPageTemp_screen_init;  break;
             }
             if(*target_scr == NULL) target_init();
@@ -408,93 +830,9 @@ void ui_event_logo_background(lv_event_t * e)
     }   
 }
 
-void ui_event_main_background(lv_event_t * e)
-{
-    lv_event_code_t event_code = lv_event_get_code(e);
-    if(event_code == LV_EVENT_GESTURE){
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-        if(dir == LV_DIR_LEFT){
-            lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageGear, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageGear_screen_init);
-        }else if(dir == LV_DIR_RIGHT){
-            lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageEasterEgg, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageEasterEgg_screen_init);
-        }else if(dir == LV_DIR_TOP){
-            s_info_mode = (s_info_mode + 1) % INFO_MODE_COUNT;
-        }else if(dir == LV_DIR_BOTTOM){
-            s_info_mode = (s_info_mode + INFO_MODE_COUNT -1) % INFO_MODE_COUNT;
-        }
-    }
-    else if(event_code == LV_EVENT_LONG_PRESSED)//按下500ms触发长按
-    {
-        s_trip_press_start = lv_tick_get();
-        usClearTripDataTimeCnt = 0;
-        ESP_LOGI(TAG, "LV_EVENT_LONG_PRESSED ! \n");
-    }
-    else if(event_code == LV_EVENT_LONG_PRESSED_REPEAT)//触发长按后，每100ms触发一次
-    {
-        ESP_LOGI(TAG, "LV_EVENT_LONG_PRESSED_REPEAT ! \n");
-        //Trip 页面 && 速度为0 && Trip数据大于0.1km（100m）
-        if(s_info_mode == INFO_TRIP && obd_data_get_speed() == 0 && nvs_stat_get_mileage().trip_m > 100)
-        {
-            usClearTripDataTimeCnt++;
-            if(usClearTripDataTimeCnt >= CLEAR_TRIP_TIME/100)
-            {
-                usClearTripDataTimeCnt = 0;
-                nvs_stat_reset_trip();
-            }
-        }
-        else
-        {
-            usClearTripDataTimeCnt = 0;
-        }
-    }
-    else if(event_code == LV_EVENT_RELEASED)//释放
-    {
-        ESP_LOGI(TAG, "LV_EVENT_RELEASED ! \n");
-        if(usClearTripDataTimeCnt)
-        {
-            usClearTripDataTimeCnt = 0;        
-        }
-    }
-
-}
-void ui_event_gear_background(lv_event_t * e)
-{
-    lv_event_code_t event_code = lv_event_get_code(e);
-    if(event_code == LV_EVENT_GESTURE &&  lv_indev_get_gesture_dir(lv_indev_get_act()) == LV_DIR_RIGHT) {
-        lv_indev_wait_release(lv_indev_get_act());
-        _ui_screen_change(&ui_ScreenPageMain, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageMain_screen_init);  
-    }
-    else if(event_code == LV_EVENT_GESTURE &&  lv_indev_get_gesture_dir(lv_indev_get_act()) == LV_DIR_LEFT) {
-        lv_indev_wait_release(lv_indev_get_act());
-        _ui_screen_change(&ui_ScreenPageRpm, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageRpm_screen_init);  
-    }
-}
-void ui_event_rpm_background(lv_event_t * e)
-{
-    lv_event_code_t event_code = lv_event_get_code(e);
-    if(event_code == LV_EVENT_GESTURE &&  lv_indev_get_gesture_dir(lv_indev_get_act()) == LV_DIR_RIGHT) {
-        lv_indev_wait_release(lv_indev_get_act());
-        _ui_screen_change(&ui_ScreenPageGear, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageGear_screen_init);  
-    }
-    else if(event_code == LV_EVENT_GESTURE &&  lv_indev_get_gesture_dir(lv_indev_get_act()) == LV_DIR_LEFT) {
-        lv_indev_wait_release(lv_indev_get_act());
-        _ui_screen_change(&ui_ScreenPageSpeed, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageSpeed_screen_init);  
-    }
-}
-void ui_event_speed_background(lv_event_t * e)
-{
-    lv_event_code_t event_code = lv_event_get_code(e);
-    if(event_code == LV_EVENT_GESTURE &&  lv_indev_get_gesture_dir(lv_indev_get_act()) == LV_DIR_RIGHT) {
-        lv_indev_wait_release(lv_indev_get_act());
-        _ui_screen_change(&ui_ScreenPageRpm, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageRpm_screen_init); 
-    }
-    else if(event_code == LV_EVENT_GESTURE &&  lv_indev_get_gesture_dir(lv_indev_get_act()) == LV_DIR_LEFT) {
-        lv_indev_wait_release(lv_indev_get_act());
-        _ui_screen_change(&ui_ScreenPageTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageTemp_screen_init);  
-    }
-}
+// Main / Gear / Rpm / Speed 页面已删除，对应手势处理函数一并移除。
+// 轮播顺序: Temp → Info → Needle → OilPressure → BrakeTemp → EasterEgg(版本,最后) → 回到 Temp
+// 左滑=下一页, 右滑=上一页
 void ui_event_temp_background(lv_event_t * e)
 {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -502,14 +840,127 @@ void ui_event_temp_background(lv_event_t * e)
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
         if(dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageSpeed, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageSpeed_screen_init);
+            _ui_screen_change(&ui_ScreenPageEasterEgg, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageEasterEgg_screen_init);
         }
         else if(dir == LV_DIR_LEFT) {
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageInfo, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageInfo_screen_init);
         }
+        else if(dir == LV_DIR_BOTTOM) {
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageTempCustom, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageTempCustom_screen_init);
+        }
     }
 }
+
+void ui_event_temp_custom_background(lv_event_t * e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_GESTURE) {
+        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        if (dir == LV_DIR_TOP || dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT) {
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageTemp_screen_init);
+        }
+    }
+}
+
+void ui_event_brake_temp_background(lv_event_t * e)
+{
+    lv_event_code_t event_code = lv_event_get_code(e);
+    if(event_code == LV_EVENT_GESTURE) {
+        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        if(dir == LV_DIR_RIGHT) {
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageOilPressure, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageOilPressure_screen_init);
+        }
+        else if(dir == LV_DIR_LEFT) {
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageEasterEgg, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageEasterEgg_screen_init);
+        }
+        else if(dir == LV_DIR_BOTTOM) {
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageBrakeWarn, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageBrakeWarn_screen_init);
+        }
+    }
+}
+
+void ui_event_oil_pressure_background(lv_event_t * e)
+{
+    lv_event_code_t event_code = lv_event_get_code(e);
+    if(event_code == LV_EVENT_GESTURE) {
+        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        if(dir == LV_DIR_RIGHT) {
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageNeedle, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageNeedle_screen_init);
+        }
+        else if(dir == LV_DIR_LEFT) {
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageBrakeTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageBrakeTemp_screen_init);
+        }
+        else if(dir == LV_DIR_BOTTOM) {
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageOilWarn, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageOilWarn_screen_init);
+        }
+    }
+}
+
+void ui_event_brake_warn_background(lv_event_t * e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code == LV_EVENT_GESTURE){
+        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        if(dir == LV_DIR_TOP || dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageBrakeTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageBrakeTemp_screen_init);
+        }
+    }
+}
+
+void ui_event_oil_warn_background(lv_event_t * e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code == LV_EVENT_GESTURE){
+        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        if(dir == LV_DIR_TOP || dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageOilPressure, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageOilPressure_screen_init);
+        }
+    }
+}
+
+// 指针页(仪表)：位于 Info 与 OilPressure 之间(两曲线页之前)
+//  右滑 → Info，左滑 → OilPressure，下滑 → 数据源选择
+void ui_event_needle_background(lv_event_t * e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code == LV_EVENT_GESTURE){
+        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        if(dir == LV_DIR_BOTTOM){
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageNeedleConfig, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageNeedleConfig_screen_init);
+        }
+        else if(dir == LV_DIR_RIGHT){
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageInfo, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageInfo_screen_init);
+        }
+        else if(dir == LV_DIR_LEFT){
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageOilPressure, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageOilPressure_screen_init);
+        }
+    }
+}
+
+// 指针配置页：任意方向返回指针页
+void ui_event_needle_config_background(lv_event_t * e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code == LV_EVENT_GESTURE){
+        lv_indev_wait_release(lv_indev_get_act());
+        _ui_screen_change(&ui_ScreenPageNeedle, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageNeedle_screen_init);
+    }
+}
+
 void ui_event_info_background(lv_event_t * e)
 {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -521,7 +972,23 @@ void ui_event_info_background(lv_event_t * e)
         }
         else if(dir == LV_DIR_LEFT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageEasterEgg, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageEasterEgg_screen_init);
+            _ui_screen_change(&ui_ScreenPageNeedle, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageNeedle_screen_init);
+        }
+        else if(dir == LV_DIR_BOTTOM) {
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageInfoCustom, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageInfoCustom_screen_init);
+        }
+    }
+}
+
+void ui_event_info_custom_background(lv_event_t * e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_GESTURE) {
+        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        if (dir == LV_DIR_TOP || dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT) {
+            lv_indev_wait_release(lv_indev_get_act());
+            _ui_screen_change(&ui_ScreenPageInfo, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageInfo_screen_init);
         }
     }
 }
@@ -532,11 +999,11 @@ void ui_event_easter_egg_background(lv_event_t * e)
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
         if(dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageInfo, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageInfo_screen_init);
+            _ui_screen_change(&ui_ScreenPageBrakeTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageBrakeTemp_screen_init);
         }
         else if(dir == LV_DIR_LEFT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageMain, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageMain_screen_init);
+            _ui_screen_change(&ui_ScreenPageTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageTemp_screen_init);
         }
         else if(dir == LV_DIR_TOP) {
             // 上滑 → BLE 扫描页面
@@ -559,14 +1026,19 @@ void ui_init(void)
                                                false, LV_FONT_DEFAULT);
     lv_disp_set_theme(dispp, theme);
     ui_ScreenPageLogo_screen_init();
-    ui_ScreenPageMain_screen_init();
-    ui_ScreenPageGear_screen_init();
-    ui_ScreenPageRpm_screen_init();
-    ui_ScreenPageSpeed_screen_init();
+    // Main / Gear / Rpm / Speed 页面已删除
     ui_ScreenPageTemp_screen_init();
+    ui_ScreenPageBrakeTemp_screen_init();
+    ui_ScreenPageOilPressure_screen_init();
+    ui_ScreenPageBrakeWarn_screen_init();
+    ui_ScreenPageOilWarn_screen_init();
     ui_ScreenPageODBProtocal_screen_init();
+    ui_ScreenPageNeedle_screen_init();
     // Info 页按需懒加载，screen 指针须初始化为 NULL
     ui_ScreenPageInfo = NULL;
+    ui_ScreenPageTempCustom = NULL;
+    ui_ScreenPageInfoCustom = NULL;
+    ui_ScreenPageNeedleConfig = NULL;   // 配置页懒加载
     ui____initial_actions0 = lv_obj_create(NULL);
     lv_disp_load_scr(ui_ScreenPageLogo);
 
@@ -581,7 +1053,7 @@ void ui_event_obd_prot_background(lv_event_t * e)
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
         if(dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageMain, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageMain_screen_init);
+            _ui_screen_change(&ui_ScreenPageTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageTemp_screen_init);
         }
     }else if(code == LV_EVENT_LONG_PRESSED){
         usSaveProtTimeCnt = 0;
@@ -606,6 +1078,7 @@ void ui_event_ble_scan_background(lv_event_t * e)
     if(code == LV_EVENT_GESTURE){
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
         if(dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
+            elm327_ble_scan_only_stop();
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageEasterEgg, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageEasterEgg_screen_init);
         }

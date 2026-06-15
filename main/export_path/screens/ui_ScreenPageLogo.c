@@ -17,7 +17,7 @@ void ui_ScreenPageLogo_screen_init(void)
     lv_gif_set_src(imageLogo, &gifSnake400);
     lv_obj_align(imageLogo, LV_ALIGN_CENTER, 0, 0);
 #else
-    // SKY GARAGE text logo using Conthrax font
+    // SKY GAUGE text logo using Conthrax font
     lv_obj_t *label_sky = lv_label_create(ui_ScreenPageLogo);
     lv_label_set_text(label_sky, "SKY");
     lv_obj_set_style_text_font(label_sky, &ui_font_FontTypoderSize56, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -25,12 +25,12 @@ void ui_ScreenPageLogo_screen_init(void)
     lv_obj_set_style_text_letter_space(label_sky, 8, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align(label_sky, LV_ALIGN_CENTER, 0, -20);
 
-    lv_obj_t *label_garage = lv_label_create(ui_ScreenPageLogo);
-    lv_label_set_text(label_garage, "GARAGE");
-    lv_obj_set_style_text_font(label_garage, &ui_font_FontTypoderSize36, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(label_garage, lv_color_hex(0xAAAAAA), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_letter_space(label_garage, 12, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_align(label_garage, LV_ALIGN_CENTER, 0, 30);
+    lv_obj_t *label_gauge = lv_label_create(ui_ScreenPageLogo);
+    lv_label_set_text(label_gauge, "GAUGE");
+    lv_obj_set_style_text_font(label_gauge, &ui_font_FontTypoderSize36, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(label_gauge, lv_color_hex(0xAAAAAA), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_letter_space(label_gauge, 12, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_align(label_gauge, LV_ALIGN_CENTER, 0, 30);
 
     imageLogo = NULL; // No image logo anymore
 

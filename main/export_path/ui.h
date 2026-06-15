@@ -107,7 +107,31 @@ extern lv_obj_t * ui_ScreenPageTemp;
 extern lv_obj_t * ui_LabelCoolantTempText;
 extern lv_obj_t * ui_LabelOilTempText;
 extern lv_obj_t * ui_LabelIntakeTempText;
+extern lv_obj_t * ui_LabelTempValue[3];
+extern lv_obj_t * ui_LabelTempName[3];
+extern lv_obj_t * ui_LabelTempUnit[3];
 void ui_event_temp_background(lv_event_t * e);
+
+// SCREEN: ui_ScreenPageTempCustom
+void ui_ScreenPageTempCustom_screen_init(void);
+extern lv_obj_t * ui_ScreenPageTempCustom;
+void ui_event_temp_custom_background(lv_event_t * e);
+
+// SCREEN: ui_ScreenPageBrakeTemp
+void ui_ScreenPageBrakeTemp_screen_init(void);
+extern lv_obj_t * ui_ScreenPageBrakeTemp;
+extern lv_obj_t * ui_LabelBrakeTempText;
+extern lv_obj_t * ui_ChartBrakeTemp;
+extern lv_chart_series_t * ui_BrakeTempChartSeries;
+void ui_event_brake_temp_background(lv_event_t * e);
+
+// SCREEN: ui_ScreenPageOilPressure
+void ui_ScreenPageOilPressure_screen_init(void);
+extern lv_obj_t * ui_ScreenPageOilPressure;
+extern lv_obj_t * ui_LabelOilPressureText;
+extern lv_obj_t * ui_ChartOilPressure;
+extern lv_chart_series_t * ui_OilPressureChartSeries;
+void ui_event_oil_pressure_background(lv_event_t * e);
 
 // SCREEN: ui_ScreenPageInfo
 void ui_ScreenPageInfo_screen_init(void);
@@ -117,14 +141,54 @@ extern lv_obj_t * ui_LabelInfoIAT;
 extern lv_obj_t * ui_LabelInfoLoad;
 extern lv_obj_t * ui_LabelInfoTPS;
 extern lv_obj_t * ui_LabelInfoOil;
+extern lv_obj_t * ui_LabelInfoValue[5];
+extern lv_obj_t * ui_LabelInfoName[5];
+extern lv_obj_t * ui_LabelInfoUnit[5];
 void ui_event_info_background(lv_event_t * e);
 // CUSTOM VARIABLES
+
+// SCREEN: ui_ScreenPageInfoCustom
+void ui_ScreenPageInfoCustom_screen_init(void);
+extern lv_obj_t * ui_ScreenPageInfoCustom;
+void ui_event_info_custom_background(lv_event_t * e);
 
 // SCREEN: ui_ScreenPageSettings
 void ui_ScreenPageSettings_screen_init(void);
 extern lv_obj_t * ui_ScreenPageSettings;
 void ui_event_settings_background(lv_event_t * e);
 // CUSTOM VARIABLES
+
+// SCREEN: ui_ScreenPageBrakeWarn
+void ui_ScreenPageBrakeWarn_screen_init(void);
+extern lv_obj_t * ui_ScreenPageBrakeWarn;
+void ui_event_brake_warn_background(lv_event_t * e);
+
+// SCREEN: ui_ScreenPageOilWarn
+void ui_ScreenPageOilWarn_screen_init(void);
+extern lv_obj_t * ui_ScreenPageOilWarn;
+void ui_event_oil_warn_background(lv_event_t * e);
+
+// SCREEN: ui_ScreenPageNeedle (指针式可配置仪表)
+void ui_ScreenPageNeedle_screen_init(void);
+extern lv_obj_t * ui_ScreenPageNeedle;
+void ui_event_needle_background(lv_event_t * e);
+// 指针页控件 (由 screen_init 创建, ui.c 的定时器刷新)
+extern lv_obj_t * ui_NeedleMeter;
+extern lv_meter_scale_t * ui_NeedleScale;
+extern lv_meter_indicator_t * ui_NeedleIndic;
+extern lv_obj_t * ui_NeedleValueLabel;
+extern lv_obj_t * ui_NeedleNameLabel;
+extern lv_obj_t * ui_NeedleUnitLabel;
+
+// SCREEN: ui_ScreenPageNeedleConfig (下滑进入的数据源选择)
+void ui_ScreenPageNeedleConfig_screen_init(void);
+extern lv_obj_t * ui_ScreenPageNeedleConfig;
+void ui_event_needle_config_background(lv_event_t * e);
+
+// 指针页运行时接口 (ui.c 实现, 复用 disp_item 系统)
+void ui_needle_page_update(float sweep_ratio);   // 每帧刷新指针与数值 (sweep_ratio<0=实时, 0~1=刷表自检)
+void ui_needle_apply_source(void);  // 数据源变化后重建量程/名称/单位
+const char *ui_disp_item_name(uint8_t item); // 取数据项显示名 (越界返回 "")
 
 // EVENTS
 

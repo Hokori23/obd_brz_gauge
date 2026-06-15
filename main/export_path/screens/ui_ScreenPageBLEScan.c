@@ -88,7 +88,7 @@ static void on_device_selected(lv_event_t *e) {
     if (s_spinner) lv_obj_clear_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
 
     elm327_ble_connect_by_name(name);
-    _ui_screen_change(&ui_ScreenPageMain, LV_SCR_LOAD_ANIM_FADE_ON, 300, 500, &ui_ScreenPageMain_screen_init);
+    _ui_screen_change(&ui_ScreenPageTemp, LV_SCR_LOAD_ANIM_FADE_ON, 300, 500, &ui_ScreenPageTemp_screen_init);
 }
 
 // 删除已保存设备

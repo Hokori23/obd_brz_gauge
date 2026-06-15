@@ -34,7 +34,7 @@ void ui_ScreenPageEasterEgg_screen_init(void)
     /* ---- Device Info Page ---- */
     // Title: OBD DSP
     lv_obj_t *label_title = lv_label_create(ui_ScreenPageEasterEgg);
-    lv_label_set_text(label_title, "SKY GARAGE");
+    lv_label_set_text(label_title, "SKY GAUGE");
     lv_obj_set_style_text_font(label_title, &ui_font_FontTypoderSize36, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(label_title, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align(label_title, LV_ALIGN_CENTER, 0, -70);

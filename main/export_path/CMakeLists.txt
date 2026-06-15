@@ -1,8 +1,4 @@
-SET(SOURCES screens/ui_ScreenPageMain.c
-    screens/ui_ScreenPageGear.c
-    screens/ui_ScreenPageRpm.c
-    screens/ui_ScreenPageSpeed.c
-    screens/ui_ScreenPageEasterEgg.c
+SET(SOURCES screens/ui_ScreenPageEasterEgg.c
     screens/ui_ScreenPageODBProtocal.c
     screens/ui_ScreenPageInfo.c
     ui.c
