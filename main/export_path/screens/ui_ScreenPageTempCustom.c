@@ -99,7 +99,5 @@ void ui_ScreenPageTempCustom_screen_init(void)
     lv_img_set_src(ear, &ui_img_pngblackear_png);
     lv_obj_align(ear, LV_ALIGN_CENTER, 0, layout.shell.black_ear_offset_y);
 
-    _ui_debug_add_page_tag(ui_ScreenPageTempCustom, "TEMP_CFG");
-
     lv_obj_add_event_cb(ui_ScreenPageTempCustom, ui_event_temp_custom_background, LV_EVENT_GESTURE, NULL);
 }

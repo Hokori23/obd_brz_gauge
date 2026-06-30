@@ -136,32 +136,6 @@ void ui_ScreenPageTemp_screen_init(void)
     ui_LabelIntakeTempText = ui_LabelTempValue[1];
     ui_LabelOilTempText = ui_LabelTempValue[2];
 
-    // Diagnostic banner: make the default landing page visually unmistakable
-    // while we verify whether the screen transition really reaches the panel.
-    lv_obj_t *page_marker = lv_label_create(ui_ScreenPageTemp);
-    lv_label_set_text(page_marker, "TEMP PAGE");
-    lv_obj_set_style_text_font(page_marker, ui_font_typoder(28), LV_PART_MAIN);
-    lv_obj_set_style_text_color(page_marker, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(page_marker, lv_color_hex(0xAA0000), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(page_marker, 255, LV_PART_MAIN);
-    lv_obj_set_style_pad_left(page_marker, 10, LV_PART_MAIN);
-    lv_obj_set_style_pad_right(page_marker, 10, LV_PART_MAIN);
-    lv_obj_set_style_pad_top(page_marker, 6, LV_PART_MAIN);
-    lv_obj_set_style_pad_bottom(page_marker, 6, LV_PART_MAIN);
-    lv_obj_align(page_marker, LV_ALIGN_TOP_MID, 0, 22);
-    lv_obj_clear_flag(page_marker, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-
-    // Black ear image at top
-    lv_obj_t *black_ear = lv_img_create(ui_ScreenPageTemp);
-    lv_img_set_src(black_ear, &ui_img_pngblackear_png);
-    lv_obj_set_width(black_ear, LV_SIZE_CONTENT);
-    lv_obj_set_height(black_ear, LV_SIZE_CONTENT);
-    lv_obj_align(black_ear, LV_ALIGN_CENTER, 0, s_temp_layout.shell.black_ear_offset_y);
-    lv_obj_add_flag(black_ear, LV_OBJ_FLAG_ADV_HITTEST);
-    lv_obj_clear_flag(black_ear, LV_OBJ_FLAG_SCROLLABLE);
-
-    _ui_debug_add_page_tag(ui_ScreenPageTemp, "TEMP");
-
     // Events
     lv_obj_add_event_cb(ui_ScreenPageTemp, ui_event_temp_background, LV_EVENT_GESTURE, NULL);
 }

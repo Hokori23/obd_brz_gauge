@@ -97,14 +97,5 @@ void ui_ScreenPageBrakeTemp_screen_init(void)
     ui_BrakeTempChartSeries = lv_chart_add_series(ui_ChartBrakeTemp, lv_color_hex(0xFF6B3D), LV_CHART_AXIS_PRIMARY_Y);
     lv_chart_set_all_value(ui_ChartBrakeTemp, ui_BrakeTempChartSeries, 0);
 
-    lv_obj_t *black_ear = lv_img_create(ui_ScreenPageBrakeTemp);
-    lv_img_set_src(black_ear, &ui_img_pngblackear_png);
-    lv_obj_set_width(black_ear, LV_SIZE_CONTENT);
-    lv_obj_set_height(black_ear, LV_SIZE_CONTENT);
-    lv_obj_set_align(black_ear, LV_ALIGN_CENTER);
-    lv_obj_set_pos(black_ear, 0, layout.shell.black_ear_offset_y);
-    lv_obj_add_flag(black_ear, LV_OBJ_FLAG_ADV_HITTEST);
-    lv_obj_clear_flag(black_ear, LV_OBJ_FLAG_SCROLLABLE);
-
     lv_obj_add_event_cb(ui_ScreenPageBrakeTemp, ui_event_brake_temp_background, LV_EVENT_GESTURE, NULL);
 }

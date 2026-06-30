@@ -109,7 +109,6 @@ void ui_ScreenPageODBProtocal_screen_init(void)
     lv_obj_set_style_text_align(ui_LabelSureTipText, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_LabelSureTipText, ui_font_typoder(20), LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    _ui_debug_add_page_tag(ui_ScreenPageODBProtocal, "OBD");
 
     /* 事件回调 */
     lv_obj_add_event_cb(ui_ScreenPageODBProtocal, ui_event_obd_prot_background, LV_EVENT_ALL, NULL);

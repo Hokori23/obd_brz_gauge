@@ -76,8 +76,6 @@ void ui_ScreenPageEasterEgg_screen_init(void)
 
     imageEasterEgg = NULL;
 
-    _ui_debug_add_page_tag(ui_ScreenPageEasterEgg, "EGG");
-
     // Gesture event on screen for page navigation
     lv_obj_add_event_cb(ui_ScreenPageEasterEgg, ui_event_easter_egg_background, LV_EVENT_ALL, NULL);
 }

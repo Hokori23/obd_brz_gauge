@@ -4,35 +4,6 @@
 // Project name: OBD_PRJ
 
 #include "ui_helpers.h"
-#include "esp_log.h"
-#include <stdlib.h>
-
-static const char *TAG = "ui_helpers";
-
-typedef struct {
-    lv_obj_t *expected_screen;
-    lv_obj_t **target_ptr;
-} ui_screen_change_trace_t;
-
-static void ui_screen_change_trace_cb(lv_timer_t *timer)
-{
-    ui_screen_change_trace_t *trace = (ui_screen_change_trace_t *)timer->user_data;
-    lv_obj_t *active = lv_scr_act();
-    ESP_LOGI(TAG, "screen_change: timer active_now=%p expected=%p target_ptr=%p match=%s",
-             (void *)active,
-             trace ? (void *)trace->expected_screen : NULL,
-             trace ? (void *)trace->target_ptr : NULL,
-             (trace && active == trace->expected_screen) ? "yes" : "no");
-
-    if (active != NULL) {
-        lv_obj_invalidate(active);
-        lv_refr_now(NULL);
-        ESP_LOGI(TAG, "screen_change: forced refresh active_now=%p", (void *)lv_scr_act());
-    }
-
-    free(trace);
-    lv_timer_del(timer);
-}
 
 void _ui_bar_set_property(lv_obj_t * target, int id, int val)
 {
@@ -80,52 +51,10 @@ void _ui_slider_set_property(lv_obj_t * target, int id, int val)
 
 void _ui_screen_change(lv_obj_t ** target, lv_scr_load_anim_t fademode, int spd, int delay, void (*target_init)(void))
 {
-    ESP_LOGI(TAG, "screen_change: target_ptr=%p target=%p active_before=%p spd=%d delay=%d",
-             (void *)target, target ? (void *)(*target) : NULL, (void *)lv_scr_act(), spd, delay);
     if(*target == NULL) {
         target_init();
-        ESP_LOGI(TAG, "screen_change: target initialized -> %p", (void *)(*target));
     }
     lv_scr_load_anim(*target, fademode, spd, delay, false);
-    ESP_LOGI(TAG, "screen_change: requested active_after=%p", (void *)lv_scr_act());
-
-    ui_screen_change_trace_t *trace = malloc(sizeof(*trace));
-    if (trace != NULL) {
-        trace->expected_screen = *target;
-        trace->target_ptr = target;
-        lv_timer_t *timer = lv_timer_create(ui_screen_change_trace_cb, (uint32_t)(spd + delay + 80), trace);
-        if (timer == NULL) {
-            ESP_LOGW(TAG, "screen_change: failed to create trace timer");
-            free(trace);
-        } else {
-            lv_timer_set_repeat_count(timer, 1);
-        }
-    } else {
-        ESP_LOGW(TAG, "screen_change: failed to allocate trace context");
-    }
-}
-
-void _ui_debug_add_page_tag(lv_obj_t *screen, const char *tag)
-{
-    lv_obj_t *label;
-
-    if (screen == NULL || tag == NULL) {
-        return;
-    }
-
-    label = lv_label_create(screen);
-    lv_label_set_text(label, tag);
-    lv_obj_set_style_text_font(label, LV_FONT_DEFAULT, LV_PART_MAIN);
-    lv_obj_set_style_text_color(label, lv_color_hex(0x00FF88), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(label, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(label, LV_OPA_70, LV_PART_MAIN);
-    lv_obj_set_style_pad_left(label, 4, LV_PART_MAIN);
-    lv_obj_set_style_pad_right(label, 4, LV_PART_MAIN);
-    lv_obj_set_style_pad_top(label, 2, LV_PART_MAIN);
-    lv_obj_set_style_pad_bottom(label, 2, LV_PART_MAIN);
-    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 8, 8);
-    lv_obj_add_flag(label, LV_OBJ_FLAG_IGNORE_LAYOUT);
-    lv_obj_clear_flag(label, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 }
 
 void _ui_screen_delete(lv_obj_t ** target)

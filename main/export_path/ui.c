@@ -767,8 +767,6 @@ void my_timerMain(lv_timer_t * timer)
                 case DEFAULT_PAGE_NEEDLE: target_scr = &ui_ScreenPageNeedle; target_init = ui_ScreenPageNeedle_screen_init;  break;
                 default: target_scr = &ui_ScreenPageTemp; target_init = ui_ScreenPageTemp_screen_init;  break;
             }
-            ESP_LOGI(TAG, "Logo timeout: default_page=%d target_ptr=%p target=%p",
-                     pg_cfg->default_page, (void *)target_scr, target_scr ? (void *)(*target_scr) : NULL);
             if(*target_scr == NULL) target_init();
             ui_logo_transition_to(target_scr, target_init, "timeout");
             // Logo 结束后检查是否有挂起的刷表请求
@@ -802,16 +800,11 @@ void ui_event_logo_background(lv_event_t * e)
         }
         last_click_tick = now;
 
-        ESP_LOGI(TAG, "Logo clicked: count=%u now=%" PRIu32, click_cnt, now);
-
         if(click_cnt >= 2) {
             click_cnt = 0;
-            ESP_LOGI(TAG, "Logo double-click: open protocol page");
             if(ui_ScreenPageODBProtocal == NULL) ui_ScreenPageODBProtocal_screen_init();
             ui_logo_transition_to(&ui_ScreenPageODBProtocal, ui_ScreenPageODBProtocal_screen_init, "double_click");
         }
-
-        ESP_LOGI(TAG, "Logo LV_EVENT_CLICKED ! \n");
     }   
 }
 

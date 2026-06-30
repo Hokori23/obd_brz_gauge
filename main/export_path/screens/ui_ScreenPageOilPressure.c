@@ -96,14 +96,5 @@ void ui_ScreenPageOilPressure_screen_init(void)
     ui_OilPressureChartSeries = lv_chart_add_series(ui_ChartOilPressure, lv_color_hex(0xFFD166), LV_CHART_AXIS_PRIMARY_Y);
     lv_chart_set_all_value(ui_ChartOilPressure, ui_OilPressureChartSeries, 0);
 
-    lv_obj_t *ear = lv_img_create(ui_ScreenPageOilPressure);
-    lv_img_set_src(ear, &ui_img_pngblackear_png);
-    lv_obj_set_width(ear, LV_SIZE_CONTENT);
-    lv_obj_set_height(ear, LV_SIZE_CONTENT);
-    lv_obj_set_align(ear, LV_ALIGN_CENTER);
-    lv_obj_set_pos(ear, 0, layout.shell.black_ear_offset_y);
-    lv_obj_add_flag(ear, LV_OBJ_FLAG_ADV_HITTEST);
-    lv_obj_clear_flag(ear, LV_OBJ_FLAG_SCROLLABLE);
-
     lv_obj_add_event_cb(ui_ScreenPageOilPressure, ui_event_oil_pressure_background, LV_EVENT_GESTURE, NULL);
 }

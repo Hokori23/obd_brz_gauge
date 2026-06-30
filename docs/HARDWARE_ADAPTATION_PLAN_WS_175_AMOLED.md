@@ -559,8 +559,66 @@ UI compatibility checks on `466x466`:
 - `Temp / Info / Brake / Oil / Needle / Settings / BLE` pages can all be entered and exited
 - typography still feels proportionate on the larger round panel
 
-Current status must still be stated carefully:
+Current status after real-board acceptance:
 
 - the WS175 code path, architecture and static validation are already in place
-- the project is not yet entitled to claim `overall WS175 compatibility complete`
-- that claim only becomes true after real-board display, touch, brightness and page-flow validation succeed
+- the latest cleanup build has now also passed real-board validation
+- the repository can treat the current WS175 compatibility baseline as working for:
+  - boot stability
+  - page flow
+  - touch interaction
+  - brightness control
+  - the cleaned round-ring visuals on the affected pages
+
+## 13. 2026-07-01 Follow-up
+
+### Context
+
+After commit `6f34889 feat: 兼容ws175`, a later `°C` text fix introduced a startup regression and several temporary UI/debug artifacts remained in the tree.
+
+### Confirmed findings
+
+- The `Guru Meditation Error: Cache error` seen right after `Start UI` was not a generic LVGL issue.
+- Root cause was the custom-font fallback wiring added for `°C` support: code was writing `.fallback` into generated `const lv_font_t` objects stored in flash/rodata.
+- The runtime-safe fix is to clone each custom font descriptor into writable RAM and set fallback on the clone instead of mutating the original font struct.
+- The `D:/esp/v5.5/esp-idf` build failure around `tlsf_find_containing_block` was an environment problem, not a repository dependency problem.
+- The broken tree was a mixed/corrupted ESP-IDF checkout; the clean working path is `D:\esp\v5.5.4-clean`.
+
+### Page-switch and debug cleanup notes
+
+- The temporary page-routing diagnostics in `ui_helpers.c` were added while debugging a WS175 page-switch failure.
+- Final conclusion from that thread: the old refresh logic used by the original repository did not behave correctly on WS175.
+- The working direction came from aligning the refresh path with the official WS175 demo behavior, after which the page-switch issue was resolved.
+- Once the routing issue was understood, the temporary diagnostics were removed again.
+
+### UI artifact cleanup
+
+- `ui_img_pngblackear_png` is a real top overlay image (`306x38`) with two black corner blocks.
+- On round-ring pages it visibly cuts into the white outer ring on WS175.
+- The overlay was removed from:
+  - `TEMP`
+  - `INFO`
+  - `OIL PRESS`
+  - `BRAKE TEMP`
+- The temporary `TEMP PAGE` banner and page-tag debug labels were also removed.
+
+### Verification
+
+- `powershell -ExecutionPolicy Bypass -File .\tools\run_ui_platform_static_tests.ps1`
+  - passed
+- `idf.py -B build -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.ws175" build`
+  - passed on `ESP-IDF v5.5.4-clean`
+
+### Real-board acceptance result
+
+Real hardware acceptance has now succeeded on the cleaned build.
+
+Confirmed on board:
+
+- no reboot loop after UI startup
+- top white ring is no longer blocked on `TEMP / INFO / OIL PRESS / BRAKE TEMP`
+- page transitions remain stable after removing the temporary debug diagnostics
+
+### Remaining follow-up
+
+- If page transitions are enhanced later, prefer extending the current `lv_scr_load_anim` path instead of introducing a second custom transition framework.
