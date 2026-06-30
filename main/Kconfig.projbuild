@@ -1,4 +1,17 @@
 menu "OBD DSP Configuration"
+    choice OBD_BOARD_SELECTION
+        prompt "Target board"
+        default OBD_BOARD_WS_175_AMOLED
+        help
+            Select the board support package used by this firmware build.
+
+        config OBD_BOARD_WS_185
+            bool "Waveshare ESP32-S3-Touch-LCD-1.85"
+
+        config OBD_BOARD_WS_175_AMOLED
+            bool "Waveshare ESP32-S3-Touch-AMOLED-1.75"
+    endchoice
+
     # Waveshare ESP32-S3-Touch-LCD-1.85
     # LCD: ST77916 (360x360 QSPI)
     # Touch: CST816 (I2C)

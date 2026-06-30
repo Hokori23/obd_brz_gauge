@@ -4,85 +4,75 @@
 // Project name: OBD_PRJ
 // UI主题命名为 PINK_CAT(粉色猫咪)，主色调为粉色，副色调为紫色
 #include "ui.h"
+#include "ui_font_profile.h"
 #include "ui_helpers.h"
 #include <driver/gpio.h>
-#include "bsp_obd_dsp/bsp_board.h"
+#include "app_obd_dsp/default_page_ids.h"
+#include "bsp_obd_dsp/boards/board_api.h"
 #include "bsp_obd_dsp/nvs_storage.h"
-#include "bsp_obd_dsp/lcd_driver/ST77916.h"
 #include "bsp_obd_dsp/elm327_ble_client.h"
 #include "esp_system.h"
 #include "esp_idf_version.h"
 
 
 static const char *TAG = "ui";
+static bool s_logo_transition_started = false;
+
+static const char *gesture_dir_name(lv_dir_t dir)
+{
+    switch (dir) {
+    case LV_DIR_LEFT:
+        return "LEFT";
+    case LV_DIR_RIGHT:
+        return "RIGHT";
+    case LV_DIR_TOP:
+        return "TOP";
+    case LV_DIR_BOTTOM:
+        return "BOTTOM";
+    default:
+        return "NONE";
+    }
+}
+
+static void log_gesture_event(const char *screen_name, lv_dir_t dir)
+{
+    ESP_LOGI(TAG, "%s gesture=%s", screen_name, gesture_dir_name(dir));
+}
+
+static void ui_logo_unloaded_cb(lv_event_t *e)
+{
+    lv_obj_t *screen = lv_event_get_target(e);
+    ESP_LOGI(TAG, "Logo unloaded: screen=%p active_now=%p", (void *)screen, (void *)lv_scr_act());
+    if (screen != NULL) {
+        lv_obj_del(screen);
+    }
+    ui_ScreenPageLogo = NULL;
+    imageLogo = NULL;
+}
+
+static void ui_logo_transition_to(lv_obj_t **target_scr, void (*target_init)(void), const char *reason)
+{
+    if (s_logo_transition_started) {
+        ESP_LOGI(TAG, "Logo transition ignored: reason=%s already started", reason);
+        return;
+    }
+
+    s_logo_transition_started = true;
+    ESP_LOGI(TAG, "Logo transition start: reason=%s logo=%p target_ptr=%p target=%p",
+             reason, (void *)ui_ScreenPageLogo, (void *)target_scr,
+             target_scr ? (void *)(*target_scr) : NULL);
+
+    if (ui_ScreenPageLogo != NULL) {
+        lv_obj_add_event_cb(ui_ScreenPageLogo, ui_logo_unloaded_cb, LV_EVENT_SCREEN_UNLOADED, NULL);
+    }
+
+    _ui_screen_change(target_scr, LV_SCR_LOAD_ANIM_FADE_ON, 300, 0, target_init);
+}
 ///////////////////// VARIABLES ////////////////////
 void ui_ScreenPageLogo_screen_init(void);
 lv_obj_t * ui_ScreenPageLogo;
 lv_obj_t * imageLogo;
 lv_obj_t * imageEasterEgg;
-
-// SCREEN: ui_ScreenPageMain
-void ui_ScreenPageMain_screen_init(void);
-lv_obj_t * ui_ScreenPageMain;
-lv_obj_t * ui_ImageMainPageback;
-lv_obj_t * ui_SpinnerMainPage;
-lv_obj_t * ui_ArcGearNumBack;
-lv_obj_t * ui_LabelGeningRpmText;
-lv_obj_t * ui_LabelGeningRpmUnitText;
-lv_obj_t * ui_LabelCarSpeedText;
-lv_obj_t * ui_LabelCarSpeedUnitText;
-lv_obj_t * ui_ContainerMainPageBottomBlock;
-lv_obj_t * ui_LabelGearNumText;
-lv_obj_t * ui_ContainerMainPageMlieageBlock;
-lv_obj_t * ui_LabelMainMlieageText;
-lv_obj_t * ui_LabelMainMieageNum;
-// CUSTOM VARIABLES
-typedef enum {
-    INFO_NONE = 0,
-    INFO_TRIP,
-    INFO_ODO,
-    INFO_MAX,
-    INFO_AVG,
-    INFO_TIME,
-    INFO_MODE_COUNT
-} info_mode_t;
-
-static info_mode_t s_info_mode = INFO_NONE; // 默认显示档位
-
-static uint32_t s_trip_press_start = 0;
-
-
-// SCREEN: ui_ScreenPageGear
-void ui_ScreenPageGear_screen_init(void);
-lv_obj_t * ui_ScreenPageGear;
-lv_obj_t * ui_SpinnerGearPage;
-lv_obj_t * ui_GearPageArcGearNumBack;
-lv_obj_t * ui_GearPageArcLabelGearNumText;
-lv_obj_t * ui_ImageGearBlackEar;
-// CUSTOM VARIABLES
-
-
-// SCREEN: ui_ScreenPageRpm
-void ui_ScreenPageRpm_screen_init(void);
-lv_obj_t * ui_ScreenPageRpm;
-lv_obj_t * ui_SpinnerRpmPage;
-lv_obj_t * ui_RpmPageArcRpmBack;
-lv_obj_t * ui_RpmPageArcLabelRpmText;
-lv_obj_t * ui_RpmPageArcLabelRpmUnit;
-lv_obj_t * ui_ImageRpmBlackEar;
-// CUSTOM VARIABLES
-
-
-// SCREEN: ui_ScreenPageSpeed
-void ui_ScreenPageSpeed_screen_init(void);
-lv_obj_t * ui_ScreenPageSpeed;
-lv_obj_t * ui_SpinnerSpeedPage;
-lv_obj_t * ui_SpeedPageArcSpeedBack;
-lv_obj_t * ui_SpeedPageArcLabelSpeedText;
-lv_obj_t * ui_SpeedPageArcLabelSpeedUnit;
-lv_obj_t * ui_ImageSpeedBlackEar;
-// CUSTOM VARIABLES
-
 
 // SCREEN: ui_ScreenPageEasterEgg
 void ui_ScreenPageEasterEgg_screen_init(void);
@@ -166,7 +156,6 @@ lv_obj_t * ui_LabelSureTipText;
 lv_obj_t * ui____initial_actions0;
 
 
-static uint16_t usClearTripDataTimeCnt = 0;
 static uint16_t usSaveProtTimeCnt = 0; //OBD协议保存计时
 
 // IMAGES AND IMAGE SETS
@@ -223,16 +212,16 @@ typedef struct {
 } disp_item_meta_t;
 
 static const disp_item_meta_t s_disp_meta[DISP_ITEM_COUNT] = {
-    {"CLT", "'C", 0x44AAFF},
-    {"IAT", "'C", 0x44FF88},
-    {"OIL", "'C", 0xFF7722},
+    {"CLT", "°C", 0x44AAFF},
+    {"IAT", "°C", 0x44FF88},
+    {"OIL", "°C", 0xFF7722},
     {"LOD", "%", 0xFFCC00},
     {"TPS", "%", 0xFF8844},
     {"RPM", "rpm", 0x66CCFF},
     {"SPD", "km/h", 0xFFFFFF},
     {"BAT", "V", 0xAACCFF},
     {"OIP", "bar", 0xFFD166},
-    {"BKT", "'C", 0xFF5A5A},
+    {"BKT", "°C", 0xFF5A5A},
     {"BST", "bar", 0x00DD88},
 };
 
@@ -278,7 +267,7 @@ static int32_t disp_item_sweep_value(disp_item_t item, float r)
         case DISP_ITEM_OILP:
             return (int32_t)(100.0f * r); // 0.0~10.0bar (x10)
         case DISP_ITEM_BKT:
-            return (int32_t)(600.0f * r); // 0.0~60.0'C (x10)
+            return (int32_t)(600.0f * r); // 0.0~60.0°C (x10)
         case DISP_ITEM_BOOST:
             return (int32_t)(20.0f * r); // 0.0~2.0bar 表压 (x10)
         default:
@@ -289,7 +278,7 @@ static int32_t disp_item_sweep_value(disp_item_t item, float r)
 static void disp_item_set_text(lv_obj_t *label, disp_item_t item, int32_t value, bool valid)
 {
     if (!label) return;
-    lv_obj_set_style_text_font(label, &ui_font_FontTypoderSize36, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, ui_font_typoder(36), LV_PART_MAIN);
 
     if (!valid) {
         lv_label_set_text(label, "--");
@@ -646,7 +635,6 @@ void my_timerMain(lv_timer_t * timer)
     /* 刹车温度页面更新 */
     if (ui_LabelBrakeTempText) {
         int16_t display_brake_x10 = BRAKE_TEMP_TREND_INVALID;
-        const lv_font_t *temp_font = &ui_font_FontTypoderSize28;
         lv_color_t temp_color = lv_color_hex(0xFFFFFF);
         if (s_sweep_step > 0) {
             int step = s_sweep_step - 1;
@@ -667,19 +655,11 @@ void my_timerMain(lv_timer_t * timer)
             }
         }
 
-        if (display_brake_x10 >= 10000 || display_brake_x10 <= -10000) {
-            temp_font = &ui_font_FontTypoderSize24;
-        } else if (display_brake_x10 >= 1000 || display_brake_x10 <= -1000) {
-            temp_font = &ui_font_FontTypoderSize28;
-        } else {
-            temp_font = &ui_font_FontTypoderSize32;
-        }
-
         if (display_brake_x10 >= brake_warn_x10) {
             temp_color = lv_color_hex(0xFF4D4D);
         }
 
-        lv_obj_set_style_text_font(ui_LabelBrakeTempText, temp_font, LV_PART_MAIN);
+        lv_obj_set_style_text_font(ui_LabelBrakeTempText, ui_font_brake_temp_value(display_brake_x10), LV_PART_MAIN);
         lv_obj_set_style_text_color(ui_LabelBrakeTempText, temp_color, LV_PART_MAIN);
 
         uint32_t now = lv_tick_get();
@@ -743,23 +723,26 @@ void my_timerMain(lv_timer_t * timer)
             ble_now ? "Connected" : "Disconnected");
     }
  
-#if EXAMPLE_PIN_NUM_BK_LIGHT >= 0
-        //等待500ms后开背光，避免没有初始化完成就开背光，只执行一次
-        if(ucOnlyOnce == 0)
+    //等待500ms后开亮度，避免没有初始化完成就提前点亮面板，只执行一次
+    if(ucOnlyOnce == 0)
+    {
+        ulOpenLightTimeCnt++;
+        if(ulOpenLightTimeCnt > 400 / 200)
         {
-            ulOpenLightTimeCnt++;
-            if(ulOpenLightTimeCnt > 400 / 200)
-            {
-                const nvs_user_cfg_t *bl_cfg = nvs_cfg_get();
-                uint8_t bright = bl_cfg->brightness_day;
-                if(bright < 10) bright = 100;
-                Set_Backlight(bright);
-                ESP_LOGI(TAG, "Set LCD backlight to %d%%", bright);
-                ulOpenLightTimeCnt = 0;
-                ucOnlyOnce = 1;//只执行一次
+            const nvs_user_cfg_t *bl_cfg = nvs_cfg_get();
+            uint8_t bright = bl_cfg->brightness_day;
+            esp_err_t err;
+            if(bright < 10) bright = 100;
+            err = board_set_brightness(bright);
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "Set display brightness failed: %s", esp_err_to_name(err));
+            } else {
+                ESP_LOGI(TAG, "Set display brightness to %d%%", bright);
             }
+            ulOpenLightTimeCnt = 0;
+            ucOnlyOnce = 1;//只执行一次
         }
-#endif
+    }
 
     /* 底部信息栏(TRIP/ODO/MAX/AVG/TIME)原属已删除的 Main 页面，随之移除。
        里程统计仍由后台任务持续累计，可在其它页面或后续重新接入展示。 */
@@ -777,17 +760,17 @@ void my_timerMain(lv_timer_t * timer)
             void (*target_init)(void) = NULL;
             // 默认页: 0=Temp, 1=Info, 2=Brake, 3=OilP, 4=Needle (Main/Gear/Rpm/Speed 已删除)
             switch(pg_cfg->default_page) {
-                case 0: target_scr = &ui_ScreenPageTemp;  target_init = ui_ScreenPageTemp_screen_init;  break;
-                case 1: target_scr = &ui_ScreenPageInfo;  target_init = ui_ScreenPageInfo_screen_init;  break;
-                case 2: target_scr = &ui_ScreenPageBrakeTemp; target_init = ui_ScreenPageBrakeTemp_screen_init;  break;
-                case 3: target_scr = &ui_ScreenPageOilPressure; target_init = ui_ScreenPageOilPressure_screen_init;  break;
-                case 4: target_scr = &ui_ScreenPageNeedle; target_init = ui_ScreenPageNeedle_screen_init;  break;
+                case DEFAULT_PAGE_TEMP: target_scr = &ui_ScreenPageTemp;  target_init = ui_ScreenPageTemp_screen_init;  break;
+                case DEFAULT_PAGE_INFO: target_scr = &ui_ScreenPageInfo;  target_init = ui_ScreenPageInfo_screen_init;  break;
+                case DEFAULT_PAGE_BRAKE_TEMP: target_scr = &ui_ScreenPageBrakeTemp; target_init = ui_ScreenPageBrakeTemp_screen_init;  break;
+                case DEFAULT_PAGE_OIL_PRESSURE: target_scr = &ui_ScreenPageOilPressure; target_init = ui_ScreenPageOilPressure_screen_init;  break;
+                case DEFAULT_PAGE_NEEDLE: target_scr = &ui_ScreenPageNeedle; target_init = ui_ScreenPageNeedle_screen_init;  break;
                 default: target_scr = &ui_ScreenPageTemp; target_init = ui_ScreenPageTemp_screen_init;  break;
             }
+            ESP_LOGI(TAG, "Logo timeout: default_page=%d target_ptr=%p target=%p",
+                     pg_cfg->default_page, (void *)target_scr, target_scr ? (void *)(*target_scr) : NULL);
             if(*target_scr == NULL) target_init();
-            lv_scr_load_anim(*target_scr, LV_SCR_LOAD_ANIM_FADE_ON, 300, 0, true);
-            ui_ScreenPageLogo = NULL;
-            imageLogo = NULL;
+            ui_logo_transition_to(target_scr, target_init, "timeout");
             // Logo 结束后检查是否有挂起的刷表请求
             if(s_sweep_pending) {
                 s_sweep_pending = false;
@@ -809,22 +792,24 @@ void ui_event_logo_background(lv_event_t * e)
     lv_event_code_t event_code = lv_event_get_code(e);
     if(event_code == LV_EVENT_CLICKED) {
         static uint32_t last_click_tick = 0;
-        static uint8_t  click_cnt = 0;
+        static uint8_t click_cnt = 0;
         uint32_t now = lv_tick_get();
-        if(now - last_click_tick < 400){
+
+        if(now - last_click_tick < 400) {
             click_cnt++;
-        }else{
+        } else {
             click_cnt = 1;
         }
         last_click_tick = now;
 
-        if(click_cnt >= 2){
+        ESP_LOGI(TAG, "Logo clicked: count=%u now=%" PRIu32, click_cnt, now);
+
+        if(click_cnt >= 2) {
             click_cnt = 0;
+            ESP_LOGI(TAG, "Logo double-click: open protocol page");
             if(ui_ScreenPageODBProtocal == NULL) ui_ScreenPageODBProtocal_screen_init();
-            lv_scr_load_anim(ui_ScreenPageODBProtocal, LV_SCR_LOAD_ANIM_FADE_ON, 300, 0, true);
-            ui_ScreenPageLogo = NULL;
-            imageLogo = NULL;
-        }  
+            ui_logo_transition_to(&ui_ScreenPageODBProtocal, ui_ScreenPageODBProtocal_screen_init, "double_click");
+        }
 
         ESP_LOGI(TAG, "Logo LV_EVENT_CLICKED ! \n");
     }   
@@ -838,6 +823,7 @@ void ui_event_temp_background(lv_event_t * e)
     lv_event_code_t event_code = lv_event_get_code(e);
     if(event_code == LV_EVENT_GESTURE) {
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("Temp", dir);
         if(dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageEasterEgg, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageEasterEgg_screen_init);
@@ -858,6 +844,7 @@ void ui_event_temp_custom_background(lv_event_t * e)
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_GESTURE) {
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("TempCustom", dir);
         if (dir == LV_DIR_TOP || dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageTemp_screen_init);
@@ -870,6 +857,7 @@ void ui_event_brake_temp_background(lv_event_t * e)
     lv_event_code_t event_code = lv_event_get_code(e);
     if(event_code == LV_EVENT_GESTURE) {
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("BrakeTemp", dir);
         if(dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageOilPressure, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageOilPressure_screen_init);
@@ -890,6 +878,7 @@ void ui_event_oil_pressure_background(lv_event_t * e)
     lv_event_code_t event_code = lv_event_get_code(e);
     if(event_code == LV_EVENT_GESTURE) {
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("OilPressure", dir);
         if(dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageNeedle, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageNeedle_screen_init);
@@ -910,6 +899,7 @@ void ui_event_brake_warn_background(lv_event_t * e)
     lv_event_code_t code = lv_event_get_code(e);
     if(code == LV_EVENT_GESTURE){
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("BrakeWarn", dir);
         if(dir == LV_DIR_TOP || dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageBrakeTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageBrakeTemp_screen_init);
@@ -922,6 +912,7 @@ void ui_event_oil_warn_background(lv_event_t * e)
     lv_event_code_t code = lv_event_get_code(e);
     if(code == LV_EVENT_GESTURE){
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("OilWarn", dir);
         if(dir == LV_DIR_TOP || dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageOilPressure, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageOilPressure_screen_init);
@@ -936,6 +927,7 @@ void ui_event_needle_background(lv_event_t * e)
     lv_event_code_t code = lv_event_get_code(e);
     if(code == LV_EVENT_GESTURE){
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("Needle", dir);
         if(dir == LV_DIR_BOTTOM){
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageNeedleConfig, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageNeedleConfig_screen_init);
@@ -956,6 +948,7 @@ void ui_event_needle_config_background(lv_event_t * e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     if(code == LV_EVENT_GESTURE){
+        log_gesture_event("NeedleConfig", lv_indev_get_gesture_dir(lv_indev_get_act()));
         lv_indev_wait_release(lv_indev_get_act());
         _ui_screen_change(&ui_ScreenPageNeedle, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageNeedle_screen_init);
     }
@@ -966,6 +959,7 @@ void ui_event_info_background(lv_event_t * e)
     lv_event_code_t event_code = lv_event_get_code(e);
     if(event_code == LV_EVENT_GESTURE) {
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("Info", dir);
         if(dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageTemp_screen_init);
@@ -986,6 +980,7 @@ void ui_event_info_custom_background(lv_event_t * e)
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_GESTURE) {
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("InfoCustom", dir);
         if (dir == LV_DIR_TOP || dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageInfo, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageInfo_screen_init);
@@ -997,6 +992,7 @@ void ui_event_easter_egg_background(lv_event_t * e)
     lv_event_code_t event_code = lv_event_get_code(e);
     if(event_code == LV_EVENT_GESTURE) {
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("EasterEgg", dir);
         if(dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageBrakeTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageBrakeTemp_screen_init);
@@ -1021,6 +1017,7 @@ void ui_event_easter_egg_background(lv_event_t * e)
 
 void ui_init(void)
 {
+    ui_font_profile_init();
     lv_disp_t * dispp = lv_disp_get_default();
     lv_theme_t * theme = lv_theme_default_init(dispp, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED),
                                                false, LV_FONT_DEFAULT);
@@ -1040,6 +1037,7 @@ void ui_init(void)
     ui_ScreenPageInfoCustom = NULL;
     ui_ScreenPageNeedleConfig = NULL;   // 配置页懒加载
     ui____initial_actions0 = lv_obj_create(NULL);
+    s_logo_transition_started = false;
     lv_disp_load_scr(ui_ScreenPageLogo);
 
     lv_timer_create(my_timerMain, 200, NULL);  //200 ms 周期
@@ -1051,9 +1049,13 @@ void ui_event_obd_prot_background(lv_event_t * e)
     lv_event_code_t code = lv_event_get_code(e);
     if(code == LV_EVENT_GESTURE){
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("OBDProtocal", dir);
         if(dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
+            ESP_LOGI(TAG, "OBDProtocal gesture: switch to Temp target=%p active_before=%p",
+                     (void *)ui_ScreenPageTemp, (void *)lv_scr_act());
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageTemp_screen_init);
+            ESP_LOGI(TAG, "OBDProtocal gesture: switch requested active_after=%p", (void *)lv_scr_act());
         }
     }else if(code == LV_EVENT_LONG_PRESSED){
         usSaveProtTimeCnt = 0;
@@ -1077,6 +1079,7 @@ void ui_event_ble_scan_background(lv_event_t * e)
     lv_event_code_t code = lv_event_get_code(e);
     if(code == LV_EVENT_GESTURE){
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("BLEScan", dir);
         if(dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
             elm327_ble_scan_only_stop();
             lv_indev_wait_release(lv_indev_get_act());
@@ -1091,6 +1094,7 @@ void ui_event_settings_background(lv_event_t * e)
     lv_event_code_t code = lv_event_get_code(e);
     if(code == LV_EVENT_GESTURE){
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("Settings", dir);
         if(dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
             lv_indev_wait_release(lv_indev_get_act());
             _ui_screen_change(&ui_ScreenPageEasterEgg, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageEasterEgg_screen_init);

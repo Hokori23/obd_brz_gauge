@@ -1,76 +1,78 @@
 # OBD BRZ Gauge
 
-OBD BRZ Gauge is an ESP-IDF based round dashboard project for the Waveshare ESP32-S3-Touch-LCD-1.85 development board. It connects to an ELM327-compatible BLE OBD adapter, reads vehicle data, and renders a touch UI with LVGL.
+这是一个运行在 `ESP32-S3` 上的车载圆形仪表项目。它通过 `BLE -> ELM327 -> OBD` 读取车辆数据，再用 `LVGL` 渲染触摸界面。
 
-这是一个基于 ESP-IDF 的圆形车载仪表项目，目标硬件为微雪 Waveshare ESP32-S3-Touch-LCD-1.85 开发板。项目通过 BLE 连接兼容 ELM327 的 OBD 适配器，读取车辆数据并使用 LVGL 显示触控界面。
+如果你是 Web 全栈开发，可以先这样映射：
 
-效果展示/Demo Video
-https://www.douyin.com/video/7614174567678984187
+- `app_main.c` 类似应用启动入口
+- `app_obd_dsp` 类似业务层 / domain 层
+- `bsp_obd_dsp` 类似基础设施层 / 硬件适配层
+- `export_path` 类似设计工具导出的 UI 代码
+- `NVS` 类似设备本地 KV 存储
+- `FreeRTOS task` 类似常驻后台 worker
 
-## Status
+演示视频：
+`https://www.douyin.com/video/7614174567678984187`
 
-- Hardware platform: Waveshare ESP32-S3-Touch-LCD-1.85
-- Software stack: ESP-IDF 5.1+, LVGL 8
-- Protocol path: BLE + ELM327
-- Validation status: data is currently tested only on Subaru BRZ ZC6
+## 项目状态
 
-- 硬件平台：微雪 Waveshare ESP32-S3-Touch-LCD-1.85
-- 软件栈：ESP-IDF 5.1+、LVGL 8
-- 通信链路：BLE + ELM327
-- 当前验证状态：数据目前仅在斯巴鲁 Subaru BRZ ZC6 上完成测试
+- 硬件平台：`Waveshare ESP32-S3-Touch-LCD-1.85`
+- 软件栈：`ESP-IDF 5.1+`、`LVGL 8`
+- 通信链路：`BLE + ELM327`
+- 当前验证重点：`Subaru BRZ ZC6`
 
-## Features
+## 系统在做什么
 
-- BLE scan and connection for ELM327-compatible adapters
-- Real-time display for RPM, speed, coolant temperature, intake temperature, oil temperature, throttle position, fuel level, battery voltage, and related values
-- LVGL touch UI exported from SquareLine-based assets
-- Local persistence for user configuration and mileage statistics via NVS
+1. 初始化板级外设：I2C、IO 扩展、LCD、背光、触摸。
+2. 初始化 `LVGL`，启动 UI 刷新任务。
+3. 从 `NVS` 读取用户配置和里程统计。
+4. 连接蓝牙 OBD 设备，轮询 OBD PID。
+5. 把解析后的车况数据写入共享缓存。
+6. UI 页面从共享缓存读取数据并显示。
+7. 额外采集刹车温度、机油压力，并通过 BLE 服务对外广播。
 
-- 支持扫描并连接兼容 ELM327 的 BLE OBD 设备
-- 实时显示转速、车速、水温、进气温度、机油温度、节气门开度、油量、电压等数据
-- 使用 LVGL 和导出 UI 资源实现触控界面
-- 通过 NVS 持久化保存用户配置和里程统计数据
+## 学习顺序
 
-## Quick Start
+1. [main/README.md](main/README.md)
+2. [main/app_main.c](main/app_main.c)
+3. [main/app_obd_dsp/README.md](main/app_obd_dsp/README.md)
+4. [main/bsp_obd_dsp/README.md](main/bsp_obd_dsp/README.md)
+5. [main/export_path/README.md](main/export_path/README.md)
 
-1. Install ESP-IDF 5.1 or newer.
-2. Set the target to ESP32-S3.
-3. Build and flash the project.
+## 目录树
+
+```text
+.
+|-- README.md
+|-- docs/                     项目文档
+|-- firmware/                 预编译固件
+|-- tools/                    辅助脚本
+`-- main/                     主组件
+    |-- app_main.c            入口
+    |-- README.md             主流程说明
+    |-- app_obd_dsp/          业务层
+    |-- bsp_obd_dsp/          板级与驱动层
+    `-- export_path/          UI 导出代码
+```
+
+## 编译烧录
 
 ```bash
 idf.py set-target esp32s3
-idf.py build
-idf.py -p PORT flash monitor
+idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.ws175" build
+idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.ws175" -p PORT flash monitor
 ```
 
-1. 安装 ESP-IDF 5.1 或更高版本。
-2. 将目标芯片设置为 ESP32-S3。
-3. 编译并烧录项目。
+## 学习时重点关注
 
-```bash
-idf.py set-target esp32s3
-idf.py build
-idf.py -p PORT flash monitor
-```
+- `app_main.c`：系统启动顺序
+- `elm327_ble_client.c`：OBD 通信状态机
+- `obd_data_cache.c`：共享数据与平滑处理
+- `nvs_storage.c`：配置和里程持久化
+- `vehicle_profiles.c`：车型差异抽象
 
-## Project Layout
+## 相关文档
 
-- [main/app_main.c](main/app_main.c): application entry, LVGL initialization, BLE startup, task startup
-- [main/app_obd_dsp](main/app_obd_dsp): runtime OBD data cache and mileage statistics logic
-- [main/bsp_obd_dsp](main/bsp_obd_dsp): board support package, BLE client, NVS, LCD, touch, I2C, IO expander drivers
-- [main/export_path](main/export_path): UI source exported from the design tool
-- [docs](docs): open-source documentation, bilingual README, structure notes
-
-## Documentation
-
-- 中文说明：[docs/README.zh-CN.md](docs/README.zh-CN.md)
-- English documentation: [docs/README.en.md](docs/README.en.md)
-- 发布结构说明：[docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
-
-## Notes
-
-- This repository contains project-specific board adaptation and UI resources; if you port it to another ESP32-S3 board or another vehicle, you will likely need to adjust pin mapping, display settings, and OBD parsing behavior.
-- The current parsing and verification focus on Subaru BRZ ZC6. Other vehicles may require protocol, PID, or adapter compatibility adjustments.
-
-- 仓库内包含针对当前开发板的适配代码和 UI 资源；如果迁移到其他 ESP32-S3 开发板或其他车型，需要重新检查引脚定义、屏幕参数和 OBD 解析逻辑。
-- 当前解析和验证重点面向 Subaru BRZ ZC6，其他车型可能需要额外调整协议、PID 或适配器兼容性。
+- [docs/README.zh-CN.md](docs/README.zh-CN.md)
+- [docs/README.en.md](docs/README.en.md)
+- [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)

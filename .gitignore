@@ -1,4 +1,6 @@
 build/
+build-ws175/
+backups/
 managed_components/
 sdkconfig.old
 sdkconfig
@@ -6,3 +8,4 @@ sdkconfig
 .DS_Store
 **/.DS_Store
 main/SAX0AC BC CC.pdf
+ 

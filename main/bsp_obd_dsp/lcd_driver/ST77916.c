@@ -1,4 +1,5 @@
 #include "bsp_obd_dsp/lcd_driver/ST77916.h"
+#include "bsp_obd_dsp/touch_driver/CST816.h"
 
 
 #define LCD_OPCODE_WRITE_CMD        (0x02ULL)

@@ -6,11 +6,14 @@
 #include "esp_gap_ble_api.h"
 #include "esp_gattc_api.h"
 #include "esp_bt_defs.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_memory_utils.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
 #include "app_obd_dsp/obd_data_cache.h"
 #include "app_obd_dsp/vehicle_profiles.h"
+#include "bsp_obd_dsp/ble_scan_buffer_profile.h"
 #include "racechrono_ble_diy.h"
 #include <string.h>
 #include <stdlib.h>
@@ -48,7 +51,7 @@ static char s_target_name[32] = "OBDII";
 // ---- 扫描模式相关 ----
 static bool s_scan_only_mode = false;  // true=仅扫描不连接
 static ble_scan_found_cb_t s_scan_cb = NULL;
-static ble_scan_result_t s_scan_list[BLE_SCAN_MAX_DEVICES];
+static ble_scan_result_t *s_scan_list = NULL;
 static int s_scan_count = 0;
 static bool s_ble_inited = false;  // BLE 协议栈是否已初始化
 static bool s_poll_task_started = false; // 轮询任务是否已创建
@@ -88,6 +91,45 @@ static int8_t s_oil_temp_offset = 0;  // 用户校准偏移量，单位 °C
 static volatile bool s_elm_ready = true; // 初始允许发送首条 ATZ
 static volatile bool s_expect_mode21 = false; // true=上条命令是 21 01，等待 61 01 响应
 bool elm327_ble_send_ascii_blocking(const char *ascii_cmd);
+
+static ble_scan_result_t *ble_scan_buffer_alloc(void)
+{
+    size_t bytes = BLE_SCAN_BUFFER_BYTES(BLE_SCAN_BUFFER_CAPACITY);
+    ble_scan_result_t *buffer = heap_caps_calloc(BLE_SCAN_BUFFER_CAPACITY,
+                                                 sizeof(ble_scan_result_t),
+                                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (buffer != NULL) {
+        ESP_LOGI(TAG, "Allocated BLE scan buffer in PSRAM (%u bytes)", (unsigned)bytes);
+        return buffer;
+    }
+
+    buffer = heap_caps_calloc(BLE_SCAN_BUFFER_CAPACITY,
+                              sizeof(ble_scan_result_t),
+                              MALLOC_CAP_8BIT);
+    if (buffer != NULL) {
+        ESP_LOGW(TAG, "Falling back to internal RAM for BLE scan buffer (%u bytes)", (unsigned)bytes);
+    }
+    return buffer;
+}
+
+static bool ble_scan_buffer_ensure(void)
+{
+    if (s_scan_list != NULL) {
+        return true;
+    }
+
+    s_scan_list = ble_scan_buffer_alloc();
+    if (s_scan_list == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate BLE scan buffer (%u bytes)",
+                 (unsigned)BLE_SCAN_BUFFER_BYTES(BLE_SCAN_BUFFER_CAPACITY));
+        return false;
+    }
+
+    ESP_LOGI(TAG, "BLE scan buffer ready: capacity=%u psram=%s",
+             (unsigned)BLE_SCAN_BUFFER_CAPACITY,
+             esp_ptr_external_ram(s_scan_list) ? "yes" : "no");
+    return true;
+}
 
 // 多包响应累积缓冲区（21 01 等长响应分多个BLE包）
 #define ACCUM_BUF_SIZE 512
@@ -926,7 +968,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
 
             if (s_scan_only_mode) {
                 // 扫描模式：收集设备列表
-                if (dev_name[0] != '\0' && s_scan_count < BLE_SCAN_MAX_DEVICES) {
+                if (dev_name[0] != '\0' && s_scan_count < BLE_SCAN_MAX_DEVICES && s_scan_list != NULL) {
                     // 检查是否已存在
                     bool exists = false;
                     for (int i = 0; i < s_scan_count; i++) {
@@ -936,7 +978,10 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                         }
                     }
                     if (!exists) {
-                        strncpy(s_scan_list[s_scan_count].name, dev_name, 31);
+                        snprintf(s_scan_list[s_scan_count].name,
+                                 sizeof(s_scan_list[s_scan_count].name),
+                                 "%s",
+                                 dev_name);
                         memcpy(s_scan_list[s_scan_count].addr, pr->scan_rst.bda, 6);
                         s_scan_list[s_scan_count].rssi = pr->scan_rst.rssi;
                         s_scan_count++;
@@ -1404,10 +1449,13 @@ static void ble_ensure_init(void) {
 
 void elm327_ble_scan_only_start(int duration_s, ble_scan_found_cb_t cb) {
     ble_ensure_init();
+    if (!ble_scan_buffer_ensure()) {
+        return;
+    }
     s_scan_only_mode = true;
     s_scan_cb = cb;
     s_scan_count = 0;
-    memset(s_scan_list, 0, sizeof(s_scan_list));
+    memset(s_scan_list, 0, BLE_SCAN_BUFFER_BYTES(BLE_SCAN_BUFFER_CAPACITY));
     ESP_LOGI(TAG, "Starting scan-only mode (%ds)...", duration_s);
     esp_ble_gap_start_scanning(duration_s);
 }

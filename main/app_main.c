@@ -3,129 +3,187 @@
  *
  * SPDX-License-Identifier: CC0-1.0
  */
-// 原作者：Ray.Zhai
-// 时间：2025-09-14
-// 适配 Waveshare ESP32-S3-Touch-LCD-1.85 by adaptation
 
-#include <stdio.h>
+#include <assert.h>
 #include <inttypes.h>
+#include <stdio.h>
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "driver/gpio.h"
-#include "esp_timer.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
-
+#include "esp_memory_utils.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "lvgl.h"
 
-/* Waveshare BSP 驱动 */
-#include "bsp_obd_dsp/i2c_driver/I2C_Driver.h"
-#include "bsp_obd_dsp/exio/TCA9554PWR.h"
-#include "bsp_obd_dsp/lcd_driver/ST77916.h"       // 内部 include CST816.h & TCA9554PWR.h
+#if CONFIG_OBD_BOARD_WS_175_AMOLED
+#include "esp_lv_adapter.h"
+#endif
 
-/* 应用层 */
-#include "bsp_obd_dsp/bsp_board.h"
-#include "bsp_obd_dsp/elm327_ble_client.h"
-#include "bsp_obd_dsp/racechrono_ble_diy.h"
-#include "bsp_obd_dsp/rs485_brake_temp.h"
-#include "bsp_obd_dsp/ads1115_oil_pressure.h"
+#include "app_obd_dsp/lvgl_buffer_profile.h"
 #include "app_obd_dsp/obd_data_cache.h"
 #include "app_obd_dsp/vehicle_profiles.h"
+#include "bsp_obd_dsp/ads1115_oil_pressure.h"
+#include "bsp_obd_dsp/boards/board_api.h"
+#include "bsp_obd_dsp/elm327_ble_client.h"
+#include "bsp_obd_dsp/nvs_storage.h"
+#include "bsp_obd_dsp/racechrono_ble_diy.h"
+#include "bsp_obd_dsp/rs485_brake_temp.h"
+#include "export_path/ui_platform.h"
 
 static const char *TAG = "obd_dsp";
 
 extern void ui_init(void);
-SemaphoreHandle_t lvgl_mux = NULL; // non-static: used by BLE scan page
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////// LCD & LVGL 配置 ///////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+SemaphoreHandle_t lvgl_mux = NULL;
 
-/* 分辨率直接来自 ST77916.h 中的宏 */
-#define LCD_H_RES               EXAMPLE_LCD_WIDTH       // 360
-#define LCD_V_RES               EXAMPLE_LCD_HEIGHT      // 360
-#define LCD_BIT_PER_PIXEL       EXAMPLE_LCD_COLOR_BITS  // 16
+static bool s_touch_active = false;
+static int s_touch_last_x = -1;
+static int s_touch_last_y = -1;
+static uint32_t s_touch_press_tick = 0;
+static uint32_t s_flush_request_count = 0;
+static lv_disp_drv_t *s_registered_disp_drv = NULL;
 
-/* LVGL 参数 */
-#define LVGL_BUFF_SIZE              (LCD_H_RES * 20)
-#define LVGL_TICK_PERIOD_MS         2
-#define LVGL_TASK_MAX_DELAY_MS      500
-#define LVGL_TASK_MIN_DELAY_MS      2
-#define LVGL_TASK_STACK_SIZE        (4 * 1024)
-#define LVGL_TASK_PRIORITY          2
+#define LVGL_TICK_PERIOD_MS    2
+#define LVGL_TASK_MAX_DELAY_MS 500
+#define LVGL_TASK_MIN_DELAY_MS 2
+#define LVGL_TASK_STACK_SIZE   (4 * 1024)
+#define LVGL_TASK_PRIORITY     2
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////// LVGL 回调函数 /////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/* DMA 传输完成通知 LVGL */
-static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io,
-                                     esp_lcd_panel_io_event_data_t *edata,
-                                     void *user_ctx)
+static lv_color_t *alloc_lvgl_draw_buffer(size_t bytes, const char *label, bool prefer_internal_dma)
 {
-    lv_disp_drv_t *disp_driver = (lv_disp_drv_t *)user_ctx;
-    lv_disp_flush_ready(disp_driver);
+    lv_color_t *buffer = NULL;
+
+    if (!prefer_internal_dma) {
+        buffer = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
+        if (buffer != NULL) {
+            ESP_LOGI(TAG, "Allocated %s LVGL buffer in PSRAM DMA (%u bytes)", label, (unsigned)bytes);
+            return buffer;
+        }
+    }
+
+    buffer = heap_caps_malloc(bytes, MALLOC_CAP_DMA);
+    if (buffer != NULL) {
+        if (prefer_internal_dma) {
+            ESP_LOGI(TAG, "Allocated %s LVGL buffer in internal DMA (%u bytes)", label, (unsigned)bytes);
+        } else {
+            ESP_LOGW(TAG, "Falling back to internal DMA for %s LVGL buffer (%u bytes)", label, (unsigned)bytes);
+        }
+    }
+
+    return buffer;
+}
+
+static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io,
+                                    esp_lcd_panel_io_event_data_t *edata,
+                                    void *user_ctx)
+{
+    (void)panel_io;
+    (void)edata;
+    (void)user_ctx;
+
+    if (s_registered_disp_drv == NULL) {
+        return false;
+    }
+
+    lv_disp_flush_ready(s_registered_disp_drv);
     return false;
 }
 
-/* LVGL 刷新回调 */
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
     esp_lcd_panel_handle_t panel = (esp_lcd_panel_handle_t)drv->user_data;
-    esp_lcd_panel_draw_bitmap(panel, area->x1, area->y1,
-                              area->x2 + 1, area->y2 + 1, color_map);
+    esp_err_t err;
+
+    s_flush_request_count++;
+    if (s_flush_request_count <= 12 || (s_flush_request_count % 20) == 0 ||
+        ((area->x2 - area->x1) > 300 && (area->y2 - area->y1) > 300)) {
+        ESP_LOGI(TAG, "flush req #%" PRIu32 ": area=(%d,%d)-(%d,%d) px=%dx%d panel=%p",
+                 s_flush_request_count, area->x1, area->y1, area->x2, area->y2,
+                 area->x2 - area->x1 + 1, area->y2 - area->y1 + 1, (void *)panel);
+    }
+
+    err = esp_lcd_panel_draw_bitmap(panel, area->x1, area->y1,
+                                    area->x2 + 1, area->y2 + 1, color_map);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "flush req #%" PRIu32 " failed: %s area=(%d,%d)-(%d,%d)",
+                 s_flush_request_count, esp_err_to_name(err),
+                 area->x1, area->y1, area->x2, area->y2);
+        lv_disp_flush_ready(drv);
+    }
 }
 
-/* 坐标对齐 (偶数边界) */
 static void lvgl_rounder_cb(lv_disp_drv_t *disp_drv, lv_area_t *area)
 {
+    (void)disp_drv;
     area->x1 = (area->x1 >> 1) << 1;
     area->y1 = (area->y1 >> 1) << 1;
     area->x2 = ((area->x2 >> 1) << 1) + 1;
     area->y2 = ((area->y2 >> 1) << 1) + 1;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////// 触摸输入回调 //////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+static void lvgl_rounder_area_cb(lv_area_t *area, void *user_data)
+{
+    (void)user_data;
+    area->x1 = (area->x1 >> 1) << 1;
+    area->y1 = (area->y1 >> 1) << 1;
+    area->x2 = ((area->x2 >> 1) << 1) + 1;
+    area->y2 = ((area->y2 >> 1) << 1) + 1;
+}
 
-/* 触摸读取回调 (轮询模式) */
 static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 {
     esp_lcd_touch_handle_t touch = (esp_lcd_touch_handle_t)drv->user_data;
-    assert(touch);
-
-    uint16_t tp_x, tp_y;
+    esp_lcd_touch_point_data_t touch_point = {0};
     uint8_t tp_cnt = 0;
+
+    assert(touch);
 
     esp_lcd_touch_read_data(touch);
 
-    bool pressed = esp_lcd_touch_get_coordinates(touch, &tp_x, &tp_y, NULL, &tp_cnt, 1);
-    if (pressed && tp_cnt > 0) {
-        data->point.x = tp_x;
-        data->point.y = tp_y;
+    if (esp_lcd_touch_get_data(touch, &touch_point, &tp_cnt, 1) == ESP_OK && tp_cnt > 0) {
+        data->point.x = touch_point.x;
+        data->point.y = touch_point.y;
         data->state = LV_INDEV_STATE_PRESSED;
-        ESP_LOGD(TAG, "Touch: %d,%d", tp_x, tp_y);
+
+        if (!s_touch_active) {
+            s_touch_active = true;
+            s_touch_press_tick = lv_tick_get();
+            ESP_LOGI(TAG, "Touch press: x=%d y=%d", touch_point.x, touch_point.y);
+        } else if (s_touch_last_x != touch_point.x || s_touch_last_y != touch_point.y) {
+            ESP_LOGI(TAG, "Touch move: x=%d y=%d", touch_point.x, touch_point.y);
+        }
+
+        s_touch_last_x = touch_point.x;
+        s_touch_last_y = touch_point.y;
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
+        if (s_touch_active) {
+            uint32_t held_ms = lv_tick_elaps(s_touch_press_tick);
+            ESP_LOGI(TAG, "Touch release: x=%d y=%d held=%" PRIu32 "ms",
+                     s_touch_last_x, s_touch_last_y, held_ms);
+            s_touch_active = false;
+            s_touch_last_x = -1;
+            s_touch_last_y = -1;
+            s_touch_press_tick = 0;
+        }
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////// LVGL 定时器 & 任务 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 static void increase_lvgl_tick(void *arg)
 {
+    (void)arg;
     lv_tick_inc(LVGL_TICK_PERIOD_MS);
 }
 
 static bool lvgl_lock(int timeout_ms)
 {
     assert(lvgl_mux && "lvgl_mux not created");
-    const TickType_t timeout_ticks = (timeout_ms == -1) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
-    return xSemaphoreTake(lvgl_mux, timeout_ticks) == pdTRUE;
+    return xSemaphoreTake(lvgl_mux,
+                          (timeout_ms == -1) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
 }
 
 static void lvgl_unlock(void)
@@ -134,140 +192,219 @@ static void lvgl_unlock(void)
     xSemaphoreGive(lvgl_mux);
 }
 
+bool app_lvgl_lock(int timeout_ms)
+{
+#if CONFIG_OBD_BOARD_WS_175_AMOLED
+    return esp_lv_adapter_lock(timeout_ms) == ESP_OK;
+#else
+    return lvgl_lock(timeout_ms);
+#endif
+}
+
+void app_lvgl_unlock(void)
+{
+#if CONFIG_OBD_BOARD_WS_175_AMOLED
+    esp_lv_adapter_unlock();
+#else
+    lvgl_unlock();
+#endif
+}
+
 static void lvgl_port_task(void *arg)
 {
-    ESP_LOGI(TAG, "Starting LVGL task");
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
+
+    (void)arg;
+    ESP_LOGI(TAG, "Starting LVGL task");
+
     while (1) {
         if (lvgl_lock(-1)) {
             task_delay_ms = lv_timer_handler();
             lvgl_unlock();
         }
+
         if (task_delay_ms > LVGL_TASK_MAX_DELAY_MS) {
             task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
         } else if (task_delay_ms < LVGL_TASK_MIN_DELAY_MS) {
             task_delay_ms = LVGL_TASK_MIN_DELAY_MS;
         }
+
         vTaskDelay(pdMS_TO_TICKS(task_delay_ms));
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////// 主函数 ////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 void app_main(void)
 {
+    board_display_context_t board_ctx = {0};
+    const board_profile_t *profile = NULL;
+
+#if !CONFIG_OBD_BOARD_WS_175_AMOLED
     static lv_disp_draw_buf_t disp_buf;
     static lv_disp_drv_t disp_drv;
+    bool prefer_internal_lvgl_dma = false;
+#endif
 
-    /* 1. NVS 初始化 (必须最先) */
+    ESP_LOGI(TAG, "app_main: enter");
+    ESP_LOGI(TAG, "app_main: init nvs");
     nvs_storage_init();
+    ESP_LOGI(TAG, "app_main: nvs ready");
 
-    uint8_t proto = nvs_cfg_get()->protocol;
-    ESP_LOGI("NVS", "protocol=%d", proto);
-
-    theme_cfg_t str_theme = nvs_cfg_get()->theme_cfg;
+    ESP_LOGI("NVS", "protocol=%d", nvs_cfg_get()->protocol);
     ESP_LOGI("NVS", "theme=%d, dominant=%d, secondary=%d",
-             str_theme.theme, str_theme.user_theme_domiant_color, str_theme.user_theme_secondary_color);
+             nvs_cfg_get()->theme_cfg.theme,
+             nvs_cfg_get()->theme_cfg.user_theme_domiant_color,
+             nvs_cfg_get()->theme_cfg.user_theme_secondary_color);
 
     const nvs_stat_t *stat = nvs_stat_get();
     ESP_LOGI("NVS", "odo=%" PRIu64 " trip=%" PRIu64 " max_spd=%d avg_spd=%d runtime=%" PRIu64,
              stat->odometer_m, stat->trip_m, stat->max_speed_kmh, stat->avg_speed_kmh, stat->run_time_s);
 
-    /* 1.5 车辆配置初始化 (从NVS加载保存的车辆索引) */
+    ESP_LOGI(TAG, "app_main: load vehicle profile");
     vehicle_profile_set_active(nvs_cfg_get()->vehicle_profile_idx);
     ESP_LOGI("NVS", "vehicle_profile=%d (%s)",
              nvs_cfg_get()->vehicle_profile_idx, vehicle_profile_get_active()->name);
 
-    /* 2. I2C 总线 0 初始化 (供 TCA9554 IO 扩展器使用, SCL=10 SDA=11) */
-    I2C_Init();
+    ESP_LOGI(TAG, "app_main: board_init begin");
+    ESP_ERROR_CHECK(board_init());
+    ESP_LOGI(TAG, "app_main: board_init done");
 
-    /* 3. IO 扩展器初始化 (TCA9554PWR, I2C 地址 0x20) */
-    EXIO_Init();
+    profile = board_profile();
+    ESP_LOGI(TAG, "Board initialized: %s", board_name());
+    ESP_ERROR_CHECK(profile != NULL ? ESP_OK : ESP_ERR_INVALID_STATE);
+    ESP_LOGI(TAG, "Board profile: %s %ux%u %u-bit buffer_lines=%u touch=%s",
+             profile->name, profile->hor_res, profile->ver_res, profile->color_bits,
+             profile->draw_buffer_lines, profile->has_touch ? "yes" : "no");
+    if (profile->has_touch) {
+        ESP_LOGI(TAG, "Touch transform: swap_xy=%d mirror_x=%d mirror_y=%d",
+                 profile->touch_swap_xy, profile->touch_mirror_x, profile->touch_mirror_y);
+    }
 
-    /* 4. LCD + 背光 + 触摸 一体初始化
-     *    LCD_Init() 内部依次调用:
-     *      ST77916_Init() → TCA9554 EXIO2 复位 → QSPI SPI 总线 & ST77916 panel 驱动
-     *      Backlight_Init() → LEDC PWM 背光 (GPIO 5)
-     *      Touch_Init() → I2C_NUM_1 (SDA=1, SCL=3) CST816 触摸驱动
-     *    完成后 panel_handle / tp 均为全局有效变量
-     */
-    LCD_SetFlushCallback(notify_lvgl_flush_ready, &disp_drv);
-    LCD_Backlight = 0;  // 在 LCD_Init 之前设为 0，防止 Backlight_Init 点亮未初始化的屏幕
-    LCD_Init();
+    ESP_LOGI(TAG, "app_main: board_display_init begin");
+    ESP_ERROR_CHECK(board_display_init(&board_ctx));
+    ESP_LOGI(TAG, "app_main: board_display_init done");
+    ui_platform_init(board_ctx.hor_res, board_ctx.ver_res);
+    ESP_LOGI(TAG, "Display ready: %ux%u %u-bit touch=%s",
+             board_ctx.hor_res, board_ctx.ver_res, board_ctx.color_bits,
+             board_ctx.has_touch ? "yes" : "no");
 
-    /* 5. LVGL 初始化 */
+#if CONFIG_OBD_BOARD_WS_175_AMOLED
+    {
+        esp_lv_adapter_config_t lvgl_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG();
+        esp_lv_adapter_display_config_t disp_cfg = {
+            .panel = board_ctx.panel,
+            .panel_io = board_ctx.panel_io,
+            .profile = {
+                .interface = ESP_LV_ADAPTER_PANEL_IF_OTHER,
+                .rotation = ESP_LV_ADAPTER_ROTATE_0,
+                .hor_res = board_ctx.hor_res,
+                .ver_res = board_ctx.ver_res,
+                .buffer_height = 50,
+                .use_psram = true,
+                .enable_ppa_accel = false,
+                .require_double_buffer = true,
+            },
+            .tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE,
+        };
+        lv_display_t *disp = NULL;
+
+        ESP_LOGI(TAG, "Initialize LVGL through esp_lvgl_adapter");
+        ESP_ERROR_CHECK(esp_lv_adapter_init(&lvgl_cfg));
+
+        disp = esp_lv_adapter_register_display(&disp_cfg);
+        ESP_ERROR_CHECK(disp != NULL ? ESP_OK : ESP_FAIL);
+        ESP_ERROR_CHECK(esp_lv_adapter_set_area_rounder_cb(disp, lvgl_rounder_area_cb, NULL));
+
+        if (board_ctx.has_touch && board_ctx.touch != NULL) {
+            const esp_lv_adapter_touch_config_t touch_cfg =
+                ESP_LV_ADAPTER_TOUCH_DEFAULT_CONFIG(disp, board_ctx.touch);
+            ESP_ERROR_CHECK(esp_lv_adapter_register_touch(&touch_cfg) != NULL ? ESP_OK : ESP_FAIL);
+        }
+
+        ESP_ERROR_CHECK(esp_lv_adapter_start());
+    }
+#else
     ESP_LOGI(TAG, "Initialize LVGL");
     lv_init();
 
-    /* 分配双缓冲 (使用 DMA 内存) */
-    lv_color_t *buf1 = heap_caps_malloc(LVGL_BUFF_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA);
-    assert(buf1);
-    lv_color_t *buf2 = heap_caps_malloc(LVGL_BUFF_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA);
-    assert(buf2);
-    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, LVGL_BUFF_SIZE);
-
-    /* 注册显示驱动 */
     lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = LCD_H_RES;
-    disp_drv.ver_res = LCD_V_RES;
+    ESP_ERROR_CHECK(board_register_display_flush_ready_callback(notify_lvgl_flush_ready, NULL));
+
+    prefer_internal_lvgl_dma = false;
+    ESP_ERROR_CHECK(board_ctx.draw_buffer_lines > 0 ? ESP_OK : ESP_ERR_INVALID_STATE);
+
+    uint32_t lvgl_buff_size = LVGL_BUFFER_PIXEL_COUNT(board_ctx.hor_res, board_ctx.draw_buffer_lines);
+    size_t lvgl_buff_bytes = LVGL_BUFFER_BYTE_COUNT(board_ctx.hor_res, board_ctx.draw_buffer_lines, sizeof(lv_color_t));
+    lv_color_t *buf1 = alloc_lvgl_draw_buffer(lvgl_buff_bytes, "buf1", prefer_internal_lvgl_dma);
+    lv_color_t *buf2 = alloc_lvgl_draw_buffer(lvgl_buff_bytes, "buf2", prefer_internal_lvgl_dma);
+
+    assert(buf1);
+    assert(buf2);
+
+    ESP_LOGI(TAG, "LVGL buffers: pixels=%" PRIu32 " bytes=%u buf1_psram=%s buf2_psram=%s",
+             lvgl_buff_size, (unsigned)lvgl_buff_bytes,
+             esp_ptr_external_ram(buf1) ? "yes" : "no",
+             esp_ptr_external_ram(buf2) ? "yes" : "no");
+
+    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, lvgl_buff_size);
+
+    disp_drv.hor_res = board_ctx.hor_res;
+    disp_drv.ver_res = board_ctx.ver_res;
     disp_drv.flush_cb = lvgl_flush_cb;
     disp_drv.rounder_cb = lvgl_rounder_cb;
     disp_drv.draw_buf = &disp_buf;
-    disp_drv.user_data = panel_handle;      // 来自 ST77916.h extern
-    lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
+    disp_drv.user_data = board_ctx.panel;
 
-    /* LVGL tick 定时器 (2ms 周期) */
+    lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
+    s_registered_disp_drv = disp->driver;
+
+    ESP_LOGI(TAG, "Registered LVGL display driver: template=%p runtime=%p disp=%p",
+             (void *)&disp_drv, (void *)s_registered_disp_drv, (void *)disp);
+
     const esp_timer_create_args_t lvgl_tick_timer_args = {
         .callback = &increase_lvgl_tick,
-        .name = "lvgl_tick"
+        .name = "lvgl_tick",
     };
     esp_timer_handle_t lvgl_tick_timer = NULL;
     ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000));
 
-    /* 注册触摸输入设备 (轮询模式, 使用 Touch_Init 创建的全局 tp) */
-    static lv_indev_drv_t indev_drv;
-    lv_indev_drv_init(&indev_drv);
-    indev_drv.type = LV_INDEV_TYPE_POINTER;
-    indev_drv.disp = disp;
-    indev_drv.read_cb = lvgl_touch_cb;
-    indev_drv.user_data = tp;               // 来自 CST816.h extern
-    lv_indev_drv_register(&indev_drv);
+    if (board_ctx.has_touch && board_ctx.touch != NULL) {
+        static lv_indev_drv_t indev_drv;
 
-    /* 6. 启动 LVGL 任务 */
+        lv_indev_drv_init(&indev_drv);
+        indev_drv.type = LV_INDEV_TYPE_POINTER;
+        indev_drv.disp = disp;
+        indev_drv.read_cb = lvgl_touch_cb;
+        indev_drv.user_data = board_ctx.touch;
+        lv_indev_drv_register(&indev_drv);
+    }
+
     lvgl_mux = xSemaphoreCreateMutex();
     assert(lvgl_mux);
     xTaskCreate(lvgl_port_task, "LVGL", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, NULL);
+#endif
 
-    /* 7. 启动 UI */
     ESP_LOGI(TAG, "Start UI");
-    if (lvgl_lock(-1)) {
+    if (app_lvgl_lock(-1)) {
         ui_init();
-        lvgl_unlock();
+        app_lvgl_unlock();
     }
 
-    /* 8. 启动 BLE OBD - 优先使用 NVS 中保存的设备名 */
     const nvs_user_cfg_t *user_cfg = nvs_cfg_get();
-    const char *ble_name = (user_cfg->ble_device_name[0] != '\0') 
-                            ? user_cfg->ble_device_name 
-                            : "OBDII";
+    const char *ble_name = (user_cfg->ble_device_name[0] != '\0') ? user_cfg->ble_device_name : "OBDII";
     ESP_LOGI(TAG, "BLE target device: %s", ble_name);
     elm327_ble_start_default(ble_name);
 
-     /* 8.5 启动 RaceChrono BLE DIY 服务（同一 BT 栈下并行，向手机输出传感器数据）
-         延迟 500ms 让 OBD 初始扫描稳定后再启动，避免 GAP 状态混乱 */
-     vTaskDelay(pdMS_TO_TICKS(500));
+    vTaskDelay(pdMS_TO_TICKS(500));
     racechrono_ble_diy_start();
 
-    /* 9. 启动 RS485 刹车温度采集 */
     rs485_brake_temp_start();
 
-    /* 9.5 启动油压采集（ESP32 ADC 直连） */
+#if CONFIG_OBD_BOARD_WS_185
     oil_pressure_start();
+#else
+    ESP_LOGI(TAG, "Skip ADS1115 oil pressure task on this board profile");
+#endif
 
-    /* 10. 里程统计任务 */
     vMileageDataStatisticTask();
 }
-

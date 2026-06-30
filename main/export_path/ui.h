@@ -30,51 +30,6 @@ void ui_ScreenPageLogo_screen_init(void);
 extern lv_obj_t * ui_ScreenPageLogo;
 extern lv_obj_t * imageLogo;
 
-// SCREEN: ui_ScreenPageMain
-void ui_ScreenPageMain_screen_init(void);
-extern lv_obj_t * ui_ScreenPageMain;
-extern lv_obj_t * ui_ImageMainPageback;
-extern lv_obj_t * ui_SpinnerMainPage;
-extern lv_obj_t * ui_ArcGearNumBack;
-extern lv_obj_t * ui_LabelGeningRpmText;
-extern lv_obj_t * ui_LabelGeningRpmUnitText;
-extern lv_obj_t * ui_LabelCarSpeedText;
-extern lv_obj_t * ui_LabelCarSpeedUnitText;
-extern lv_obj_t * ui_ContainerMainPageBottomBlock;
-extern lv_obj_t * ui_LabelGearNumText;
-extern lv_obj_t * ui_ContainerMainPageMlieageBlock;
-extern lv_obj_t * ui_LabelMainMlieageText;
-extern lv_obj_t * ui_LabelMainMieageNum;
-// CUSTOM VARIABLES
-
-// SCREEN: ui_ScreenPageGear
-void ui_ScreenPageGear_screen_init(void);
-extern lv_obj_t * ui_ScreenPageGear;
-extern lv_obj_t * ui_SpinnerGearPage;
-extern lv_obj_t * ui_GearPageArcGearNumBack;
-extern lv_obj_t * ui_GearPageArcLabelGearNumText;
-extern lv_obj_t * ui_ImageGearBlackEar;
-// CUSTOM VARIABLES
-
-// SCREEN: ui_ScreenPageRpm
-void ui_ScreenPageRpm_screen_init(void);
-extern lv_obj_t * ui_ScreenPageRpm;
-extern lv_obj_t * ui_SpinnerRpmPage;
-extern lv_obj_t * ui_RpmPageArcRpmBack;
-extern lv_obj_t * ui_RpmPageArcLabelRpmText;
-extern lv_obj_t * ui_RpmPageArcLabelRpmUnit;
-extern lv_obj_t * ui_ImageRpmBlackEar;
-// CUSTOM VARIABLES
-
-// SCREEN: ui_ScreenPageSpeed
-void ui_ScreenPageSpeed_screen_init(void);
-extern lv_obj_t * ui_ScreenPageSpeed;
-extern lv_obj_t * ui_SpinnerSpeedPage;
-extern lv_obj_t * ui_SpeedPageArcSpeedBack;
-extern lv_obj_t * ui_SpeedPageArcLabelSpeedText;
-extern lv_obj_t * ui_SpeedPageArcLabelSpeedUnit;
-extern lv_obj_t * ui_ImageSpeedBlackEar;
-// CUSTOM VARIABLES
 // SCREEN: ui_ScreenPageODBProtocal
 void ui_ScreenPageODBProtocal_screen_init(void);
 extern lv_obj_t * ui_ScreenPageODBProtocal;

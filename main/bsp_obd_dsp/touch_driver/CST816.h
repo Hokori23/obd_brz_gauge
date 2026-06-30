@@ -19,7 +19,6 @@
 #include "esp_lcd_touch.h"
 
 #include "bsp_obd_dsp/exio/TCA9554PWR.h"
-#include "bsp_obd_dsp/lcd_driver/ST77916.h"
 
 /**
  * @brief Create a new CST816S touch driver
@@ -64,6 +63,8 @@ esp_err_t esp_lcd_touch_new_i2c_cst816(const esp_lcd_panel_io_handle_t io, const
 #define I2C_Touch_RST_IO            -1              /*!< GPIO number used for I2C master clock */
 #define I2C_Touch_MASTER_NUM        1               /*!< I2C master i2c port number, the number of i2c peripheral interfaces available will depend on the chip */
 #define I2C_Touch_MASTER_FREQ_HZ    400000          /*!< I2C master clock frequency */
+#define CST816_TOUCH_MAX_X          360
+#define CST816_TOUCH_MAX_Y          360
 
 extern esp_lcd_touch_handle_t tp;
 

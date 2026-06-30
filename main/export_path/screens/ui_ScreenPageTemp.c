@@ -2,6 +2,8 @@
 // CLT / IAT / OIL(SSM 22 10 17) - 3-row layout
 
 #include "../ui.h"
+#include "../ui_font_profile.h"
+#include "../ui_layout.h"
 
 // Value labels (externally accessible from timer callback)
 lv_obj_t *ui_LabelCoolantTempText = NULL;
@@ -10,13 +12,14 @@ lv_obj_t *ui_LabelIntakeTempText  = NULL;
 lv_obj_t *ui_LabelTempValue[3]    = {NULL, NULL, NULL};
 lv_obj_t *ui_LabelTempName[3]     = {NULL, NULL, NULL};
 lv_obj_t *ui_LabelTempUnit[3]     = {NULL, NULL, NULL};
+static ui_temp_layout_t s_temp_layout;
 
 // Helper: colored circle dot
 static lv_obj_t *create_color_dot(lv_obj_t *parent, lv_color_t color, lv_coord_t x, lv_coord_t y)
 {
     lv_obj_t *dot = lv_obj_create(parent);
     lv_obj_remove_style_all(dot);
-    lv_obj_set_size(dot, 10, 10);
+    lv_obj_set_size(dot, s_temp_layout.dot_size, s_temp_layout.dot_size);
     lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_bg_color(dot, color, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(dot, 255, LV_PART_MAIN);
@@ -35,34 +38,34 @@ static void make_row(lv_obj_t *parent, lv_obj_t **name_out, lv_obj_t **val_out, 
     *val_out = lv_label_create(parent);
     lv_label_set_long_mode(*val_out, LV_LABEL_LONG_CLIP);   // 数值过长不换行
     lv_label_set_text(*val_out, "--");
-    lv_obj_set_style_text_font(*val_out, &ui_font_FontTypoderSize36, LV_PART_MAIN);
+    lv_obj_set_style_text_font(*val_out, ui_font_typoder(36), LV_PART_MAIN);
     lv_obj_set_style_text_color(*val_out, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_width(*val_out, 110);
+    lv_obj_set_width(*val_out, s_temp_layout.value_width);
     lv_obj_set_style_text_align(*val_out, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
-    lv_obj_align(*val_out, LV_ALIGN_LEFT_MID, 70, cy);
+    lv_obj_align(*val_out, LV_ALIGN_LEFT_MID, s_temp_layout.value_x, cy);
 
     // Right column: dot + name + unit
     // Right boundary = 290px (x=360-70, matches divider line edge)
     // dot left=185, name left=200..244, unit right=290
-    create_color_dot(parent, color, 185, cy);
+    create_color_dot(parent, color, s_temp_layout.dot_x, cy);
 
     *name_out = lv_label_create(parent);
     lv_label_set_long_mode(*name_out, LV_LABEL_LONG_CLIP);   // 不换行
     lv_label_set_text(*name_out, name_str);
-    lv_obj_set_style_text_font(*name_out, &ui_font_FontTypoderSize16, LV_PART_MAIN);
+    lv_obj_set_style_text_font(*name_out, ui_font_typoder(16), LV_PART_MAIN);
     lv_obj_set_style_text_color(*name_out, color, LV_PART_MAIN);
     lv_obj_set_width(*name_out, LV_SIZE_CONTENT);            // 宽度随文字, 长名(BOOST/SPEED)不换行
     lv_obj_set_style_text_align(*name_out, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
-    lv_obj_align(*name_out, LV_ALIGN_LEFT_MID, 200, cy);
+    lv_obj_align(*name_out, LV_ALIGN_LEFT_MID, s_temp_layout.name_x, cy);
 
     *unit_out = lv_label_create(parent);
     lv_label_set_long_mode(*unit_out, LV_LABEL_LONG_CLIP);   // 不换行
     lv_label_set_text(*unit_out, unit_str);
-    lv_obj_set_style_text_font(*unit_out, &ui_font_FontTypoderSize16, LV_PART_MAIN);
+    lv_obj_set_style_text_font(*unit_out, ui_font_typoder(16), LV_PART_MAIN);
     lv_obj_set_style_text_color(*unit_out, lv_color_hex(0x666666), LV_PART_MAIN);
     lv_obj_set_width(*unit_out, LV_SIZE_CONTENT);            // 宽度随文字 (km/h 等)
     lv_obj_set_style_text_align(*unit_out, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
-    lv_obj_align(*unit_out, LV_ALIGN_RIGHT_MID, -70, cy);
+    lv_obj_align(*unit_out, LV_ALIGN_RIGHT_MID, s_temp_layout.unit_x, cy);
 }
 
 // Helper: horizontal divider line
@@ -79,68 +82,85 @@ static void make_hdiv(lv_obj_t *parent, lv_coord_t y, lv_coord_t w)
 
 void ui_ScreenPageTemp_screen_init(void)
 {
+    ui_temp_layout_get(&s_temp_layout);
+
     ui_ScreenPageTemp = lv_obj_create(NULL);
     lv_obj_clear_flag(ui_ScreenPageTemp, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(ui_ScreenPageTemp, 360, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui_ScreenPageTemp, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui_ScreenPageTemp, LV_RADIUS_CIRCLE, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui_ScreenPageTemp, lv_color_hex(0x440000), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(ui_ScreenPageTemp, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     // White border ring
     lv_obj_t *spinner_ring = lv_spinner_create(ui_ScreenPageTemp, 1000, 90);
-    lv_obj_set_width(spinner_ring, 360);
-    lv_obj_set_height(spinner_ring, 360);
+    lv_obj_set_width(spinner_ring, s_temp_layout.shell.ring_diameter);
+    lv_obj_set_height(spinner_ring, s_temp_layout.shell.ring_diameter);
     lv_obj_set_align(spinner_ring, LV_ALIGN_CENTER);
     lv_obj_clear_flag(spinner_ring, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_arc_color(spinner_ring, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_opa(spinner_ring, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(spinner_ring, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_width(spinner_ring, s_temp_layout.shell.ring_arc_width, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_color(spinner_ring, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_opa(spinner_ring, 0, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(spinner_ring, 10, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_width(spinner_ring, s_temp_layout.shell.ring_arc_width, LV_PART_INDICATOR | LV_STATE_DEFAULT);
 
     // Inner arc ring (decorative)
     lv_obj_t *arc_bg = lv_arc_create(ui_ScreenPageTemp);
-    lv_obj_set_width(arc_bg, 340);
-    lv_obj_set_height(arc_bg, 340);
+    lv_obj_set_width(arc_bg, s_temp_layout.inner_arc_diameter);
+    lv_obj_set_height(arc_bg, s_temp_layout.inner_arc_diameter);
     lv_obj_set_align(arc_bg, LV_ALIGN_CENTER);
     lv_obj_clear_flag(arc_bg, LV_OBJ_FLAG_CLICKABLE);
     lv_arc_set_value(arc_bg, 0);
     lv_arc_set_bg_angles(arc_bg, 0, 360);
     lv_obj_set_style_arc_color(arc_bg, lv_color_hex(0x333333), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_opa(arc_bg, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(arc_bg, 20, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_width(arc_bg, s_temp_layout.inner_arc_width, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_rounded(arc_bg, false, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_color(arc_bg, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_opa(arc_bg, 0, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(arc_bg, 20, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_width(arc_bg, s_temp_layout.inner_arc_width, LV_PART_INDICATOR | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(arc_bg, 0, LV_PART_KNOB | LV_STATE_DEFAULT);
 
     // ====== Row 1 (cy=-65): CLT - Blue ======
-    make_row(ui_ScreenPageTemp, &ui_LabelTempName[0], &ui_LabelTempValue[0], &ui_LabelTempUnit[0], -65, lv_color_hex(0x44AAFF), "CLT", "'C");
-    make_hdiv(ui_ScreenPageTemp, -30, 220);
+    make_row(ui_ScreenPageTemp, &ui_LabelTempName[0], &ui_LabelTempValue[0], &ui_LabelTempUnit[0], s_temp_layout.row1_cy, lv_color_hex(0x44AAFF), "CLT", "°C");
+    make_hdiv(ui_ScreenPageTemp, s_temp_layout.divider1_y, s_temp_layout.divider_width);
 
     // ====== Row 2 (cy=+5): IAT - Green ======
-    make_row(ui_ScreenPageTemp, &ui_LabelTempName[1], &ui_LabelTempValue[1], &ui_LabelTempUnit[1], +5, lv_color_hex(0x44FF88), "IAT", "'C");
-    make_hdiv(ui_ScreenPageTemp, +40, 220);
+    make_row(ui_ScreenPageTemp, &ui_LabelTempName[1], &ui_LabelTempValue[1], &ui_LabelTempUnit[1], s_temp_layout.row2_cy, lv_color_hex(0x44FF88), "IAT", "°C");
+    make_hdiv(ui_ScreenPageTemp, s_temp_layout.divider2_y, s_temp_layout.divider_width);
 
     // ====== Row 3 (cy=+75): OIL - Amber (SSM 22 10 17) ======
-    make_row(ui_ScreenPageTemp, &ui_LabelTempName[2], &ui_LabelTempValue[2], &ui_LabelTempUnit[2], +75, lv_color_hex(0xFF7722), "OIL", "'C");
+    make_row(ui_ScreenPageTemp, &ui_LabelTempName[2], &ui_LabelTempValue[2], &ui_LabelTempUnit[2], s_temp_layout.row3_cy, lv_color_hex(0xFF7722), "OIL", "°C");
 
     // Backward compatibility for existing update code
     ui_LabelCoolantTempText = ui_LabelTempValue[0];
     ui_LabelIntakeTempText = ui_LabelTempValue[1];
     ui_LabelOilTempText = ui_LabelTempValue[2];
 
+    // Diagnostic banner: make the default landing page visually unmistakable
+    // while we verify whether the screen transition really reaches the panel.
+    lv_obj_t *page_marker = lv_label_create(ui_ScreenPageTemp);
+    lv_label_set_text(page_marker, "TEMP PAGE");
+    lv_obj_set_style_text_font(page_marker, ui_font_typoder(28), LV_PART_MAIN);
+    lv_obj_set_style_text_color(page_marker, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(page_marker, lv_color_hex(0xAA0000), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(page_marker, 255, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(page_marker, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(page_marker, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(page_marker, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(page_marker, 6, LV_PART_MAIN);
+    lv_obj_align(page_marker, LV_ALIGN_TOP_MID, 0, 22);
+    lv_obj_clear_flag(page_marker, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
     // Black ear image at top
     lv_obj_t *black_ear = lv_img_create(ui_ScreenPageTemp);
     lv_img_set_src(black_ear, &ui_img_pngblackear_png);
     lv_obj_set_width(black_ear, LV_SIZE_CONTENT);
     lv_obj_set_height(black_ear, LV_SIZE_CONTENT);
-    lv_obj_set_x(black_ear, 0);
-    lv_obj_set_y(black_ear, -142);
-    lv_obj_set_align(black_ear, LV_ALIGN_CENTER);
+    lv_obj_align(black_ear, LV_ALIGN_CENTER, 0, s_temp_layout.shell.black_ear_offset_y);
     lv_obj_add_flag(black_ear, LV_OBJ_FLAG_ADV_HITTEST);
     lv_obj_clear_flag(black_ear, LV_OBJ_FLAG_SCROLLABLE);
+
+    _ui_debug_add_page_tag(ui_ScreenPageTemp, "TEMP");
 
     // Events
     lv_obj_add_event_cb(ui_ScreenPageTemp, ui_event_temp_background, LV_EVENT_GESTURE, NULL);

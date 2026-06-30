@@ -18,7 +18,6 @@
 #include "driver/ledc.h"
 
 #include "bsp_obd_dsp/lcd_driver/esp_lcd_st77916/esp_lcd_st77916.h"
-#include "bsp_obd_dsp/touch_driver/CST816.h"
 #include "bsp_obd_dsp/exio/TCA9554PWR.h"
 
 

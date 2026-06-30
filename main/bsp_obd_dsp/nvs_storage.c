@@ -51,7 +51,7 @@ esp_err_t nvs_storage_init(void)
 
     /* 新增字段默认值修复 (旧NVS数据中rsv[x]全为0) */
     if(s_cfg.brightness_day == 0) s_cfg.brightness_day = 100;
-    if(s_cfg.default_page > 4) s_cfg.default_page = 0; // 0=Temp,1=Info,2=Brake,3=OilP,4=Needle
+    if(s_cfg.default_page >= NVS_DEFAULT_PAGE_COUNT) s_cfg.default_page = NVS_DEFAULT_PAGE_TEMP;
     if(s_cfg.needle_source_idx >= 10) s_cfg.needle_source_idx = 0; // DISP_ITEM_COUNT=10
     // 车型索引按已注册的 profile 数量限界（越界归零到 ZC6）
     uint8_t vehicle_count = 0;

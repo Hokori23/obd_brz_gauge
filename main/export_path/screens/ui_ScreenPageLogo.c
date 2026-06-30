@@ -4,12 +4,17 @@
 // Project name: SquareLine_Project
 
 #include "../ui.h"
+#include "../ui_font_profile.h"
+#include "../ui_layout.h"
 
 void ui_ScreenPageLogo_screen_init(void)
 {
+    ui_logo_layout_t layout;
+    ui_logo_layout_get(&layout);
+
     ui_ScreenPageLogo = lv_obj_create(NULL);
     lv_obj_clear_flag(ui_ScreenPageLogo, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
-    lv_obj_set_style_radius(ui_ScreenPageLogo, 360, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui_ScreenPageLogo, layout.shell.ring_diameter, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(ui_ScreenPageLogo, lv_color_hex(0x0000), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(ui_ScreenPageLogo, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
 #if USE_GIF_LOGO == 1
@@ -20,32 +25,32 @@ void ui_ScreenPageLogo_screen_init(void)
     // SKY GAUGE text logo using Conthrax font
     lv_obj_t *label_sky = lv_label_create(ui_ScreenPageLogo);
     lv_label_set_text(label_sky, "SKY");
-    lv_obj_set_style_text_font(label_sky, &ui_font_FontTypoderSize56, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(label_sky, ui_font_typoder(56), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(label_sky, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_letter_space(label_sky, 8, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_align(label_sky, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_set_style_text_letter_space(label_sky, layout.sky_letter_space, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_align(label_sky, LV_ALIGN_CENTER, 0, layout.sky_y);
 
     lv_obj_t *label_gauge = lv_label_create(ui_ScreenPageLogo);
     lv_label_set_text(label_gauge, "GAUGE");
-    lv_obj_set_style_text_font(label_gauge, &ui_font_FontTypoderSize36, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(label_gauge, ui_font_typoder(36), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(label_gauge, lv_color_hex(0xAAAAAA), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_letter_space(label_gauge, 12, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_align(label_gauge, LV_ALIGN_CENTER, 0, 30);
+    lv_obj_set_style_text_letter_space(label_gauge, layout.gauge_letter_space, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_align(label_gauge, LV_ALIGN_CENTER, 0, layout.gauge_y);
 
     imageLogo = NULL; // No image logo anymore
 
     // White border ring (same as Gear page style)
     lv_obj_t *spinnerLogo = lv_spinner_create(ui_ScreenPageLogo, 1000, 90);
-    lv_obj_set_width(spinnerLogo, 360);
-    lv_obj_set_height(spinnerLogo, 360);
+    lv_obj_set_width(spinnerLogo, layout.shell.ring_diameter);
+    lv_obj_set_height(spinnerLogo, layout.shell.ring_diameter);
     lv_obj_set_align(spinnerLogo, LV_ALIGN_CENTER);
     lv_obj_clear_flag(spinnerLogo, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_arc_color(spinnerLogo, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_opa(spinnerLogo, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(spinnerLogo, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_width(spinnerLogo, layout.shell.ring_arc_width, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_color(spinnerLogo, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_opa(spinnerLogo, 0, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(spinnerLogo, 10, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_width(spinnerLogo, layout.shell.ring_arc_width, LV_PART_INDICATOR | LV_STATE_DEFAULT);
 #endif
     lv_obj_add_event_cb(ui_ScreenPageLogo, ui_event_logo_background, LV_EVENT_ALL, NULL);
 }

@@ -5,6 +5,8 @@
 //  数据读取/量程/刷新逻辑复用 ui.c 的 disp_item 系统 (ui_needle_* 接口)
 
 #include "../ui.h"
+#include "../ui_font_profile.h"
+#include "../ui_layout.h"
 #include <string.h>
 #include "bsp_obd_dsp/nvs_storage.h"
 #include "app_obd_dsp/vehicle_profiles.h"
@@ -58,9 +60,12 @@ static void on_needle_source_changed(lv_event_t *e)
 
 void ui_ScreenPageNeedle_screen_init(void)
 {
+    ui_needle_layout_t layout;
+    ui_needle_layout_get(&layout);
+
     ui_ScreenPageNeedle = lv_obj_create(NULL);
     lv_obj_clear_flag(ui_ScreenPageNeedle, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(ui_ScreenPageNeedle, 360, LV_PART_MAIN);
+    lv_obj_set_style_radius(ui_ScreenPageNeedle, layout.shell.ring_diameter, LV_PART_MAIN);
     lv_obj_set_style_bg_color(ui_ScreenPageNeedle, lv_color_hex(0x000000), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(ui_ScreenPageNeedle, 255, LV_PART_MAIN);
     lv_obj_set_style_border_width(ui_ScreenPageNeedle, 0, LV_PART_MAIN);  // 关默认主题边框，改用白环
@@ -69,61 +74,66 @@ void ui_ScreenPageNeedle_screen_init(void)
 
     // ====== 外圈白环（与其它页面一致）======
     lv_obj_t *ring = lv_spinner_create(ui_ScreenPageNeedle, 1000, 90);
-    lv_obj_set_size(ring, 360, 360);
+    lv_obj_set_size(ring, layout.shell.ring_diameter, layout.shell.ring_diameter);
     lv_obj_set_align(ring, LV_ALIGN_CENTER);
     lv_obj_clear_flag(ring, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_arc_color(ring, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_opa(ring, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(ring, 8, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_width(ring, layout.shell.ring_arc_width, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_color(ring, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_opa(ring, 0, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(ring, 8, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_width(ring, layout.shell.ring_arc_width, LV_PART_INDICATOR | LV_STATE_DEFAULT);
 
     // ====== 指针表盘 ======
     ui_NeedleMeter = lv_meter_create(ui_ScreenPageNeedle);
-    lv_obj_set_size(ui_NeedleMeter, 320, 320);
+    lv_obj_set_size(ui_NeedleMeter, layout.meter_size, layout.meter_size);
     lv_obj_center(ui_NeedleMeter);
     lv_obj_clear_flag(ui_NeedleMeter, LV_OBJ_FLAG_CLICKABLE);
     // 表盘背景透明，融入黑色页面
     lv_obj_set_style_bg_opa(ui_NeedleMeter, 0, LV_PART_MAIN);
     lv_obj_set_style_border_width(ui_NeedleMeter, 0, LV_PART_MAIN);
     // 刻度数字字体
-    lv_obj_set_style_text_font(ui_NeedleMeter, &ui_font_FontTypoderSize16, LV_PART_TICKS);
+    lv_obj_set_style_text_font(ui_NeedleMeter, ui_font_typoder(16), LV_PART_TICKS);
     lv_obj_set_style_text_color(ui_NeedleMeter, lv_color_hex(0xCCCCCC), LV_PART_TICKS);
 
     ui_NeedleScale = lv_meter_add_scale(ui_NeedleMeter);
     // 21 条刻度，每 5 条一个主刻度（共 5 个数字标签）
-    lv_meter_set_scale_ticks(ui_NeedleMeter, ui_NeedleScale, 21, 2, 8, lv_color_hex(0x666666));
-    lv_meter_set_scale_major_ticks(ui_NeedleMeter, ui_NeedleScale, 5, 4, 14, lv_color_hex(0xFFFFFF), 14);
+    lv_meter_set_scale_ticks(ui_NeedleMeter, ui_NeedleScale, 21,
+                             layout.tick_width, layout.tick_length, lv_color_hex(0x666666));
+    lv_meter_set_scale_major_ticks(ui_NeedleMeter, ui_NeedleScale, 5,
+                                   layout.major_tick_width, layout.major_tick_length,
+                                   lv_color_hex(0xFFFFFF), layout.major_label_gap);
     lv_meter_set_scale_range(ui_NeedleMeter, ui_NeedleScale, 0, 100, 270, 135); // 占位，apply_source 重设
 
     // 指针改短（r_mod 更负 = 指针尖回缩，避免压住中心区域）
-    ui_NeedleIndic = lv_meter_add_needle_line(ui_NeedleMeter, ui_NeedleScale, 4, lv_color_hex(0xFF3030), -70);
+    ui_NeedleIndic = lv_meter_add_needle_line(ui_NeedleMeter, ui_NeedleScale,
+                                              layout.indicator_width, lv_color_hex(0xFF3030),
+                                              layout.indicator_r_mod);
 
     // 三个中心标签居中对齐自身，避免不同文本长度造成左右偏移/重合
     // ====== 名称标签（上方）======
     ui_NeedleNameLabel = lv_label_create(ui_ScreenPageNeedle);
     lv_label_set_text(ui_NeedleNameLabel, "");
-    lv_obj_set_style_text_font(ui_NeedleNameLabel, &ui_font_FontTypoderSize24, LV_PART_MAIN);
+    lv_obj_set_style_text_font(ui_NeedleNameLabel, ui_font_typoder(24), LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_NeedleNameLabel, lv_color_hex(0xAAAAAA), LV_PART_MAIN);
     lv_obj_set_style_text_align(ui_NeedleNameLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_align(ui_NeedleNameLabel, LV_ALIGN_CENTER, 0, -52);
+    lv_obj_align(ui_NeedleNameLabel, LV_ALIGN_CENTER, 0, layout.name_y);
 
     // ====== 数值标签（下方，位于 270° 表盘底部开口处，指针扫不到此处，不与指针重叠）======
     ui_NeedleValueLabel = lv_label_create(ui_ScreenPageNeedle);
     lv_label_set_text(ui_NeedleValueLabel, "--");
-    lv_obj_set_style_text_font(ui_NeedleValueLabel, &ui_font_FontTypoderSize36, LV_PART_MAIN);
+    lv_obj_set_style_text_font(ui_NeedleValueLabel, ui_font_typoder(36), LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_NeedleValueLabel, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_style_text_align(ui_NeedleValueLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_align(ui_NeedleValueLabel, LV_ALIGN_CENTER, 0, 54);
+    lv_obj_align(ui_NeedleValueLabel, LV_ALIGN_CENTER, 0, layout.value_y);
 
     // ====== 单位标签（数值下方）======
     ui_NeedleUnitLabel = lv_label_create(ui_ScreenPageNeedle);
     lv_label_set_text(ui_NeedleUnitLabel, "");
-    lv_obj_set_style_text_font(ui_NeedleUnitLabel, &ui_font_FontTypoderSize20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(ui_NeedleUnitLabel, ui_font_typoder(20), LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_NeedleUnitLabel, lv_color_hex(0x888888), LV_PART_MAIN);
     lv_obj_set_style_text_align(ui_NeedleUnitLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_align(ui_NeedleUnitLabel, LV_ALIGN_CENTER, 0, 94);
+    lv_obj_align(ui_NeedleUnitLabel, LV_ALIGN_CENTER, 0, layout.unit_y);
 
     // 应用当前数据源（设置量程/名称/单位）
     ui_needle_apply_source();
@@ -133,9 +143,12 @@ void ui_ScreenPageNeedle_screen_init(void)
 
 void ui_ScreenPageNeedleConfig_screen_init(void)
 {
+    ui_needle_config_layout_t layout;
+    ui_needle_config_layout_get(&layout);
+
     ui_ScreenPageNeedleConfig = lv_obj_create(NULL);
     lv_obj_clear_flag(ui_ScreenPageNeedleConfig, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(ui_ScreenPageNeedleConfig, 360, LV_PART_MAIN);
+    lv_obj_set_style_radius(ui_ScreenPageNeedleConfig, layout.shell.ring_diameter, LV_PART_MAIN);
     lv_obj_set_style_bg_color(ui_ScreenPageNeedleConfig, lv_color_hex(0x000000), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(ui_ScreenPageNeedleConfig, 255, LV_PART_MAIN);
     lv_obj_set_style_border_width(ui_ScreenPageNeedleConfig, 0, LV_PART_MAIN);  // 去掉默认主题白边
@@ -145,9 +158,9 @@ void ui_ScreenPageNeedleConfig_screen_init(void)
     // 标题
     lv_obj_t *title = lv_label_create(ui_ScreenPageNeedleConfig);
     lv_label_set_text(title, "DATA SOURCE");
-    lv_obj_set_style_text_font(title, &ui_font_FontTypoderSize24, LV_PART_MAIN);
+    lv_obj_set_style_text_font(title, ui_font_typoder(24), LV_PART_MAIN);
     lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_align(title, LV_ALIGN_CENTER, 0, -110);
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, layout.title_y);
 
     // 按当前车型构建可选数据源(有涡轮才含 BOOST)，再生成选项字符串
     build_needle_sources();
@@ -164,27 +177,27 @@ void ui_ScreenPageNeedleConfig_screen_init(void)
     lv_roller_set_options(s_roller_source, options, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_roller_source, 3);
     lv_roller_set_selected(s_roller_source, source_to_roller_pos(cfg->needle_source_idx), LV_ANIM_OFF);
-    lv_obj_set_width(s_roller_source, 160);
-    lv_obj_set_style_text_font(s_roller_source, &ui_font_FontTypoderSize24, LV_PART_MAIN);
+    lv_obj_set_width(s_roller_source, layout.roller_width);
+    lv_obj_set_style_text_font(s_roller_source, ui_font_typoder(24), LV_PART_MAIN);
     lv_obj_set_style_text_color(s_roller_source, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_style_bg_color(s_roller_source, lv_color_hex(0x222222), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(s_roller_source, 255, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_roller_source, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(s_roller_source, lv_color_hex(0x444444), LV_PART_MAIN);
-    lv_obj_set_style_radius(s_roller_source, 8, LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_roller_source, &ui_font_FontTypoderSize24, LV_PART_SELECTED);
+    lv_obj_set_style_radius(s_roller_source, layout.roller_radius, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_roller_source, ui_font_typoder(24), LV_PART_SELECTED);
     lv_obj_set_style_text_color(s_roller_source, lv_color_hex(0x000000), LV_PART_SELECTED);
     lv_obj_set_style_bg_color(s_roller_source, lv_color_hex(0xFFFFFF), LV_PART_SELECTED);
     lv_obj_set_style_bg_opa(s_roller_source, 255, LV_PART_SELECTED);
-    lv_obj_align(s_roller_source, LV_ALIGN_CENTER, 0, 8);
+    lv_obj_align(s_roller_source, LV_ALIGN_CENTER, 0, layout.roller_y);
     lv_obj_add_event_cb(s_roller_source, on_needle_source_changed, LV_EVENT_VALUE_CHANGED, NULL);
 
     // 提示
     lv_obj_t *hint = lv_label_create(ui_ScreenPageNeedleConfig);
     lv_label_set_text(hint, "Swipe to go back");
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_font(hint, ui_font_hint(12), LV_PART_MAIN);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x555555), LV_PART_MAIN);
-    lv_obj_align(hint, LV_ALIGN_CENTER, 0, 120);
+    lv_obj_align(hint, LV_ALIGN_CENTER, 0, layout.hint_y);
 
     lv_obj_add_event_cb(ui_ScreenPageNeedleConfig, ui_event_needle_config_background, LV_EVENT_GESTURE, NULL);
 }
