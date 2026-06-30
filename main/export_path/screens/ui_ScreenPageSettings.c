@@ -103,10 +103,13 @@ void ui_ScreenPageSettings_screen_init(void)
     lv_obj_set_style_border_width(s_roller_page, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(s_roller_page, lv_color_hex(0x444444), LV_PART_MAIN);
     lv_obj_set_style_radius(s_roller_page, layout.roller_radius, LV_PART_MAIN);
+    lv_obj_set_style_clip_corner(s_roller_page, true, LV_PART_MAIN);
     lv_obj_set_style_text_font(s_roller_page, ui_font_typoder(20), LV_PART_SELECTED);
     lv_obj_set_style_text_color(s_roller_page, lv_color_hex(0x000000), LV_PART_SELECTED);
     lv_obj_set_style_bg_color(s_roller_page, lv_color_hex(0xFFFFFF), LV_PART_SELECTED);
     lv_obj_set_style_bg_opa(s_roller_page, 255, LV_PART_SELECTED);
+    lv_obj_set_style_radius(s_roller_page, layout.roller_radius, LV_PART_SELECTED);
+    lv_obj_set_style_border_width(s_roller_page, 0, LV_PART_SELECTED);
     lv_obj_align(s_roller_page, LV_ALIGN_CENTER, 0, layout.roller_page_y);
     lv_obj_add_event_cb(s_roller_page, on_page_roller_change, LV_EVENT_VALUE_CHANGED, NULL);
 
@@ -148,10 +151,13 @@ void ui_ScreenPageSettings_screen_init(void)
     lv_obj_set_style_border_width(s_roller_vehicle, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(s_roller_vehicle, lv_color_hex(0x444444), LV_PART_MAIN);
     lv_obj_set_style_radius(s_roller_vehicle, layout.roller_radius, LV_PART_MAIN);
+    lv_obj_set_style_clip_corner(s_roller_vehicle, true, LV_PART_MAIN);
     lv_obj_set_style_text_font(s_roller_vehicle, ui_font_typoder(20), LV_PART_SELECTED);
     lv_obj_set_style_text_color(s_roller_vehicle, lv_color_hex(0x000000), LV_PART_SELECTED);
     lv_obj_set_style_bg_color(s_roller_vehicle, lv_color_hex(0xFFFFFF), LV_PART_SELECTED);
     lv_obj_set_style_bg_opa(s_roller_vehicle, 255, LV_PART_SELECTED);
+    lv_obj_set_style_radius(s_roller_vehicle, layout.roller_radius, LV_PART_SELECTED);
+    lv_obj_set_style_border_width(s_roller_vehicle, 0, LV_PART_SELECTED);
     lv_obj_align(s_roller_vehicle, LV_ALIGN_CENTER, 0, layout.roller_vehicle_y);
     lv_obj_add_event_cb(s_roller_vehicle, on_vehicle_roller_change, LV_EVENT_VALUE_CHANGED, NULL);
 
@@ -198,16 +204,6 @@ void ui_ScreenPageSettings_screen_init(void)
     lv_obj_set_style_text_font(hint, ui_font_hint(12), LV_PART_MAIN);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x555555), LV_PART_MAIN);
     lv_obj_align(hint, LV_ALIGN_CENTER, 0, layout.hint_y);
-
-    // Black ear image at top
-    lv_obj_t *ear = lv_img_create(ui_ScreenPageSettings);
-    lv_img_set_src(ear, &ui_img_pngblackear_png);
-    lv_obj_set_width(ear, LV_SIZE_CONTENT);
-    lv_obj_set_height(ear, LV_SIZE_CONTENT);
-    lv_obj_set_pos(ear, 0, layout.shell.black_ear_offset_y);
-    lv_obj_set_align(ear, LV_ALIGN_CENTER);
-    lv_obj_add_flag(ear, LV_OBJ_FLAG_ADV_HITTEST);
-    lv_obj_clear_flag(ear, LV_OBJ_FLAG_SCROLLABLE);
 
     // Events - swipe to go back
     lv_obj_add_event_cb(ui_ScreenPageSettings, ui_event_settings_background, LV_EVENT_GESTURE, NULL);

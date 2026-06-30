@@ -11,6 +11,7 @@
 #include "esp_idf_version.h"
 #include "bsp_obd_dsp/nvs_storage.h"
 #include "bsp_obd_dsp/elm327_ble_client.h"
+#include "app_obd_dsp/vehicle_profiles.h"
 
 void ui_ScreenPageEasterEgg_screen_init(void)
 {
@@ -37,11 +38,15 @@ void ui_ScreenPageEasterEgg_screen_init(void)
     lv_obj_set_style_arc_width(spinner_ring, layout.shell.ring_arc_width, LV_PART_INDICATOR | LV_STATE_DEFAULT);
 
     /* ---- Device Info Page ---- */
-    // Title is intentionally explicit during bring-up so this page can't be confused with the logo page.
+    const vehicle_profile_t *active_vehicle = vehicle_profile_get_active();
+    const char *vehicle_name = (active_vehicle && active_vehicle->name) ? active_vehicle->name : "VEHICLE";
+
     lv_obj_t *label_title = lv_label_create(ui_ScreenPageEasterEgg);
-    lv_label_set_text(label_title, "EASTER EGG");
-    lv_obj_set_style_text_font(label_title, ui_font_typoder(36), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_label_set_text(label_title, vehicle_name);
+    lv_obj_set_style_text_font(label_title, ui_font_typoder(24), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(label_title, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_width(label_title, layout.info_width);
+    lv_obj_set_style_text_align(label_title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align(label_title, LV_ALIGN_CENTER, 0, layout.title_y);
 
     // Device & firmware info
@@ -66,13 +71,6 @@ void ui_ScreenPageEasterEgg_screen_init(void)
     lv_obj_set_style_text_align(ui_LabelEasterEggInfo, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_line_space(ui_LabelEasterEggInfo, layout.info_line_space, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align(ui_LabelEasterEggInfo, LV_ALIGN_CENTER, 0, layout.info_y);
-
-    // Hint: swipe up for BLE scan, swipe down for settings
-    lv_obj_t *label_hint = lv_label_create(ui_ScreenPageEasterEgg);
-    lv_label_set_text(label_hint, "Up:BLE  Down:Settings");
-    lv_obj_set_style_text_font(label_hint, ui_font_hint(12), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(label_hint, lv_color_hex(0x666666), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_align(label_hint, LV_ALIGN_BOTTOM_MID, 0, layout.hint_y);
 
     imageEasterEgg = NULL;
 

@@ -18,6 +18,28 @@
 static const char *TAG = "ui";
 static bool s_logo_transition_started = false;
 
+#define UI_NAV_ANIM_MS 200
+#define UI_NAV_ANIM_LOGO_MS 300
+
+static void ui_screen_change_with_anim(lv_obj_t **target_scr,
+                                       lv_scr_load_anim_t anim,
+                                       void (*target_init)(void))
+{
+    _ui_screen_change(target_scr, anim, UI_NAV_ANIM_MS, 0, target_init);
+}
+
+static void ui_nav_horizontal(lv_dir_t dir, lv_obj_t **target_scr, void (*target_init)(void))
+{
+    ui_screen_change_with_anim(target_scr,
+                               (dir == LV_DIR_RIGHT) ? LV_SCR_LOAD_ANIM_MOVE_RIGHT : LV_SCR_LOAD_ANIM_MOVE_LEFT,
+                               target_init);
+}
+
+static void ui_nav_vertical(lv_scr_load_anim_t anim, lv_obj_t **target_scr, void (*target_init)(void))
+{
+    ui_screen_change_with_anim(target_scr, anim, target_init);
+}
+
 static const char *gesture_dir_name(lv_dir_t dir)
 {
     switch (dir) {
@@ -66,7 +88,7 @@ static void ui_logo_transition_to(lv_obj_t **target_scr, void (*target_init)(voi
         lv_obj_add_event_cb(ui_ScreenPageLogo, ui_logo_unloaded_cb, LV_EVENT_SCREEN_UNLOADED, NULL);
     }
 
-    _ui_screen_change(target_scr, LV_SCR_LOAD_ANIM_FADE_ON, 300, 0, target_init);
+    _ui_screen_change(target_scr, LV_SCR_LOAD_ANIM_FADE_ON, UI_NAV_ANIM_LOGO_MS, 0, target_init);
 }
 ///////////////////// VARIABLES ////////////////////
 void ui_ScreenPageLogo_screen_init(void);
@@ -819,15 +841,15 @@ void ui_event_temp_background(lv_event_t * e)
         log_gesture_event("Temp", dir);
         if(dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageEasterEgg, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageEasterEgg_screen_init);
+            ui_nav_horizontal(dir, &ui_ScreenPageEasterEgg, &ui_ScreenPageEasterEgg_screen_init);
         }
         else if(dir == LV_DIR_LEFT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageInfo, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageInfo_screen_init);
+            ui_nav_horizontal(dir, &ui_ScreenPageInfo, &ui_ScreenPageInfo_screen_init);
         }
         else if(dir == LV_DIR_BOTTOM) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageTempCustom, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageTempCustom_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageTempCustom, &ui_ScreenPageTempCustom_screen_init);
         }
     }
 }
@@ -838,9 +860,9 @@ void ui_event_temp_custom_background(lv_event_t * e)
     if (code == LV_EVENT_GESTURE) {
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
         log_gesture_event("TempCustom", dir);
-        if (dir == LV_DIR_TOP || dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT) {
+        if (dir == LV_DIR_TOP) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageTemp_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageTemp, &ui_ScreenPageTemp_screen_init);
         }
     }
 }
@@ -853,15 +875,15 @@ void ui_event_brake_temp_background(lv_event_t * e)
         log_gesture_event("BrakeTemp", dir);
         if(dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageOilPressure, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageOilPressure_screen_init);
+            ui_nav_horizontal(dir, &ui_ScreenPageOilPressure, &ui_ScreenPageOilPressure_screen_init);
         }
         else if(dir == LV_DIR_LEFT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageEasterEgg, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageEasterEgg_screen_init);
+            ui_nav_horizontal(dir, &ui_ScreenPageEasterEgg, &ui_ScreenPageEasterEgg_screen_init);
         }
         else if(dir == LV_DIR_BOTTOM) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageBrakeWarn, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageBrakeWarn_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageBrakeWarn, &ui_ScreenPageBrakeWarn_screen_init);
         }
     }
 }
@@ -874,15 +896,15 @@ void ui_event_oil_pressure_background(lv_event_t * e)
         log_gesture_event("OilPressure", dir);
         if(dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageNeedle, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageNeedle_screen_init);
+            ui_nav_horizontal(dir, &ui_ScreenPageNeedle, &ui_ScreenPageNeedle_screen_init);
         }
         else if(dir == LV_DIR_LEFT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageBrakeTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageBrakeTemp_screen_init);
+            ui_nav_horizontal(dir, &ui_ScreenPageBrakeTemp, &ui_ScreenPageBrakeTemp_screen_init);
         }
         else if(dir == LV_DIR_BOTTOM) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageOilWarn, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageOilWarn_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageOilWarn, &ui_ScreenPageOilWarn_screen_init);
         }
     }
 }
@@ -893,9 +915,9 @@ void ui_event_brake_warn_background(lv_event_t * e)
     if(code == LV_EVENT_GESTURE){
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
         log_gesture_event("BrakeWarn", dir);
-        if(dir == LV_DIR_TOP || dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
+        if(dir == LV_DIR_TOP){
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageBrakeTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageBrakeTemp_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageBrakeTemp, &ui_ScreenPageBrakeTemp_screen_init);
         }
     }
 }
@@ -906,9 +928,9 @@ void ui_event_oil_warn_background(lv_event_t * e)
     if(code == LV_EVENT_GESTURE){
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
         log_gesture_event("OilWarn", dir);
-        if(dir == LV_DIR_TOP || dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
+        if(dir == LV_DIR_TOP){
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageOilPressure, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageOilPressure_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageOilPressure, &ui_ScreenPageOilPressure_screen_init);
         }
     }
 }
@@ -923,15 +945,15 @@ void ui_event_needle_background(lv_event_t * e)
         log_gesture_event("Needle", dir);
         if(dir == LV_DIR_BOTTOM){
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageNeedleConfig, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageNeedleConfig_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageNeedleConfig, &ui_ScreenPageNeedleConfig_screen_init);
         }
         else if(dir == LV_DIR_RIGHT){
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageInfo, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageInfo_screen_init);
+            ui_nav_horizontal(dir, &ui_ScreenPageInfo, &ui_ScreenPageInfo_screen_init);
         }
         else if(dir == LV_DIR_LEFT){
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageOilPressure, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageOilPressure_screen_init);
+            ui_nav_horizontal(dir, &ui_ScreenPageOilPressure, &ui_ScreenPageOilPressure_screen_init);
         }
     }
 }
@@ -941,9 +963,12 @@ void ui_event_needle_config_background(lv_event_t * e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     if(code == LV_EVENT_GESTURE){
-        log_gesture_event("NeedleConfig", lv_indev_get_gesture_dir(lv_indev_get_act()));
-        lv_indev_wait_release(lv_indev_get_act());
-        _ui_screen_change(&ui_ScreenPageNeedle, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageNeedle_screen_init);
+        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+        log_gesture_event("NeedleConfig", dir);
+        if(dir == LV_DIR_TOP){
+            lv_indev_wait_release(lv_indev_get_act());
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageNeedle, &ui_ScreenPageNeedle_screen_init);
+        }
     }
 }
 
@@ -955,15 +980,15 @@ void ui_event_info_background(lv_event_t * e)
         log_gesture_event("Info", dir);
         if(dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageTemp_screen_init);
+            ui_nav_horizontal(dir, &ui_ScreenPageTemp, &ui_ScreenPageTemp_screen_init);
         }
         else if(dir == LV_DIR_LEFT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageNeedle, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageNeedle_screen_init);
+            ui_nav_horizontal(dir, &ui_ScreenPageNeedle, &ui_ScreenPageNeedle_screen_init);
         }
         else if(dir == LV_DIR_BOTTOM) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageInfoCustom, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageInfoCustom_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageInfoCustom, &ui_ScreenPageInfoCustom_screen_init);
         }
     }
 }
@@ -974,9 +999,9 @@ void ui_event_info_custom_background(lv_event_t * e)
     if (code == LV_EVENT_GESTURE) {
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
         log_gesture_event("InfoCustom", dir);
-        if (dir == LV_DIR_TOP || dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT) {
+        if (dir == LV_DIR_TOP) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageInfo, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageInfo_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageInfo, &ui_ScreenPageInfo_screen_init);
         }
     }
 }
@@ -988,21 +1013,21 @@ void ui_event_easter_egg_background(lv_event_t * e)
         log_gesture_event("EasterEgg", dir);
         if(dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageBrakeTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageBrakeTemp_screen_init);
+            ui_nav_horizontal(dir, &ui_ScreenPageBrakeTemp, &ui_ScreenPageBrakeTemp_screen_init);
         }
         else if(dir == LV_DIR_LEFT) {
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageTemp_screen_init);
+            ui_nav_horizontal(dir, &ui_ScreenPageTemp, &ui_ScreenPageTemp_screen_init);
         }
         else if(dir == LV_DIR_TOP) {
             // 上滑 → BLE 扫描页面
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageBLEScan, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageBLEScan_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageBLEScan, &ui_ScreenPageBLEScan_screen_init);
         }
         else if(dir == LV_DIR_BOTTOM) {
             // 下滑 → 设置页面
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageSettings, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageSettings_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageSettings, &ui_ScreenPageSettings_screen_init);
         }
     }
 }
@@ -1047,7 +1072,7 @@ void ui_event_obd_prot_background(lv_event_t * e)
             ESP_LOGI(TAG, "OBDProtocal gesture: switch to Temp target=%p active_before=%p",
                      (void *)ui_ScreenPageTemp, (void *)lv_scr_act());
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageTemp, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageTemp_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageTemp, &ui_ScreenPageTemp_screen_init);
             ESP_LOGI(TAG, "OBDProtocal gesture: switch requested active_after=%p", (void *)lv_scr_act());
         }
     }else if(code == LV_EVENT_LONG_PRESSED){
@@ -1073,10 +1098,10 @@ void ui_event_ble_scan_background(lv_event_t * e)
     if(code == LV_EVENT_GESTURE){
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
         log_gesture_event("BLEScan", dir);
-        if(dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
+        if(dir == LV_DIR_BOTTOM){
             elm327_ble_scan_only_stop();
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageEasterEgg, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageEasterEgg_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageEasterEgg, &ui_ScreenPageEasterEgg_screen_init);
         }
     }
 }
@@ -1088,9 +1113,9 @@ void ui_event_settings_background(lv_event_t * e)
     if(code == LV_EVENT_GESTURE){
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
         log_gesture_event("Settings", dir);
-        if(dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
+        if(dir == LV_DIR_TOP){
             lv_indev_wait_release(lv_indev_get_act());
-            _ui_screen_change(&ui_ScreenPageEasterEgg, LV_SCR_LOAD_ANIM_FADE_ON, 5, 0, &ui_ScreenPageEasterEgg_screen_init);
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageEasterEgg, &ui_ScreenPageEasterEgg_screen_init);
         }
     }
 }

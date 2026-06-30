@@ -622,3 +622,34 @@ Confirmed on board:
 ### Remaining follow-up
 
 - If page transitions are enhanced later, prefer extending the current `lv_scr_load_anim` path instead of introducing a second custom transition framework.
+
+## 14. 2026-07-01 UI polish acceptance
+
+### Context
+
+After the cleanup build had already passed WS175 hardware acceptance, one more UI polish round was accepted on device.
+
+### What changed
+
+- Replaced the main page fade jumps with direction-aware `lv_scr_load_anim` transitions in `main/export_path/ui.c`.
+- Kept the startup logo transition on the existing fade path, but moved the timing into shared constants.
+- Removed the top black-ear overlay from `SETTINGS`.
+- Adjusted the `SETTINGS` page rollers so the selected white background clips to rounded corners instead of showing square cut edges.
+- Replaced the `EASTER EGG` heading with the active vehicle profile name and removed the `Up:BLE  Down:Settings` hint text.
+
+### Verification
+
+- `powershell -ExecutionPolicy Bypass -File .\tools\run_ui_platform_static_tests.ps1`
+  - passed
+- Real WS175 hardware acceptance
+  - passed
+  - transition behavior accepted
+  - `SETTINGS` top black blocks gone
+  - `SETTINGS` selected roller background no longer looks incorrectly cropped
+  - `EASTER EGG` page content is clearer in the accepted build
+
+### Implementation direction
+
+- Preferred path for future page-switch animation work is still LVGL built-in screen transitions.
+- Use directional pairs such as `MOVE_LEFT/RIGHT` for horizontal carousel pages and `MOVE_TOP/BOTTOM` for drill-in / back navigation.
+- Only introduce custom animation containers if LVGL screen-load animation cannot cover a specific interaction requirement.
