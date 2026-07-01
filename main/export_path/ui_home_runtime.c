@@ -294,6 +294,14 @@ static void ui_home_menu_open_settings(lv_event_t *e)
     ui_home_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageSettings, &ui_ScreenPageSettings_screen_init);
 }
 
+static void ui_home_menu_open_ble_scan(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+    ui_home_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageBLEScan, &ui_ScreenPageBLEScan_screen_init);
+}
+
 static void ui_home_add_page_click(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
@@ -413,13 +421,21 @@ static void ui_home_create_menu_content(uint8_t tile_id, lv_obj_t *parent)
     lv_obj_set_style_text_align(vehicle, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_align(vehicle, LV_ALIGN_CENTER, 0, ui_layout_px(-56));
 
-    lv_obj_t *ble = lv_label_create(parent);
+    lv_obj_t *ble_btn = lv_btn_create(parent);
+    lv_obj_set_size(ble_btn, ui_layout_px(220), ui_layout_px(48));
+    lv_obj_align(ble_btn, LV_ALIGN_CENTER, 0, ui_layout_px(6));
+    lv_obj_set_style_radius(ble_btn, ui_layout_px(24), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(ble_btn, lv_color_hex(0x1A1A2E), LV_PART_MAIN);
+    lv_obj_set_style_border_width(ble_btn, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(ble_btn, lv_color_hex(0x2F80ED), LV_PART_MAIN);
+    lv_obj_add_flag(ble_btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_event_cb(ble_btn, ui_home_menu_open_ble_scan, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *ble = lv_label_create(ble_btn);
     lv_label_set_text(ble, "BLE: Not set");
-    lv_obj_set_style_text_font(ble, ui_font_typoder(20), LV_PART_MAIN);
-    lv_obj_set_style_text_color(ble, lv_color_hex(0xAFAFAF), LV_PART_MAIN);
-    lv_obj_set_width(ble, ui_layout_px(280));
-    lv_obj_set_style_text_align(ble, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_align(ble, LV_ALIGN_CENTER, 0, ui_layout_px(6));
+    lv_obj_set_style_text_font(ble, ui_font_typoder(18), LV_PART_MAIN);
+    lv_obj_set_style_text_color(ble, lv_color_hex(0xAFCFFF), LV_PART_MAIN);
+    lv_obj_center(ble);
 
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, ui_layout_px(180), ui_layout_px(48));
