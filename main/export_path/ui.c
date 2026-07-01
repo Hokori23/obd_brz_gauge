@@ -22,8 +22,8 @@
 static const char *TAG = "ui";
 static bool s_logo_transition_started = false;
 
-#define UI_NAV_ANIM_MS 200
-#define UI_NAV_ANIM_LOGO_MS 300
+#define UI_NAV_ANIM_MS 0
+#define UI_NAV_ANIM_LOGO_MS 0
 
 static const char *gesture_dir_name(lv_dir_t dir)
 {
@@ -75,7 +75,7 @@ static void ui_logo_transition_to(lv_obj_t **target_scr, void (*target_init)(voi
         lv_obj_add_event_cb(ui_ScreenPageLogo, ui_logo_unloaded_cb, LV_EVENT_SCREEN_UNLOADED, NULL);
     }
 
-    _ui_screen_change(target_scr, LV_SCR_LOAD_ANIM_FADE_ON, UI_NAV_ANIM_LOGO_MS, 0, target_init);
+    _ui_screen_change(target_scr, LV_SCR_LOAD_ANIM_NONE, 0, 0, target_init);
 }
 
 ///////////////////// VARIABLES ////////////////////
@@ -253,7 +253,7 @@ void ui_event_obd_prot_background(lv_event_t *e)
                      (void *)lv_scr_act());
             lv_indev_wait_release(lv_indev_get_act());
             ui_home_runtime_show_page(ui_home_runtime_page_from_default(nvs_cfg_get()->default_page),
-                                      LV_SCR_LOAD_ANIM_MOVE_TOP);
+                                      LV_SCR_LOAD_ANIM_NONE);
             ESP_LOGI(TAG, "OBDProtocal gesture: switch requested active_after=%p", (void *)lv_scr_act());
         }
     } else if (code == LV_EVENT_LONG_PRESSED) {

@@ -74,7 +74,7 @@ static void on_settings_background(lv_event_t *e)
     lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
     if (dir == LV_DIR_TOP) {
         lv_indev_wait_release(lv_indev_get_act());
-        ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_OVER_TOP);
+        ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_NONE);
     }
 }
 

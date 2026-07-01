@@ -122,7 +122,7 @@ static void ui_dashboard_config_background(lv_event_t *e)
 
     if (lv_indev_get_gesture_dir(lv_indev_get_act()) == LV_DIR_TOP) {
         lv_indev_wait_release(lv_indev_get_act());
-        ui_dashboard_config_close_to_home(LV_SCR_LOAD_ANIM_MOVE_TOP);
+        ui_dashboard_config_close_to_home(LV_SCR_LOAD_ANIM_NONE);
     }
 }
 
@@ -154,11 +154,17 @@ static void ui_dashboard_config_screen_init(void)
     }
 
     page = ui_dashboard_config_get_page_cfg(s_dashboard_config_gauge_index);
-    if (page == NULL) {
-        return;
-    }
 
     s_dashboard_config_screen = lv_obj_create(NULL);
+
+    if (page == NULL) {
+        ui_round_screen_apply_base(s_dashboard_config_screen, lv_color_hex(0x000000));
+        lv_obj_t *err_label = lv_label_create(s_dashboard_config_screen);
+        lv_label_set_text(err_label, "No page config");
+        lv_obj_set_style_text_color(err_label, lv_color_hex(0xFF4444), LV_PART_MAIN);
+        lv_obj_center(err_label);
+        return;
+    }
     ui_round_screen_apply_base(s_dashboard_config_screen, lv_color_hex(0x000000));
     lv_obj_add_event_cb(s_dashboard_config_screen, ui_dashboard_config_background, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(s_dashboard_config_screen,
@@ -251,7 +257,7 @@ void ui_dashboard_config_open(uint8_t gauge_index)
 {
     s_dashboard_config_gauge_index = gauge_index;
     ui_dashboard_config_screen_change_with_anim(&s_dashboard_config_screen,
-                                                LV_SCR_LOAD_ANIM_MOVE_BOTTOM,
+                                                LV_SCR_LOAD_ANIM_NONE,
                                                 ui_dashboard_config_screen_init);
 }
 
