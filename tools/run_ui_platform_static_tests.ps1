@@ -101,6 +101,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "nvs storage dashboard contract checks failed"
 }
 
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\nvs_storage\test_nvs_storage_stat_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "nvs storage stat contract checks failed"
+}
+
 $mainCMake = Get-Content (Join-Path $PSScriptRoot "..\main\CMakeLists.txt") -Raw
 if ($mainCMake -notmatch 'CONFIG_OBD_BOARD_WS_175_AMOLED') {
     throw "main/CMakeLists.txt must gate WS175-specific sources"

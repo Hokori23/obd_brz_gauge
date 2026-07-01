@@ -40,7 +40,9 @@ typedef enum {
 
 static const gpio_num_t s_tx_pin = (gpio_num_t)CONFIG_OBD_RS485_TX_GPIO;
 static const gpio_num_t s_rx_pin = (gpio_num_t)CONFIG_OBD_RS485_RX_GPIO;
+#if CONFIG_OBD_RS485_DE_RE_GPIO >= 0
 static const gpio_num_t s_de_re_gpio = (gpio_num_t)CONFIG_OBD_RS485_DE_RE_GPIO;
+#endif
 
 static const brake_modbus_cfg_t s_cfg = {
     .baud = 9600,
@@ -53,13 +55,21 @@ static const brake_modbus_cfg_t s_cfg = {
 
 static inline bool rs485_has_de_re(void)
 {
+#if CONFIG_OBD_RS485_DE_RE_GPIO >= 0
+    return true;
+#else
     return CONFIG_OBD_RS485_DE_RE_GPIO >= 0;
+#endif
 }
 
 static void rs485_set_tx_mode(bool tx_mode)
 {
     if (!rs485_has_de_re()) return;
+#if CONFIG_OBD_RS485_DE_RE_GPIO >= 0
     gpio_set_level(s_de_re_gpio, tx_mode ? 1 : 0);
+#else
+    (void)tx_mode;
+#endif
 }
 
 static uint16_t modbus_crc16(const uint8_t *data, size_t len)
@@ -252,9 +262,10 @@ static void rs485_temp_task(void *arg)
                                         NULL,
                                         0));
 
-    if (rs485_has_de_re()) {
+#if CONFIG_OBD_RS485_DE_RE_GPIO >= 0
+    {
         gpio_config_t io_conf = {
-            .pin_bit_mask = (1ULL << (uint64_t)s_de_re_gpio),
+            .pin_bit_mask = (1ULL << CONFIG_OBD_RS485_DE_RE_GPIO),
             .mode = GPIO_MODE_OUTPUT,
             .pull_up_en = GPIO_PULLUP_DISABLE,
             .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -262,6 +273,7 @@ static void rs485_temp_task(void *arg)
         };
         ESP_ERROR_CHECK(gpio_config(&io_conf));
     }
+#endif
     rs485_set_tx_mode(false);
 
     s_uart_baud_cur = s_cfg.baud;

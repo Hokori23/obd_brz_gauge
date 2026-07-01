@@ -321,7 +321,9 @@ void app_main(void)
                 .enable_ppa_accel = true,
                 .require_double_buffer = true,
             },
-            .tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_DOUBLE_FULL,
+            // QSPI panel is registered as PANEL_IF_OTHER in esp_lvgl_adapter.
+            // This interface only supports NONE or TE_SYNC tear modes.
+            .tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE,
         };
         lv_display_t *disp = NULL;
 

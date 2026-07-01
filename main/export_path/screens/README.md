@@ -7,13 +7,7 @@
 - `ui_ScreenPageLogo.c`：启动 Logo 页
 - `ui_ScreenPageBLEScan.c`：蓝牙扫描页
 - `ui_ScreenPageODBProtocal.c`：OBD 协议配置页
-- `ui_ScreenPageTemp.c` / `TempCustom.c`：温度类页面
-- `ui_ScreenPageInfo.c` / `InfoCustom.c`：综合信息页
-- `ui_ScreenPageBrakeTemp.c` / `BrakeWarn.c`：刹车温度显示与告警
-- `ui_ScreenPageOilPressure.c` / `OilWarn.c`：机油压力显示与告警
-- `ui_ScreenPageNeedle.c`：指针仪表页
 - `ui_ScreenPageSettings.c`：设置页
-- `ui_ScreenPageEasterEgg.c`：车型/设备信息页
 
 ## 读这些页面时看什么
 
@@ -37,6 +31,4 @@
 ## 已补的页面说明
 
 - [ui_ScreenPageBLEScan.md](ui_ScreenPageBLEScan.md)
-- [ui_ScreenPageTemp.md](ui_ScreenPageTemp.md)
 - [ui_ScreenPageSettings.md](ui_ScreenPageSettings.md)
-- [ui_ScreenPageNeedle.md](ui_ScreenPageNeedle.md)

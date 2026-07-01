@@ -51,6 +51,7 @@ static SemaphoreHandle_t s_mux;
 static esp_err_t load_cfg_blob(void);
 static void dashboard_cfg_set_defaults(ui_dashboard_cfg_t *cfg);
 static void dashboard_cfg_sanitize(ui_dashboard_cfg_t *cfg);
+static void dashboard_cfg_sanitize_default_page(nvs_user_cfg_t *cfg);
 static void cfg_migrate_from_legacy(const legacy_nvs_user_cfg_v0_t *legacy);
 static void cfg_sanitize(nvs_user_cfg_t *cfg);
 static esp_err_t load_blob(const char *ns, const char *key, void *out, size_t len);
@@ -150,7 +151,6 @@ void nvs_stat_reset_trip(void)
     s_stat.trip_m = 0;
     s_stat.max_speed_kmh = 0;
     s_stat.avg_speed_kmh = 0;
-    s_stat.run_time_s = 0;
     s_stat.trip_run_time_s = 0;
     s_stat_dirty = true;
     xSemaphoreGive(s_mux);
@@ -259,6 +259,22 @@ static void dashboard_cfg_sanitize(ui_dashboard_cfg_t *cfg)
     }
 }
 
+static void dashboard_cfg_sanitize_default_page(nvs_user_cfg_t *cfg)
+{
+    if (!cfg) {
+        return;
+    }
+
+    if (cfg->default_page == NVS_DEFAULT_PAGE_MENU) {
+        return;
+    }
+
+    if (cfg->dashboard_cfg.gauge_page_count == 0u ||
+        cfg->default_page > cfg->dashboard_cfg.gauge_page_count) {
+        cfg->default_page = NVS_DEFAULT_PAGE_MENU;
+    }
+}
+
 static void cfg_migrate_from_legacy(const legacy_nvs_user_cfg_v0_t *legacy)
 {
     if (!legacy) {
@@ -292,7 +308,7 @@ static void cfg_sanitize(nvs_user_cfg_t *cfg)
         cfg->brightness_day = 100;
     }
     if (cfg->default_page >= NVS_DEFAULT_PAGE_COUNT) {
-        cfg->default_page = NVS_DEFAULT_PAGE_TEMP;
+        cfg->default_page = NVS_DEFAULT_PAGE_MENU;
     }
     if (cfg->needle_source_idx >= 10) {
         cfg->needle_source_idx = 0;
@@ -322,6 +338,7 @@ static void cfg_sanitize(nvs_user_cfg_t *cfg)
     }
 
     dashboard_cfg_sanitize(&cfg->dashboard_cfg);
+    dashboard_cfg_sanitize_default_page(cfg);
 }
 
 static esp_err_t load_blob(const char *ns, const char *key, void *out, size_t len)

@@ -8,6 +8,18 @@
 
 ## 2. 评审结论
 
+### 2.0 当前代码对照结论（基于 2026-07-01 仓库）
+
+本次已按当前仓库真实代码复核本文档，主要结论如下：
+
+1. 方案不是停留在设计阶段，动态首页主干已经落地；以当前仓库代码看，阶段 B、C、D 的软件侧目标已经收口完成。
+2. `ui_home_runtime.c` 已经成为动态首页的主实现文件，承担首页 tile 构建、编辑态、删除确认和首页刷新。
+3. 仪表页配置 screen 已经拆到 [ui_dashboard_config.c](/D:/Program%20Files%20(x86)/Code%20Projects/obd_brz_gauge/main/export_path/ui_dashboard_config.c:1) / [ui_dashboard_config.h](/D:/Program%20Files%20(x86)/Code%20Projects/obd_brz_gauge/main/export_path/ui_dashboard_config.h:1)，不再继续内嵌在 `ui_home_runtime.c`。
+4. `my_timerMain()` 仍然存在，但动态首页刷新已经下沉到 [ui_home_runtime.c](/D:/Program%20Files%20(x86)/Code%20Projects/obd_brz_gauge/main/export_path/ui_home_runtime.c:1043) 自己管理的 LVGL timer，旧总控对首页的直接周期刷新耦合已被移除；随着旧固定页退场，`ui_legacy_runtime.c` 当前已进一步收敛为数据项元信息与 sweep 状态管理。
+5. `ui_home_runtime_page_from_default()` 已经恢复为基于动态首页 tile 的映射，`Settings` 页里的 `BOOT PAGE` 也已经能真正落到 `MENU / GAUGE n`。
+6. 本轮复核还已完成软件侧验证：`tools/run_ui_platform_static_tests.ps1` 通过，`idf.py -B build_default -D SDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.defaults.esp32s3' reconfigure build` 与 `idf.py -B build_ws175 -D SDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.ws175' reconfigure build` 均已成功产出 `.bin`。
+7. 本轮还顺手修正了两个与方案状态判断直接相关的仓库侧问题：`main/bsp_obd_dsp/rs485_brake_temp.c` 现已兼容 `CONFIG_OBD_RS485_DE_RE_GPIO = -1` 的板型构建路径；`sdkconfig.defaults` 中此前遗留的无效 capability 赋值与旧 Kconfig 名称迁移项也已清理，当前剩余提示以外部环境级 warning 为主，不再是本仓库配置噪声。
+
 ### 2.1 当前实现里已经成立的部分
 
 以下能力已经在当前分支存在，方向正确，不需要推翻：
@@ -18,14 +30,18 @@
 4. 新增页、删除页、配置页返回后，首页会整体重建并重新落到目标页。
 5. `ui_round_shell_create_ring()` 已被改成透明，不再主动绘制白色环。
 6. 长按当前仪表页进入编辑态、删除确认、配置页 roller 编辑，这条主流程已经可用。
+7. `MENU` / 仪表页 / `ADD` 三类 tile 已经由 [ui_home_runtime.c](/D:/Program%20Files%20(x86)/Code%20Projects/obd_brz_gauge/main/export_path/ui_home_runtime.c:156) 按描述动态构建，不再依赖旧固定首页布局。
+8. 首页返回入口已经收敛到 `ui_home_runtime_show_page()`；当前主流程中的二级页主要是 `BLE Scan`、`Settings` 和 `ODBProtocal`。
 
 ### 2.2 当前实现和目标方案的差距
 
-以下三点仍然需要继续收口：
+当前剩余项已经不再是首页主体结构缺口；按当前仓库代码看，本方案范围内的软件主实现已基本收口，剩余重点主要是真机验证：
 
-1. 动态首页运行时、配置页、历史兼容逻辑仍然主要堆在 [ui.c](/D:/Program%20Files%20(x86)/Code%20Projects/obd_brz_gauge/main/export_path/ui.c)。
-2. 编辑态虽然已经接近目标形态，但还缺少正式的模块边界和验收口径，后续继续往 `ui.c` 里补功能风险很高。
-3. 旧固定首页残留逻辑仍在 `my_timerMain()` 和若干老页面文件周围存在兼容痕迹，需要按阶段清理，而不是继续长期共存。
+1. 动态首页运行时与配置页已经分别落在 `ui_home_runtime.c` 和 `ui_dashboard_config.c`，旧功能页运行时也已拆到 `ui_legacy_runtime.c`；历史固定页已经不再保留在主流程代码路径中。
+2. `Temp / Info / Needle / OilPressure / BrakeTemp / BrakeWarn / OilWarn / EasterEgg` 及 `TempCustom / InfoCustom` 等衍生页已从工程主线移除，不再作为兼容页面继续留在 `screens/` 和 `ui.c/ui.h` 中。
+3. `ui_init()` 只保留当前真实需要的页面状态；`ODBProtocal` 继续按需初始化，不在启动时预创建。
+4. `BLE Scan`、`Settings`、`ODBProtocal` 三个当前主流程二级页都已经补上 `LV_EVENT_SCREEN_UNLOADED` / `LV_EVENT_DELETE` 生命周期清理，重复打开会重建新 screen；其中 `BLE Scan` 页面销毁时也已兜底调用 `elm327_ble_scan_only_stop()`，避免后台扫描残留。
+5. 后续仍需按第 10 节做真机交互与视觉验收，这部分不能由静态检查或构建结果替代。
 
 ### 2.3 最终判断
 
@@ -34,7 +50,7 @@
 1. 现有 `dashboard_cfg` 数据模型保留。
 2. 现有 `MENU + N + ADD` 首页结构保留。
 3. 现有“整体重建首页”策略保留。
-4. 后续工作重点转为模块拆分、交互细节固化、历史逻辑下线。
+4. 后续工作重点已经从首页主体实现转为真机交互与视觉验收。
 
 ## 3. 最终产品定义
 
@@ -60,7 +76,7 @@
 
 1. 展示当前 vehicle profile 名称。
 2. 展示 BLE 设备名摘要。
-3. 提供进入 `BLE Scan`、`Settings` 等二级页入口。
+3. 当前代码里通过上下滑手势提供进入二级页入口：上滑进入 `BLE Scan`，下滑进入 `Settings`。
 4. 不参与编辑态。
 
 可编辑仪表页职责：
@@ -124,7 +140,9 @@ typedef struct {
 4. 新建页默认值固定为：
    `slot_count = 1`，`slot_items[0] = DISP_ITEM_RPM`
 5. 历史数据迁移默认页固定为：
-   `RPM / SPEED / OIL`
+   `MENU`
+6. 若 `default_page` 因删页等原因超出当前 `gauge_page_count`，统一回退为：
+   `MENU`
 
 ### 4.3 首页页号映射
 
@@ -239,6 +257,11 @@ typedef struct {
 2. 当前已有可用实现，复用成本最低。
 3. 后续若扩展主题、模板、布局风格，独立 screen 可扩展性更高。
 
+当前代码现状：
+
+1. 配置页已经是独立 screen，实现位于 [ui_dashboard_config.c](/D:/Program%20Files%20(x86)/Code%20Projects/obd_brz_gauge/main/export_path/ui_dashboard_config.c:1)。
+2. 配置页通过 `ui_dashboard_config_open()` 打开，并通过 `ui_home_runtime_rebuild_and_load()` 返回首页。
+
 ### 6.2 固定行为
 
 1. 标题固定为 `DASHBOARD`
@@ -263,36 +286,48 @@ typedef struct {
 
 ### 7.1 模块划分
 
-后续不再把动态首页相关能力继续堆回 `ui.c`。固定拆成三层：
+目标边界仍然是不再把动态首页相关能力继续堆回 `ui.c`。结合当前代码，现状与目标如下：
 
 1. `ui.c`
-   职责：全局页面路由、logo 后首屏进入、旧入口兼容转发
+   现状：已经主要收敛为 logo 后首屏进入、顶层定时入口、文本 helper、协议页事件以及少量告警/兼容入口。
 2. `ui_home_runtime.c`
-   职责：动态首页 tile 描述、页面挂载、编辑态、首页刷新
+   现状：已经承载动态首页 tile 描述、页面挂载、编辑态和首页刷新。
 3. `ui_dashboard_config.c`
-   职责：仪表页配置 screen
+   现状：已经承载仪表页配置 screen，并通过独立头文件暴露入口。
+4. `ui_legacy_runtime.c`
+   现状：已经收敛为数据项元信息、显示格式化与 sweep 状态机，不再继续承载旧固定页的页面级刷新细节。
 
 对应头文件：
 
 1. [ui_home_runtime.h](/D:/Program%20Files%20(x86)/Code%20Projects/obd_brz_gauge/main/export_path/ui_home_runtime.h:1)
-2. 新增 `main/export_path/ui_dashboard_config.h`
+2. [ui_dashboard_config.h](/D:/Program%20Files%20(x86)/Code%20Projects/obd_brz_gauge/main/export_path/ui_dashboard_config.h:1)
+3. [ui_runtime_common.h](/D:/Program%20Files%20(x86)/Code%20Projects/obd_brz_gauge/main/export_path/ui_runtime_common.h:1)
 
 ### 7.2 对外接口
 
-首页运行时稳定接口固定为：
+当前已经存在并可对外使用的首页运行时接口为：
 
 ```c
 void ui_home_runtime_show_page(uint8_t page_id, lv_scr_load_anim_t anim);
 void ui_home_runtime_refresh_active_tile(void);
 uint8_t ui_home_runtime_page_from_default(uint8_t default_page);
+void ui_home_runtime_reset(uint8_t initial_page_id);
+void ui_home_runtime_screen_init(void);
+void ui_home_runtime_rebuild_and_load(uint8_t page_id, lv_scr_load_anim_t anim);
 ```
 
-后续允许补充但不允许反向扩散回 `ui.h` 的接口：
+当前已经存在的配置页接口为：
 
 ```c
-void ui_home_runtime_rebuild_and_load(uint8_t page_id, lv_scr_load_anim_t anim);
 void ui_dashboard_config_open(uint8_t gauge_index);
+void ui_dashboard_config_reset(void);
 ```
+
+说明：
+
+1. `ui_home_runtime_rebuild_and_load()` 已作为 sibling UI 模块可调用接口暴露给 `ui_dashboard_config.c`。
+2. `ui_dashboard_config_open()` 已是独立模块接口，不再是 `ui_home_runtime.c` 内部 `static` 函数。
+3. `ui_dashboard_config_reset()` 当前作为顶层 UI reset 路径使用的生命周期接口保留，对普通页面流转不直接暴露交互语义。
 
 ### 7.3 私有内部职责
 
@@ -315,21 +350,31 @@ void ui_dashboard_config_open(uint8_t gauge_index);
 
 ## 8. 历史固定页的处理原则
 
-以下页面不再是首页主路径的一部分：
+以下页面已经不再是首页主路径的一部分，并已从工程主线移除：
 
 1. `ui_ScreenPageTemp.c`
 2. `ui_ScreenPageInfo.c`
 3. `ui_ScreenPageNeedle.c`
 4. `ui_ScreenPageOilPressure.c`
 5. `ui_ScreenPageBrakeTemp.c`
-6. `ui_ScreenPageEasterEgg.c`
+6. `ui_ScreenPageBrakeWarn.c`
+7. `ui_ScreenPageOilWarn.c`
+8. `ui_ScreenPageTempCustom.c`
+9. `ui_ScreenPageInfoCustom.c`
+10. `ui_ScreenPageEasterEgg.c`
 
 处理原则固定为：
 
 1. 有独立功能价值的，允许保留为功能页。
 2. 仅服务旧首页刷新的逻辑，要从首页主刷新链路中移除。
-3. `my_timerMain()` 不再感知旧首页页面类型。
+3. `my_timerMain()` 不再按旧首页“当前可见页类型”做分支刷新判断。
 4. 动态首页成为唯一首页刷新主路径。
+
+当前代码现状补充：
+
+1. 上述旧页面文件已经从 `main/export_path/screens/` 主线移除。
+2. `ui.c` / `ui.h` 里对应的历史 screen 指针、控件导出和事件入口也已同步移除。
+3. `my_timerMain()` 已不再直接驱动动态首页 tile 刷新，也不再承载旧功能页的数据更新细节；它当前主要只保留顶层时序入口，并转调已经收敛后的 `ui_legacy_runtime.c`。
 
 ## 9. 分阶段实施顺序
 
@@ -359,6 +404,9 @@ void ui_dashboard_config_open(uint8_t gauge_index);
 2. 静态脚本测试通过
 3. 行为与当前分支一致，不引入新交互变化
 
+当前判断：主体已完成。
+说明：`ui.c -> ui_home_runtime.c` 与 `ui.c -> ui_dashboard_config.c` 的主拆分已经完成，旧固定页兼容链路也已从主线退场；当前剩余主要是第 10 节定义的真机交互与视觉验收，而不是新的模块边界改造。
+
 ### 阶段 C：编辑态收口
 
 目标：
@@ -374,6 +422,8 @@ void ui_dashboard_config_open(uint8_t gauge_index);
 3. `DELETE` 稳定弹确认框
 4. `EDIT` 稳定进入配置页并返回
 
+当前判断：主流程已完成，且已有静态契约测试覆盖。
+
 ### 阶段 D：旧首页逻辑退场
 
 目标：
@@ -385,8 +435,11 @@ void ui_dashboard_config_open(uint8_t gauge_index);
 完成标准：
 
 1. 动态首页成为唯一首页刷新入口
-2. `my_timerMain()` 不再依赖旧首页页面类型
+2. `my_timerMain()` 不再依赖旧首页页面类型做页面可见性分支
 3. 构建和静态测试通过
+
+当前判断：主体已完成。
+说明：动态首页自身刷新已从 `my_timerMain()` 移出，旧首页按“当前可见页类型”分支刷新的代码已去掉；旧固定页及其衍生页也已从工程主线删除，对应历史全局指针和页面级刷新逻辑同步收缩。当前剩余的是第 10 节定义的真机交互与视觉验收，而不是新的软件结构改造。
 
 ## 10. 验收口径
 
@@ -399,6 +452,14 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_ui_platform_static_tests.ps
 idf.py reconfigure build
 idf.py build
 ```
+
+本次复核的实际结果（2026-07-01）：
+
+1. `powershell -ExecutionPolicy Bypass -File .\tools\run_ui_platform_static_tests.ps1` 已通过。
+2. `idf.py -B build_default -D SDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.defaults.esp32s3' reconfigure build` 已通过。
+3. `idf.py -B build_ws175 -D SDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.ws175' reconfigure build` 已通过。
+4. 本次两套构建复跑后，`rs485_brake_temp.c` 相关编译失败已消失，`sdkconfig.defaults` 中 `SOC_SDM_GROUPS` / `CONFIG_NEWLIB_*` / `CONFIG_PERIPH_CTRL_FUNC_IN_IRAM` 等仓库侧迁移告警也已消失。
+5. 当前仍可见的提示主要是环境侧项，例如 `ESP_ROM_ELF_DIR` 未设置导致的 gdbinit warning、`idf.py` 启动时的 Python venv 路径提示，以及依赖可升级 notice；这些不阻塞 `.bin` 产出，也不属于本方案实现偏差。
 
 ### 10.2 交互验收
 
@@ -434,5 +495,5 @@ idf.py build
 4. 编辑态固定为“左半区 BACK、右半区 DELETE、顶部小 EDIT”。
 5. 配置能力固定为独立 screen。
 6. 新增、删除、配置返回后固定整体重建首页。
-7. 动态首页运行时要从 `ui.c` 中拆出。
-8. 旧固定首页逻辑最终要退出首页主路径。
+7. 动态首页运行时已从 `ui.c` 中拆出。
+8. 旧固定首页逻辑已退出首页主路径。

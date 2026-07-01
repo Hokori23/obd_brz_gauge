@@ -28,6 +28,8 @@ static void start_scan(void);
 static void on_device_selected(lv_event_t *e);
 static void on_saved_device_delete(lv_event_t *e);
 static void on_ble_scan_background(lv_event_t *e);
+static void ui_ble_scan_screen_reset_state(void);
+static void ui_ble_scan_screen_deleted(lv_event_t *e);
 
 // LVGL locking bridge (implemented in app_main.c)
 extern bool app_lvgl_lock(int timeout_ms);
@@ -138,6 +140,27 @@ static void on_ble_scan_background(lv_event_t *e)
     }
 }
 
+static void ui_ble_scan_screen_reset_state(void)
+{
+    ui_ScreenPageBLEScan = NULL;
+    s_list = NULL;
+    s_label_status = NULL;
+    s_spinner = NULL;
+    s_saved_panel = NULL;
+    s_label_saved_hdr = NULL;
+    s_saved_name_lbl = NULL;
+    s_scanning = false;
+}
+
+static void ui_ble_scan_screen_deleted(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    if (s_scanning) {
+        elm327_ble_scan_only_stop();
+    }
+    ui_ble_scan_screen_reset_state();
+}
+
 void ui_ScreenPageBLEScan_screen_init(void)
 {
     ui_ble_scan_layout_t layout;
@@ -146,6 +169,11 @@ void ui_ScreenPageBLEScan_screen_init(void)
     ui_ScreenPageBLEScan = lv_obj_create(NULL);
     ui_round_screen_apply_base(ui_ScreenPageBLEScan, lv_color_hex(0x000000));
     ui_round_shell_create_ring(ui_ScreenPageBLEScan, &layout.shell);
+    lv_obj_add_event_cb(ui_ScreenPageBLEScan,
+                        scr_unloaded_delete_cb,
+                        LV_EVENT_SCREEN_UNLOADED,
+                        &ui_ScreenPageBLEScan);
+    lv_obj_add_event_cb(ui_ScreenPageBLEScan, ui_ble_scan_screen_deleted, LV_EVENT_DELETE, NULL);
 
     // Title
     lv_obj_t *label_title = lv_label_create(ui_ScreenPageBLEScan);

@@ -236,48 +236,52 @@ UI pages / generated SquareLine code
 
 而不是把分辨率差异重新散回各个 `ui_ScreenPage*.c`。
 
-当前已实现的布局 getter 包括：
+当前代码里仍然存在的布局 getter 包括：
 
-- `ui_round_shell_layout_get`
-- `ui_ble_scan_layout_get`
-- `ui_settings_layout_get`
-- `ui_brake_temp_layout_get`
-- `ui_oil_pressure_layout_get`
-- `ui_info_layout_get`
-- `ui_temp_layout_get`
-- `ui_needle_layout_get`
-- `ui_needle_config_layout_get`
-- `ui_warn_layout_get`
-- `ui_logo_layout_get`
-- `ui_obd_protocol_layout_get`
-- `ui_info_custom_layout_get`
-- `ui_temp_custom_layout_get`
-- `ui_easter_egg_layout_get`
+- 主线仍在使用的：
+  - `ui_round_shell_layout_get`
+  - `ui_ble_scan_layout_get`
+  - `ui_settings_layout_get`
+  - `ui_logo_layout_get`
+  - `ui_obd_protocol_layout_get`
+- 仍保留在仓库里的历史/兼容布局 helper：
+  - `ui_brake_temp_layout_get`
+  - `ui_oil_pressure_layout_get`
+  - `ui_info_layout_get`
+  - `ui_temp_layout_get`
+  - `ui_needle_layout_get`
+  - `ui_needle_config_layout_get`
+  - `ui_warn_layout_get`
+  - `ui_info_custom_layout_get`
+  - `ui_temp_custom_layout_get`
+  - `ui_easter_egg_layout_get`
+
+这里要特别说明：
+
+- 这些历史 getter 仍在 `ui_platform.c` / `ui_layout.h` 中保留，并不等于对应页面仍然是当前主线 UI 的一部分。
+- 截至当前仓库状态，动态首页主线已经移除了旧固定页及其衍生页；这些 getter 更多体现为历史兼容资产，而不是当前页面流转入口。
 
 ### 6.6 已迁移到 `ui_layout` 的页面
 
-当前这些页面已经接入布局层，不再主要依赖散落的 `360x360` 硬编码：
+当前主线仍在使用并已接入布局层的页面包括：
 
 - `main/export_path/screens/ui_ScreenPageBLEScan.c`
 - `main/export_path/screens/ui_ScreenPageSettings.c`
-- `main/export_path/screens/ui_ScreenPageBrakeTemp.c`
-- `main/export_path/screens/ui_ScreenPageOilPressure.c`
-- `main/export_path/screens/ui_ScreenPageInfo.c`
-- `main/export_path/screens/ui_ScreenPageTemp.c`
-- `main/export_path/screens/ui_ScreenPageNeedle.c`
-- `main/export_path/screens/ui_ScreenPageOilWarn.c`
-- `main/export_path/screens/ui_ScreenPageBrakeWarn.c`
 - `main/export_path/screens/ui_ScreenPageLogo.c`
 - `main/export_path/screens/ui_ScreenPageODBProtocal.c`
-- `main/export_path/screens/ui_ScreenPageInfoCustom.c`
-- `main/export_path/screens/ui_ScreenPageTempCustom.c`
-- `main/export_path/screens/ui_ScreenPageEasterEgg.c`
+
+另外，动态首页主实现 `main/export_path/ui_home_runtime.c` 也已经统一使用：
+
+- `ui_round_screen_apply_base()`
+- `ui_layout_px()`
+
+它不再依赖旧固定页的逐页布局 getter，而是直接按动态 tile 结构组织首页内容。
 
 说明：
 
 - 仍然能看到部分 `360` 字样时，需要区分它是否只是角度值、注释或非分辨率语义
 - 当前真正需要继续清理的，是仍然和分辨率/几何布局强绑定的硬编码坐标
-- `ui_ScreenPageNeedle.c` 中针表配置页外围圆角也已经改为通过 `ui_needle_config_layout_get()` 里的 `shell.ring_diameter` 获取，不再直接写死 `360`
+- 历史旧页面相关的布局 getter 虽仍在代码中，但对应页面文件已不再位于当前主线路径
 
 ## 7. 当前验证状态
 
@@ -555,8 +559,9 @@ First-pass hardware checks:
 UI compatibility checks on `466x466`:
 
 - no obvious clipping near the round-screen edges
-- titles, hints, rollers and charts stay within the visible area
-- `Temp / Info / Brake / Oil / Needle / Settings / BLE` pages can all be entered and exited
+- titles, hints, rollers and cards stay within the visible area
+- dynamic home `MENU / GAUGE / ADD` flow can be entered, slid and returned correctly
+- `Settings / BLE / ODBProtocal` pages can all be entered and exited
 - typography still feels proportionate on the larger round panel
 
 Current status after real-board acceptance:

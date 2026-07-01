@@ -2,51 +2,28 @@
 // SquareLine Studio version: SquareLine Studio 1.5.0
 // LVGL version: 8.3.11
 // Project name: OBD_PRJ
-// UI主题命名为 PINK_CAT(粉色猫咪)，主色调为粉色，副色调为紫色
 #include "ui.h"
 #include "ui_font_profile.h"
 #include "ui_helpers.h"
-#include "ui_layout.h"
 #include "ui_home_runtime.h"
-#include "ui_round_shell.h"
 #include "ui_runtime_common.h"
-#include <stdint.h>
+
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
-#include <driver/gpio.h>
 #include <string.h>
-#include "app_obd_dsp/default_page_ids.h"
-#include "app_obd_dsp/vehicle_profiles.h"
+
+#include <driver/gpio.h>
+
 #include "bsp_obd_dsp/boards/board_api.h"
 #include "bsp_obd_dsp/nvs_storage.h"
-#include "bsp_obd_dsp/elm327_ble_client.h"
 #include "esp_system.h"
-
 
 static const char *TAG = "ui";
 static bool s_logo_transition_started = false;
 
 #define UI_NAV_ANIM_MS 200
 #define UI_NAV_ANIM_LOGO_MS 300
-
-static void ui_screen_change_with_anim(lv_obj_t **target_scr,
-                                       lv_scr_load_anim_t anim,
-                                       void (*target_init)(void))
-{
-    _ui_screen_change(target_scr, anim, UI_NAV_ANIM_MS, 0, target_init);
-}
-
-static void ui_nav_horizontal(lv_dir_t dir, lv_obj_t **target_scr, void (*target_init)(void))
-{
-    ui_screen_change_with_anim(target_scr,
-                               (dir == LV_DIR_RIGHT) ? LV_SCR_LOAD_ANIM_MOVE_RIGHT : LV_SCR_LOAD_ANIM_MOVE_LEFT,
-                               target_init);
-}
-
-static void ui_nav_vertical(lv_scr_load_anim_t anim, lv_obj_t **target_scr, void (*target_init)(void))
-{
-    ui_screen_change_with_anim(target_scr, anim, target_init);
-}
 
 static const char *gesture_dir_name(lv_dir_t dir)
 {
@@ -89,7 +66,9 @@ static void ui_logo_transition_to(lv_obj_t **target_scr, void (*target_init)(voi
 
     s_logo_transition_started = true;
     ESP_LOGI(TAG, "Logo transition start: reason=%s logo=%p target_ptr=%p target=%p",
-             reason, (void *)ui_ScreenPageLogo, (void *)target_scr,
+             reason,
+             (void *)ui_ScreenPageLogo,
+             (void *)target_scr,
              target_scr ? (void *)(*target_scr) : NULL);
 
     if (ui_ScreenPageLogo != NULL) {
@@ -98,577 +77,57 @@ static void ui_logo_transition_to(lv_obj_t **target_scr, void (*target_init)(voi
 
     _ui_screen_change(target_scr, LV_SCR_LOAD_ANIM_FADE_ON, UI_NAV_ANIM_LOGO_MS, 0, target_init);
 }
+
 ///////////////////// VARIABLES ////////////////////
 void ui_ScreenPageLogo_screen_init(void);
-lv_obj_t * ui_ScreenPageLogo;
-lv_obj_t * imageLogo;
-lv_obj_t * imageEasterEgg;
-
-// SCREEN: ui_ScreenPageEasterEgg
-void ui_ScreenPageEasterEgg_screen_init(void);
-lv_obj_t * ui_ScreenPageEasterEgg;
-lv_obj_t * ui_SpinnerEasterEgg;
-lv_obj_t * ArcPageEasterEggBack;
-lv_obj_t * ui_ImageEggBlackEar;
-lv_obj_t * ui_LabelEasterEggInfo;
-// CUSTOM VARIABLES
+lv_obj_t *ui_ScreenPageLogo;
+lv_obj_t *imageLogo;
 
 // SCREEN: ui_ScreenPageBLEScan
 void ui_ScreenPageBLEScan_screen_init(void);
-lv_obj_t * ui_ScreenPageBLEScan;
-// CUSTOM VARIABLES
-
-// SCREEN: ui_ScreenPageTemp
-void ui_ScreenPageTemp_screen_init(void);
-lv_obj_t * ui_ScreenPageTemp;
-
-// SCREEN: ui_ScreenPageTempCustom
-void ui_ScreenPageTempCustom_screen_init(void);
-lv_obj_t * ui_ScreenPageTempCustom;
-
-// SCREEN: ui_ScreenPageBrakeTemp
-void ui_ScreenPageBrakeTemp_screen_init(void);
-lv_obj_t * ui_ScreenPageBrakeTemp;
-
-// SCREEN: ui_ScreenPageOilPressure
-void ui_ScreenPageOilPressure_screen_init(void);
-lv_obj_t * ui_ScreenPageOilPressure;
-
-// SCREEN: ui_ScreenPageInfo
-void ui_ScreenPageInfo_screen_init(void);
-extern lv_obj_t * ui_ScreenPageInfo;
-
-// SCREEN: ui_ScreenPageInfoCustom
-void ui_ScreenPageInfoCustom_screen_init(void);
-lv_obj_t * ui_ScreenPageInfoCustom;
-// labels defined in ui_ScreenPageInfo.c
-// CUSTOM VARIABLES
+lv_obj_t *ui_ScreenPageBLEScan;
 
 // SCREEN: ui_ScreenPageSettings
 void ui_ScreenPageSettings_screen_init(void);
-lv_obj_t * ui_ScreenPageSettings;
-// CUSTOM VARIABLES
-
-// SCREEN: ui_ScreenPageBrakeWarn
-void ui_ScreenPageBrakeWarn_screen_init(void);
-lv_obj_t * ui_ScreenPageBrakeWarn;
-// CUSTOM VARIABLES
-
-// SCREEN: ui_ScreenPageOilWarn
-void ui_ScreenPageOilWarn_screen_init(void);
-lv_obj_t * ui_ScreenPageOilWarn;
-// CUSTOM VARIABLES
-
-// SCREEN: ui_ScreenPageNeedle (指针式可配置仪表)
-void ui_ScreenPageNeedle_screen_init(void);
-lv_obj_t * ui_ScreenPageNeedle;
-lv_meter_scale_t * ui_NeedleScale;
-lv_meter_indicator_t * ui_NeedleIndic;
-lv_obj_t * ui_NeedleMeter;
-lv_obj_t * ui_NeedleValueLabel;
-lv_obj_t * ui_NeedleNameLabel;
-lv_obj_t * ui_NeedleUnitLabel;
-// SCREEN: ui_ScreenPageNeedleConfig
-void ui_ScreenPageNeedleConfig_screen_init(void);
-lv_obj_t * ui_ScreenPageNeedleConfig;
+lv_obj_t *ui_ScreenPageSettings;
 
 // SCREEN: ui_ScreenPageODBProtocal
 void ui_ScreenPageODBProtocal_screen_init(void);
-lv_obj_t * ui_ScreenPageODBProtocal;
-lv_obj_t * ui_SpinnerODBProtocalEgg;
-lv_obj_t * ui_ArcPageODBProtocalBack;
-lv_obj_t * ui_RollerODBProtocalChoose;
-lv_obj_t * ui_ImageODBProtocalBlackEar;
-lv_obj_t * ui_LabelOBDIIText;
-lv_obj_t * ui_LabelSureTipText;
+lv_obj_t *ui_ScreenPageODBProtocal;
+lv_obj_t *ui_SpinnerODBProtocalEgg;
+lv_obj_t *ui_ArcPageODBProtocalBack;
+lv_obj_t *ui_RollerODBProtocalChoose;
+lv_obj_t *ui_ImageODBProtocalBlackEar;
+lv_obj_t *ui_LabelOBDIIText;
+lv_obj_t *ui_LabelSureTipText;
 
 // EVENTS
-lv_obj_t * ui____initial_actions0;
+lv_obj_t *ui____initial_actions0;
 
-
-static uint16_t usSaveProtTimeCnt = 0; //OBD协议保存计时
+static uint16_t usSaveProtTimeCnt = 0;
 
 // IMAGES AND IMAGE SETS
-#define CLEAR_TRIP_TIME 2000 //清除TRIP数据长按时间，单位ms
-#define SAVE_PROTOCOL_TIME 2000 //保存协议长按时间ms
- 
-///////////////////// TEST LVGL SETTINGS ////////////////////
-#define RPM_MAX 5000
-#define SPEED_MAX 160
+#define CLEAR_TRIP_TIME 2000
+#define SAVE_PROTOCOL_TIME 2000
 
-/* ---- Gauge sweep (刷表) animation ---- */
-#define SWEEP_RPM_PEAK   8000   // 刷表最高转速
-#define SWEEP_SPEED_PEAK 999    // 刷表最高车速
-#define SWEEP_STEPS_UP   6      // 上升步数 (6×200ms = 1.2s)
-#define SWEEP_STEPS_DOWN 6      // 下降步数
-#define SWEEP_TOTAL      (SWEEP_STEPS_UP + SWEEP_STEPS_DOWN)
-#define BRAKE_TEMP_TREND_POINTS 30
-#define BRAKE_TEMP_TREND_SAMPLE_MS 1000
-#define BRAKE_TEMP_TREND_INVALID (-1000)
-#define BRAKE_TEMP_ABS_MAX_C 1200
-#define OIL_PRESS_TREND_POINTS 30
-#define OIL_PRESS_TREND_SAMPLE_MS 1000
-#define OIL_PRESS_TREND_INVALID (-1)
-#define OIL_PRESS_MAX_BAR_X10 100
-static int  s_sweep_step = 0;           // 0=关闭, 1~SWEEP_TOTAL=动画中
-static bool s_sweep_pending = false;    // BLE 在 Logo 期间连上，Logo 消失后再触发
-static bool s_prev_ble_connected = false;
-static int16_t s_brake_temp_trend[BRAKE_TEMP_TREND_POINTS];
-static bool s_brake_temp_trend_ready = false;
-static uint32_t s_brake_temp_trend_tick = 0;
-static int16_t s_oil_pressure_trend[OIL_PRESS_TREND_POINTS];
-static bool s_oil_pressure_trend_ready = false;
-static uint32_t s_oil_pressure_trend_tick = 0;
-typedef struct {
-    const char *name;
-    const char *unit;
-    uint32_t color;
-} disp_item_meta_t;
-
-static const disp_item_meta_t s_disp_meta[DISP_ITEM_COUNT] = {
-    {"CLT", "°C", 0x44AAFF},
-    {"IAT", "°C", 0x44FF88},
-    {"OIL", "°C", 0xFF7722},
-    {"LOD", "%", 0xFFCC00},
-    {"TPS", "%", 0xFF8844},
-    {"RPM", "rpm", 0x66CCFF},
-    {"SPD", "km/h", 0xFFFFFF},
-    {"BAT", "V", 0xAACCFF},
-    {"OIP", "bar", 0xFFD166},
-    {"BKT", "°C", 0xFF5A5A},
-    {"BST", "bar", 0x00DD88},
-};
-
-int ui_runtime_sweep_step_get(void)
-{
-    return s_sweep_step;
-}
-
-bool disp_item_read_value(disp_item_t item,
-                          int16_t clt, int16_t iat, int16_t oil,
-                          int16_t load_pct, int16_t tps, int32_t bat_mv, int16_t oilp_x10, int16_t brake_x10,
-                          uint16_t rpm, uint16_t speed, int16_t boost_x10,
-                          int32_t *out)
-{
-    if (!out) return false;
-    switch (item) {
-        case DISP_ITEM_CLT: if (clt > -40) { *out = clt; return true; } return false;
-        case DISP_ITEM_IAT: if (iat > -40) { *out = iat; return true; } return false;
-        case DISP_ITEM_OIL: if (oil > -41) { *out = oil; return true; } return false;
-        case DISP_ITEM_LOAD: if (load_pct >= 0) { *out = load_pct; return true; } return false;
-        case DISP_ITEM_TPS: if (tps >= 0) { *out = tps; return true; } return false;
-        case DISP_ITEM_RPM: *out = rpm; return true;
-        case DISP_ITEM_SPEED: *out = speed; return true;
-        case DISP_ITEM_BAT: if (bat_mv > 0) { *out = bat_mv; return true; } return false;
-        case DISP_ITEM_OILP: if (oilp_x10 >= 0) { *out = oilp_x10; return true; } return false;
-        case DISP_ITEM_BKT: if (brake_x10 > -1000) { *out = brake_x10; return true; } return false;
-        case DISP_ITEM_BOOST: if (boost_x10 != -32768) { *out = boost_x10; return true; } return false;
-        default: return false;
-    }
-}
-
-int32_t disp_item_sweep_value(disp_item_t item, float r)
-{
-    switch (item) {
-        case DISP_ITEM_CLT:
-        case DISP_ITEM_IAT:
-        case DISP_ITEM_OIL:
-            return (int32_t)(120.0f * r);
-        case DISP_ITEM_LOAD:
-        case DISP_ITEM_TPS:
-            return (int32_t)(100.0f * r);
-        case DISP_ITEM_RPM:
-            return (int32_t)(SWEEP_RPM_PEAK * r);
-        case DISP_ITEM_SPEED:
-            return (int32_t)(SWEEP_SPEED_PEAK * r);
-        case DISP_ITEM_BAT:
-            return (int32_t)(12000.0f + 2400.0f * r); // 12.0~14.4V
-        case DISP_ITEM_OILP:
-            return (int32_t)(100.0f * r); // 0.0~10.0bar (x10)
-        case DISP_ITEM_BKT:
-            return (int32_t)(600.0f * r); // 0.0~60.0°C (x10)
-        case DISP_ITEM_BOOST:
-            return (int32_t)(20.0f * r); // 0.0~2.0bar 表压 (x10)
-        default:
-            return 0;
-    }
-}
-
-void disp_item_set_text(lv_obj_t *label, disp_item_t item, int32_t value, bool valid)
-{
-    if (!label) return;
-    lv_obj_set_style_text_font(label, ui_font_typoder(36), LV_PART_MAIN);
-
-    if (!valid) {
-        ui_label_set_text_if_changed(label, "--");
-        return;
-    }
-
-    if (item == DISP_ITEM_BAT) {
-        ui_label_set_text_fmt_if_changed(label, "%d.%d", (int)(value / 1000), (int)((value % 1000) / 100));
-    } else if (item == DISP_ITEM_OILP) {
-        int32_t abs_val = (value < 0) ? -value : value;
-        ui_label_set_text_fmt_if_changed(label, "%d.%d", (int)(value / 10), (int)(abs_val % 10));
-    } else if (item == DISP_ITEM_BKT) {
-        ui_label_set_text_fmt_if_changed(label, "%ld", (long)(value / 10));
-    } else if (item == DISP_ITEM_BOOST) {
-        // 表压可为负(真空)，带符号显示一位小数, e.g. -0.6 / 1.2
-        int32_t a = (value < 0) ? -value : value;
-        ui_label_set_text_fmt_if_changed(label, "%s%d.%d", (value < 0) ? "-" : "", (int)(a / 10), (int)(a % 10));
-    } else {
-        ui_label_set_text_fmt_if_changed(label, "%ld", (long)value);
-    }
-}
-
-void disp_item_set_value_color(lv_obj_t *label, disp_item_t item, int32_t value, bool valid,
-                               int16_t brake_warn_x10, int16_t oil_warn_x10)
-{
-    if (!label) return;
-
-    lv_color_t color = lv_color_hex(0xFFFFFF);
-    if (valid && item == DISP_ITEM_BKT && value >= brake_warn_x10) {
-        color = lv_color_hex(0xFF4D4D);
-    } else if (valid && item == DISP_ITEM_OILP && value >= oil_warn_x10) {
-        color = lv_color_hex(0xFF4D4D);
-    }
-    lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
-}
-
-void disp_item_sync_meta(lv_obj_t *name_label,
-                         lv_obj_t *unit_label,
-                         uint8_t *cache_slot,
-                         disp_item_t item)
-{
-    if (!name_label || !unit_label || !cache_slot) {
-        return;
-    }
-
-    if (*cache_slot == (uint8_t)item) {
-        return;
-    }
-
-    lv_label_set_text(name_label, s_disp_meta[item].name);
-    lv_label_set_text(unit_label, s_disp_meta[item].unit);
-    lv_obj_set_style_text_color(name_label, lv_color_hex(s_disp_meta[item].color), LV_PART_MAIN);
-    *cache_slot = (uint8_t)item;
-}
-
-
-// ============ 指针页 (Needle) 运行时逻辑，复用上面的 disp_item 系统 ============
-// 每个数据项的指针量程：nmin/nmax 为自然单位（同时用于刻度数字与指针位置），
-// div 把缓存原始值换算成自然单位 (BAT:mV→V, OILP/BKT:0.1单位→整数)。
-typedef struct {
-    int32_t nmin;
-    int32_t nmax;
-    int32_t div;
-} needle_scale_meta_t;
-
-static const needle_scale_meta_t s_needle_scale_meta[DISP_ITEM_COUNT] = {
-    [DISP_ITEM_CLT]   = {-20, 130, 1},
-    [DISP_ITEM_IAT]   = {-20, 100, 1},
-    [DISP_ITEM_OIL]   = {-20, 160, 1},
-    [DISP_ITEM_LOAD]  = {0, 100, 1},
-    [DISP_ITEM_TPS]   = {0, 100, 1},
-    [DISP_ITEM_RPM]   = {0, 8000, 1},
-    [DISP_ITEM_SPEED] = {0, 240, 1},
-    [DISP_ITEM_BAT]   = {8, 16, 1000},
-    [DISP_ITEM_OILP]  = {0, 10, 10},
-    [DISP_ITEM_BKT]   = {0, 800, 10},
-    [DISP_ITEM_BOOST] = {0, 20, 1},   // 量程以 0.1bar 计: 0 ~ +2.0 bar 表压(不显示负压)
-};
-
-const char *ui_disp_item_name(uint8_t item)
-{
-    if (item >= DISP_ITEM_COUNT) return "";
-    return s_disp_meta[item].name;
-}
-
-static uint8_t needle_active_source(void)
-{
-    uint8_t src = nvs_cfg_get()->needle_source_idx;
-    if (src >= DISP_ITEM_COUNT) src = DISP_ITEM_CLT;
-    return src;
-}
-
-void ui_needle_apply_source(void)
-{
-    if (!ui_NeedleMeter || !ui_NeedleScale) return;
-    uint8_t src = needle_active_source();
-    const needle_scale_meta_t *ns = &s_needle_scale_meta[src];
-    // 270° 扫角，起始角 135°（开口朝下居中），与经典机械仪表一致
-    lv_meter_set_scale_range(ui_NeedleMeter, ui_NeedleScale, ns->nmin, ns->nmax, 270, 135);
-    lv_meter_set_indicator_value(ui_NeedleMeter, ui_NeedleIndic, ns->nmin);
-    if (ui_NeedleNameLabel) lv_label_set_text(ui_NeedleNameLabel, s_disp_meta[src].name);
-    if (ui_NeedleUnitLabel) lv_label_set_text(ui_NeedleUnitLabel, s_disp_meta[src].unit);
-}
-
-void ui_needle_page_update(float sweep_ratio)
-{
-    if (!ui_ScreenPageNeedle || !ui_NeedleMeter || !ui_NeedleIndic) return;
-    uint8_t src = needle_active_source();
-    const needle_scale_meta_t *ns = &s_needle_scale_meta[src];
-
-    // 连接成功后的刷表自检：指针 nmin→nmax→nmin 全程扫动
-    if (sweep_ratio >= 0.0f) {
-        if (sweep_ratio > 1.0f) sweep_ratio = 1.0f;
-        int32_t nval = ns->nmin + (int32_t)((float)(ns->nmax - ns->nmin) * sweep_ratio);
-        lv_meter_set_indicator_value(ui_NeedleMeter, ui_NeedleIndic, nval);
-        disp_item_set_text(ui_NeedleValueLabel, src, nval * ns->div, true);
-        return;
-    }
-
-    int32_t raw = 0;
-    bool valid = disp_item_read_value(src,
-        obd_data_get_coolant_temp(), obd_data_get_intake_temp(), obd_data_get_oil_temp(),
-        obd_data_get_load_pct(), obd_data_get_tps(), obd_data_get_bat_mv(),
-        obd_data_get_oil_pressure_x10(), obd_data_get_brake_temp_x10(),
-        obd_data_get_rpm(), obd_data_get_speed(), obd_data_get_boost_x10(), &raw);
-
-    int32_t nval = valid ? (raw / ns->div) : ns->nmin;
-    if (nval < ns->nmin) nval = ns->nmin;
-    if (nval > ns->nmax) nval = ns->nmax;
-    lv_meter_set_indicator_value(ui_NeedleMeter, ui_NeedleIndic, nval);
-
-    disp_item_set_text(ui_NeedleValueLabel, src, raw, valid);
-}
-
-static void brake_temp_trend_init(void)
-{
-    if (s_brake_temp_trend_ready) return;
-
-    for (uint32_t i = 0; i < BRAKE_TEMP_TREND_POINTS; ++i) {
-        s_brake_temp_trend[i] = BRAKE_TEMP_TREND_INVALID;
-    }
-
-    s_brake_temp_trend_ready = true;
-}
-
-static void brake_temp_trend_push(int16_t sample_x10)
-{
-    brake_temp_trend_init();
-
-    for (uint32_t i = 0; i < BRAKE_TEMP_TREND_POINTS - 1; ++i) {
-        s_brake_temp_trend[i] = s_brake_temp_trend[i + 1];
-    }
-    s_brake_temp_trend[BRAKE_TEMP_TREND_POINTS - 1] = sample_x10;
-}
-
-static void brake_temp_chart_refresh(void)
-{
-    if (!ui_ChartBrakeTemp || !ui_BrakeTempChartSeries) return;
-
-    int16_t last_valid = 0;
-    bool has_last = false;
-
-    lv_chart_set_range(ui_ChartBrakeTemp, LV_CHART_AXIS_PRIMARY_Y, 0, BRAKE_TEMP_ABS_MAX_C);
-
-    for (uint32_t i = 0; i < BRAKE_TEMP_TREND_POINTS; ++i) {
-        int16_t sample = s_brake_temp_trend[i];
-        int32_t celsius;
-
-        if (sample >= 0) {
-            last_valid = sample;
-            has_last = true;
-        }
-
-        celsius = has_last ? (last_valid / 10) : 0;
-        if (celsius < 0) celsius = 0;
-        if (celsius > BRAKE_TEMP_ABS_MAX_C) celsius = BRAKE_TEMP_ABS_MAX_C;
-
-        lv_chart_set_value_by_id(ui_ChartBrakeTemp,
-                                 ui_BrakeTempChartSeries,
-                                 i,
-                                 celsius);
-    }
-
-    lv_chart_refresh(ui_ChartBrakeTemp);
-}
-
-static void oil_pressure_trend_init(void)
-{
-    if (s_oil_pressure_trend_ready) return;
-
-    for (uint32_t i = 0; i < OIL_PRESS_TREND_POINTS; ++i) {
-        s_oil_pressure_trend[i] = OIL_PRESS_TREND_INVALID;
-    }
-
-    s_oil_pressure_trend_ready = true;
-}
-
-static void oil_pressure_trend_push(int16_t sample_x10)
-{
-    oil_pressure_trend_init();
-
-    for (uint32_t i = 0; i < OIL_PRESS_TREND_POINTS - 1; ++i) {
-        s_oil_pressure_trend[i] = s_oil_pressure_trend[i + 1];
-    }
-    s_oil_pressure_trend[OIL_PRESS_TREND_POINTS - 1] = sample_x10;
-}
-
-static void oil_pressure_chart_refresh(void)
-{
-    if (!ui_ChartOilPressure || !ui_OilPressureChartSeries) return;
-
-    int16_t last_valid = 0;
-    bool has_last = false;
-
-    lv_chart_set_range(ui_ChartOilPressure, LV_CHART_AXIS_PRIMARY_Y, 0, OIL_PRESS_MAX_BAR_X10);
-
-    for (uint32_t i = 0; i < OIL_PRESS_TREND_POINTS; ++i) {
-        int16_t sample = s_oil_pressure_trend[i];
-        int32_t pressure_x10;
-
-        if (sample >= 0) {
-            last_valid = sample;
-            has_last = true;
-        }
-
-        pressure_x10 = has_last ? last_valid : 0;
-        if (pressure_x10 < 0) pressure_x10 = 0;
-        if (pressure_x10 > OIL_PRESS_MAX_BAR_X10) pressure_x10 = OIL_PRESS_MAX_BAR_X10;
-
-        lv_chart_set_value_by_id(ui_ChartOilPressure,
-                                 ui_OilPressureChartSeries,
-                                 i,
-                                 pressure_x10);
-    }
-
-    lv_chart_refresh(ui_ChartOilPressure);
-}
-
-void my_timerMain(lv_timer_t * timer)
+void my_timerMain(lv_timer_t *timer)
 {
     LV_UNUSED(timer);
     static uint8_t ucOnlyOnce = 0;
     static uint32_t ulOpenLightTimeCnt = 0;
 
-    int16_t oilp_x10 = obd_data_get_oil_pressure_x10();
-    int16_t brake_x10 = obd_data_get_brake_temp_x10();
-    const nvs_user_cfg_t *user_cfg = nvs_cfg_get();
-    int16_t brake_warn_x10 = (int16_t)(user_cfg->brake_temp_warn_c * 10);
-    int16_t oil_warn_x10 = (int16_t)user_cfg->oil_pressure_warn_x10;
-    bool needle_page_visible = (ui_ScreenPageNeedle != NULL && lv_scr_act() == ui_ScreenPageNeedle);
-    bool oil_page_visible = (ui_ScreenPageOilPressure != NULL && lv_scr_act() == ui_ScreenPageOilPressure);
-    bool brake_page_visible = (ui_ScreenPageBrakeTemp != NULL && lv_scr_act() == ui_ScreenPageBrakeTemp);
+    ui_legacy_runtime_tick(ui_ScreenPageLogo != NULL);
 
-    bool ble_now = elm327_ble_is_connected();
-    if (ble_now && !s_prev_ble_connected) {
-        if (ui_ScreenPageLogo == NULL) {
-            s_sweep_step = 1;
-        } else {
-            s_sweep_pending = true;
-        }
-    }
-    s_prev_ble_connected = ble_now;
-
-    float sweep_ratio = -1.0f;
-    if (s_sweep_step > 0) {
-        int step = s_sweep_step;
-        if (step <= SWEEP_STEPS_UP) {
-            sweep_ratio = (float)step / (float)SWEEP_STEPS_UP;
-        } else {
-            sweep_ratio = (float)(SWEEP_TOTAL - step) / (float)SWEEP_STEPS_DOWN;
-        }
-        s_sweep_step++;
-        if (s_sweep_step > SWEEP_TOTAL) {
-            s_sweep_step = 0;
-        }
-    }
-
-    if (needle_page_visible) {
-        ui_needle_page_update(sweep_ratio);
-    }
-    ui_home_runtime_refresh_active_tile();
-
-    if (ui_LabelOilPressureText) {
-        int16_t display_oilp_x10 = -1;
-        lv_color_t oilp_color = lv_color_hex(0xFFFFFF);
-
-        if (s_sweep_step > 0) {
-            int step = s_sweep_step - 1;
-            float r;
-            if (step <= SWEEP_STEPS_UP) r = (float)step / (float)SWEEP_STEPS_UP;
-            else r = (float)(SWEEP_TOTAL - step) / (float)SWEEP_STEPS_DOWN;
-            display_oilp_x10 = (int16_t)(100.0f * r);
-        } else if (oilp_x10 >= 0) {
-            display_oilp_x10 = oilp_x10;
-        }
-
-        if (display_oilp_x10 >= oil_warn_x10 && display_oilp_x10 >= 0) {
-            oilp_color = lv_color_hex(0xFF4D4D);
-        }
-
-        uint32_t now = lv_tick_get();
-        if (s_oil_pressure_trend_tick == 0) {
-            oil_pressure_trend_init();
-            s_oil_pressure_trend_tick = now;
-        }
-        while ((now - s_oil_pressure_trend_tick) >= OIL_PRESS_TREND_SAMPLE_MS) {
-            oil_pressure_trend_push(display_oilp_x10);
-            s_oil_pressure_trend_tick += OIL_PRESS_TREND_SAMPLE_MS;
-        }
-
-        if (oil_page_visible) {
-            if (display_oilp_x10 >= 0) {
-                int16_t abs_val = (display_oilp_x10 < 0) ? (int16_t)(-display_oilp_x10) : display_oilp_x10;
-                ui_label_set_text_fmt_if_changed(ui_LabelOilPressureText, "%d.%d", (int)(display_oilp_x10 / 10), (int)(abs_val % 10));
-            } else {
-                ui_label_set_text_if_changed(ui_LabelOilPressureText, "--.-");
-            }
-            lv_obj_set_style_text_color(ui_LabelOilPressureText, oilp_color, LV_PART_MAIN);
-            oil_pressure_chart_refresh();
-        }
-    }
-
-    if (ui_LabelBrakeTempText) {
-        int16_t display_brake_x10 = BRAKE_TEMP_TREND_INVALID;
-        lv_color_t temp_color = lv_color_hex(0xFFFFFF);
-        if (s_sweep_step > 0) {
-            int step = s_sweep_step - 1;
-            float r;
-            if (step <= SWEEP_STEPS_UP) r = (float)step / (float)SWEEP_STEPS_UP;
-            else r = (float)(SWEEP_TOTAL - step) / (float)SWEEP_STEPS_DOWN;
-            display_brake_x10 = (int16_t)(600.0f * r);
-        } else if (brake_x10 > -1000) {
-            display_brake_x10 = brake_x10;
-        }
-
-        if (display_brake_x10 >= brake_warn_x10) {
-            temp_color = lv_color_hex(0xFF4D4D);
-        }
-
-        uint32_t now = lv_tick_get();
-        if (s_brake_temp_trend_tick == 0) {
-            brake_temp_trend_init();
-            s_brake_temp_trend_tick = now;
-        }
-        while ((now - s_brake_temp_trend_tick) >= BRAKE_TEMP_TREND_SAMPLE_MS) {
-            brake_temp_trend_push(display_brake_x10);
-            s_brake_temp_trend_tick += BRAKE_TEMP_TREND_SAMPLE_MS;
-        }
-
-        if (brake_page_visible) {
-            if (display_brake_x10 > BRAKE_TEMP_TREND_INVALID) {
-                int16_t abs_val = (display_brake_x10 < 0) ? (int16_t)(-display_brake_x10) : display_brake_x10;
-                ui_label_set_text_fmt_if_changed(ui_LabelBrakeTempText, "%d.%d", (int)(display_brake_x10 / 10), (int)(abs_val % 10));
-            } else {
-                ui_label_set_text_if_changed(ui_LabelBrakeTempText, "--.-");
-            }
-            lv_obj_set_style_text_font(ui_LabelBrakeTempText, ui_font_brake_temp_value(display_brake_x10), LV_PART_MAIN);
-            lv_obj_set_style_text_color(ui_LabelBrakeTempText, temp_color, LV_PART_MAIN);
-            brake_temp_chart_refresh();
-        }
-    }
-
-    if(ucOnlyOnce == 0)
-    {
+    if (ucOnlyOnce == 0) {
         ulOpenLightTimeCnt++;
-        if(ulOpenLightTimeCnt > 400 / 200)
-        {
+        if (ulOpenLightTimeCnt > 400 / 200) {
             const nvs_user_cfg_t *bl_cfg = nvs_cfg_get();
             uint8_t bright = bl_cfg->brightness_day;
             esp_err_t err;
-            if(bright < 10) bright = 100;
+
+            if (bright < 10) {
+                bright = 100;
+            }
             err = board_set_brightness(bright);
             if (err != ESP_OK) {
                 ESP_LOGW(TAG, "Set display brightness failed: %s", esp_err_to_name(err));
@@ -680,101 +139,59 @@ void my_timerMain(lv_timer_t * timer)
         }
     }
 
-    if(ui_ScreenPageLogo)
-    {
+    if (ui_ScreenPageLogo) {
         static uint32_t ulLogoTimeCnt = 0;
+
         ulLogoTimeCnt++;
-        if(ulLogoTimeCnt > 3000/200)
-        {
-            ulLogoTimeCnt = 0;
+        if (ulLogoTimeCnt > 3000 / 200) {
             const nvs_user_cfg_t *pg_cfg = nvs_cfg_get();
             lv_obj_t **target_scr = &ui_ScreenPageHome;
             void (*target_init)(void) = ui_home_runtime_screen_init;
+
+            ulLogoTimeCnt = 0;
             ui_home_runtime_reset(ui_home_runtime_page_from_default(pg_cfg->default_page));
-            if(*target_scr == NULL) target_init();
-            ui_logo_transition_to(target_scr, target_init, "timeout");
-            if(s_sweep_pending) {
-                s_sweep_pending = false;
-                s_sweep_step = 1;
+            if (*target_scr == NULL) {
+                target_init();
             }
+            ui_logo_transition_to(target_scr, target_init, "timeout");
+            ui_legacy_runtime_on_logo_exit();
         }
     }
-
 }
-///////////////////// ANIMATIONS ////////////////////
 
-///////////////////// FUNCTIONS ////////////////////
-
-
-
-///////////////////// FUNCTIONS ////////////////////
-void ui_event_logo_background(lv_event_t * e)
-{  
+void ui_event_logo_background(lv_event_t *e)
+{
     lv_event_code_t event_code = lv_event_get_code(e);
-    if(event_code == LV_EVENT_CLICKED) {
+
+    if (event_code == LV_EVENT_CLICKED) {
         static uint32_t last_click_tick = 0;
         static uint8_t click_cnt = 0;
         uint32_t now = lv_tick_get();
 
-        if(now - last_click_tick < 400) {
+        if (now - last_click_tick < 400) {
             click_cnt++;
         } else {
             click_cnt = 1;
         }
         last_click_tick = now;
 
-        if(click_cnt >= 2) {
+        if (click_cnt >= 2) {
             click_cnt = 0;
             if(ui_ScreenPageODBProtocal == NULL) ui_ScreenPageODBProtocal_screen_init();
             ui_logo_transition_to(&ui_ScreenPageODBProtocal, ui_ScreenPageODBProtocal_screen_init, "double_click");
-        }
-    }   
-}
-
-// Main / Gear / Rpm / Speed 页面已删除，对应手势处理函数一并移除。
-// 轮播顺序: Temp → Info → Needle → OilPressure → BrakeTemp → EasterEgg(版本,最后) → 回到 Temp
-// 左滑=下一页, 右滑=上一页
-void ui_event_temp_background(lv_event_t * e)
-{
-    lv_event_code_t event_code = lv_event_get_code(e);
-    if(event_code == LV_EVENT_GESTURE) {
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-        log_gesture_event("Temp", dir);
-        if(dir == LV_DIR_RIGHT) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_horizontal(dir, &ui_ScreenPageEasterEgg, &ui_ScreenPageEasterEgg_screen_init);
-        }
-        else if(dir == LV_DIR_LEFT) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_horizontal(dir, &ui_ScreenPageInfo, &ui_ScreenPageInfo_screen_init);
-        }
-        else if(dir == LV_DIR_BOTTOM) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageTempCustom, &ui_ScreenPageTempCustom_screen_init);
-        }
-    }
-}
-
-void ui_event_temp_custom_background(lv_event_t * e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_GESTURE) {
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-        log_gesture_event("TempCustom", dir);
-        if (dir == LV_DIR_TOP) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_MOVE_TOP);
         }
     }
 }
 
 void ui_label_set_text_if_changed(lv_obj_t *label, const char *text)
 {
+    const char *current;
+
     if (!label || !text) {
         return;
     }
 
-    const char *current = lv_label_get_text(label);
+    current = lv_label_get_text(label);
     if (current != NULL && strcmp(current, text) == 0) {
         return;
     }
@@ -784,246 +201,74 @@ void ui_label_set_text_if_changed(lv_obj_t *label, const char *text)
 
 void ui_label_set_text_fmt_if_changed(lv_obj_t *label, const char *fmt, ...)
 {
+    char buf[128];
+    va_list args;
+
     if (!label || !fmt) {
         return;
     }
 
-    char buf[128];
-    va_list args;
     va_start(args, fmt);
     vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
-
     ui_label_set_text_if_changed(label, buf);
-}
-
-void ui_event_brake_temp_background(lv_event_t * e)
-{
-    lv_event_code_t event_code = lv_event_get_code(e);
-    if(event_code == LV_EVENT_GESTURE) {
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-        log_gesture_event("BrakeTemp", dir);
-        if(dir == LV_DIR_RIGHT) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_horizontal(dir, &ui_ScreenPageOilPressure, &ui_ScreenPageOilPressure_screen_init);
-        }
-        else if(dir == LV_DIR_LEFT) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_horizontal(dir, &ui_ScreenPageEasterEgg, &ui_ScreenPageEasterEgg_screen_init);
-        }
-        else if(dir == LV_DIR_BOTTOM) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageBrakeWarn, &ui_ScreenPageBrakeWarn_screen_init);
-        }
-    }
-}
-
-void ui_event_oil_pressure_background(lv_event_t * e)
-{
-    lv_event_code_t event_code = lv_event_get_code(e);
-    if(event_code == LV_EVENT_GESTURE) {
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-        log_gesture_event("OilPressure", dir);
-        if(dir == LV_DIR_RIGHT) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_horizontal(dir, &ui_ScreenPageNeedle, &ui_ScreenPageNeedle_screen_init);
-        }
-        else if(dir == LV_DIR_LEFT) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_horizontal(dir, &ui_ScreenPageBrakeTemp, &ui_ScreenPageBrakeTemp_screen_init);
-        }
-        else if(dir == LV_DIR_BOTTOM) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageOilWarn, &ui_ScreenPageOilWarn_screen_init);
-        }
-    }
-}
-
-void ui_event_brake_warn_background(lv_event_t * e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    if(code == LV_EVENT_GESTURE){
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-        log_gesture_event("BrakeWarn", dir);
-        if(dir == LV_DIR_TOP){
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_MOVE_TOP);
-        }
-    }
-}
-
-void ui_event_oil_warn_background(lv_event_t * e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    if(code == LV_EVENT_GESTURE){
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-        log_gesture_event("OilWarn", dir);
-        if(dir == LV_DIR_TOP){
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_MOVE_TOP);
-        }
-    }
-}
-
-// 指针页(仪表)：位于 Info 与 OilPressure 之间(两曲线页之前)
-//  右滑 → Info，左滑 → OilPressure，下滑 → 数据源选择
-void ui_event_needle_background(lv_event_t * e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    if(code == LV_EVENT_GESTURE){
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-        log_gesture_event("Needle", dir);
-        if(dir == LV_DIR_BOTTOM){
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageNeedleConfig, &ui_ScreenPageNeedleConfig_screen_init);
-        }
-        else if(dir == LV_DIR_RIGHT){
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_horizontal(dir, &ui_ScreenPageInfo, &ui_ScreenPageInfo_screen_init);
-        }
-        else if(dir == LV_DIR_LEFT){
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_horizontal(dir, &ui_ScreenPageOilPressure, &ui_ScreenPageOilPressure_screen_init);
-        }
-    }
-}
-
-// 指针配置页：任意方向返回指针页
-void ui_event_needle_config_background(lv_event_t * e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    if(code == LV_EVENT_GESTURE){
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-        log_gesture_event("NeedleConfig", dir);
-        if(dir == LV_DIR_TOP){
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_MOVE_TOP);
-        }
-    }
-}
-
-void ui_event_info_background(lv_event_t * e)
-{
-    lv_event_code_t event_code = lv_event_get_code(e);
-    if(event_code == LV_EVENT_GESTURE) {
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-        log_gesture_event("Info", dir);
-        if(dir == LV_DIR_RIGHT) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_horizontal(dir, &ui_ScreenPageTemp, &ui_ScreenPageTemp_screen_init);
-        }
-        else if(dir == LV_DIR_LEFT) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_horizontal(dir, &ui_ScreenPageNeedle, &ui_ScreenPageNeedle_screen_init);
-        }
-        else if(dir == LV_DIR_BOTTOM) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageInfoCustom, &ui_ScreenPageInfoCustom_screen_init);
-        }
-    }
-}
-
-void ui_event_info_custom_background(lv_event_t * e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_GESTURE) {
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-        log_gesture_event("InfoCustom", dir);
-        if (dir == LV_DIR_TOP) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_MOVE_TOP);
-        }
-    }
-}
-void ui_event_easter_egg_background(lv_event_t * e)
-{
-    lv_event_code_t event_code = lv_event_get_code(e);
-    if(event_code == LV_EVENT_GESTURE) {
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-        log_gesture_event("EasterEgg", dir);
-        if(dir == LV_DIR_RIGHT) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_horizontal(dir, &ui_ScreenPageBrakeTemp, &ui_ScreenPageBrakeTemp_screen_init);
-        }
-        else if(dir == LV_DIR_LEFT) {
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_horizontal(dir, &ui_ScreenPageTemp, &ui_ScreenPageTemp_screen_init);
-        }
-        else if(dir == LV_DIR_TOP) {
-            // 上滑 → BLE 扫描页面
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageBLEScan, &ui_ScreenPageBLEScan_screen_init);
-        }
-        else if(dir == LV_DIR_BOTTOM) {
-            // 下滑 → 设置页面
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageSettings, &ui_ScreenPageSettings_screen_init);
-        }
-    }
 }
 
 ///////////////////// SCREENS ////////////////////
 
 void ui_init(void)
 {
+    lv_disp_t *dispp;
+    lv_theme_t *theme;
+
     ui_font_profile_init();
-    lv_disp_t * dispp = lv_disp_get_default();
-    lv_theme_t * theme = lv_theme_default_init(dispp, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED),
-                                               false, LV_FONT_DEFAULT);
+    dispp = lv_disp_get_default();
+    theme = lv_theme_default_init(dispp,
+                                  lv_palette_main(LV_PALETTE_BLUE),
+                                  lv_palette_main(LV_PALETTE_RED),
+                                  false,
+                                  LV_FONT_DEFAULT);
     lv_disp_set_theme(dispp, theme);
     ui_ScreenPageLogo_screen_init();
-    // Main / Gear / Rpm / Speed 页面已删除
     ui_home_runtime_reset(ui_home_runtime_page_from_default(nvs_cfg_get()->default_page));
-    ui_ScreenPageBrakeWarn_screen_init();
-    ui_ScreenPageOilWarn_screen_init();
-    ui_ScreenPageODBProtocal_screen_init();
-    ui_ScreenPageTemp = NULL;
-    ui_ScreenPageBrakeTemp = NULL;
-    ui_ScreenPageOilPressure = NULL;
-    ui_ScreenPageNeedle = NULL;
-    // Info 页按需懒加载，screen 指针须初始化为 NULL
-    ui_ScreenPageInfo = NULL;
-    ui_ScreenPageEasterEgg = NULL;
-    ui_ScreenPageTempCustom = NULL;
-    ui_ScreenPageInfoCustom = NULL;
-    ui_ScreenPageNeedleConfig = NULL;   // 配置页懒加载
+    ui_ScreenPageODBProtocal = NULL;
     ui____initial_actions0 = lv_obj_create(NULL);
     s_logo_transition_started = false;
     lv_disp_load_scr(ui_ScreenPageLogo);
 
-    lv_timer_create(my_timerMain, 200, NULL);  //200 ms 周期
+    lv_timer_create(my_timerMain, 200, NULL);
 }
 
-/* OBD 协议页面事件 */
-void ui_event_obd_prot_background(lv_event_t * e)
+void ui_event_obd_prot_background(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
-    if(code == LV_EVENT_GESTURE){
+
+    if (code == LV_EVENT_GESTURE) {
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+
         log_gesture_event("OBDProtocal", dir);
-        if(dir == LV_DIR_TOP){
-            ESP_LOGI(TAG, "OBDProtocal gesture: switch to Temp target=%p active_before=%p",
-                     (void *)ui_ScreenPageTemp, (void *)lv_scr_act());
+        if (dir == LV_DIR_TOP) {
+            ESP_LOGI(TAG,
+                     "OBDProtocal gesture: return to home active_before=%p",
+                     (void *)lv_scr_act());
             lv_indev_wait_release(lv_indev_get_act());
             ui_home_runtime_show_page(ui_home_runtime_page_from_default(nvs_cfg_get()->default_page),
                                       LV_SCR_LOAD_ANIM_MOVE_TOP);
             ESP_LOGI(TAG, "OBDProtocal gesture: switch requested active_after=%p", (void *)lv_scr_act());
         }
-    }else if(code == LV_EVENT_LONG_PRESSED){
+    } else if (code == LV_EVENT_LONG_PRESSED) {
         usSaveProtTimeCnt = 0;
-    }else if(code == LV_EVENT_LONG_PRESSED_REPEAT){
-        usSaveProtTimeCnt += 100; // 该事件每 100 ms 触发一次
-        if(usSaveProtTimeCnt >= SAVE_PROTOCOL_TIME/100){
-            usSaveProtTimeCnt = 0;
+    } else if (code == LV_EVENT_LONG_PRESSED_REPEAT) {
+        usSaveProtTimeCnt += 100;
+        if (usSaveProtTimeCnt >= SAVE_PROTOCOL_TIME / 100) {
             nvs_user_cfg_t cfg = *nvs_cfg_get();
+
+            usSaveProtTimeCnt = 0;
             cfg.protocol = lv_roller_get_selected(ui_RollerODBProtocalChoose);
             nvs_cfg_set(&cfg);
             esp_restart();
         }
-    }else if(code == LV_EVENT_RELEASED){
+    } else if (code == LV_EVENT_RELEASED) {
         usSaveProtTimeCnt = 0;
     }
 }
-
-/* BLE 扫描页面事件 - 左滑返回设备信息页 */
-/* 设置页面事件 - 左滑/右滑返回设备信息页 */

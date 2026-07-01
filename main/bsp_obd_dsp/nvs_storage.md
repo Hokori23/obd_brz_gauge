@@ -16,7 +16,7 @@
 - OBD 协议
 - UI 主题
 - 记住的蓝牙设备名
-- 默认页面
+- 动态首页启动页
 - 亮度
 - 车型索引
 - 刹车温度和机油压力告警阈值
@@ -69,7 +69,20 @@ Flash 擦写次数有限。
 
 把 `km/h + dt_ms` 换算成米数和运行时间，是里程逻辑的核心。
 
+### `nvs_stat_reset_trip()`
+
+只重置 trip 维度的数据：
+
+- `trip_m`
+- `trip_run_time_s`
+- `max_speed_kmh`
+- `avg_speed_kmh`
+
+不会清零总运行时间 `run_time_s`。
+
 ## 容易混淆的点
 
 - `trip` 和 `odometer` 都在这里维护，不在 UI 层。
 - `default_page`、`vehicle_profile_idx` 这些都不是 UI 私有状态，而是持久化用户配置。
+- 其中 `default_page` 当前表示动态首页启动页：`0=MENU`，`1..8=GAUGE 1..8`。
+- 如果保存的 `default_page` 因删页而超过当前 `dashboard_cfg.gauge_page_count`，会在配置清洗时自动回退到 `MENU`。

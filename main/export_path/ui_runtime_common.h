@@ -50,7 +50,10 @@ void disp_item_sync_meta(lv_obj_t *name_label,
                          lv_obj_t *unit_label,
                          uint8_t *cache_slot,
                          disp_item_t item);
+const char *ui_disp_item_name(uint8_t item);
 int ui_runtime_sweep_step_get(void);
+void ui_legacy_runtime_tick(bool logo_visible);
+void ui_legacy_runtime_on_logo_exit(void);
 
 void ui_label_set_text_if_changed(lv_obj_t *label, const char *text);
 void ui_label_set_text_fmt_if_changed(lv_obj_t *label, const char *fmt, ...);

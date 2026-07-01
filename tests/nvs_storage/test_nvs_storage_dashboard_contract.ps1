@@ -48,4 +48,12 @@ if ($source -notmatch 'cfg->pages\[0\]\.slot_items\[2\] = 2;') {
     throw "nvs_storage.c must keep OIL as the third migrated dashboard slot"
 }
 
+if ($source -notmatch 'cfg->default_page > cfg->dashboard_cfg\.gauge_page_count') {
+    throw "nvs_storage.c must clamp an out-of-range dashboard boot page against the current gauge page count"
+}
+
+if ($source -notmatch 'cfg->default_page = NVS_DEFAULT_PAGE_MENU;') {
+    throw "nvs_storage.c must fall back to MENU when the saved dashboard boot page is no longer valid"
+}
+
 Write-Output "nvs storage dashboard contract checks passed"

@@ -11,20 +11,33 @@
 #include "bsp_obd_dsp/nvs_storage.h"
 #include "app_obd_dsp/vehicle_profiles.h"
 
-static const char *page_names = "MENU";
-
 // Local references for settings widgets
 static lv_obj_t *s_roller_page = NULL;
 static lv_obj_t *s_roller_vehicle = NULL;
 static lv_obj_t *s_slider_bright = NULL;
 static lv_obj_t *s_label_bright_val = NULL;
 
+static void ui_settings_screen_reset_state(void)
+{
+    ui_ScreenPageSettings = NULL;
+    s_roller_page = NULL;
+    s_roller_vehicle = NULL;
+    s_slider_bright = NULL;
+    s_label_bright_val = NULL;
+}
+
+static void ui_settings_screen_deleted(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    ui_settings_screen_reset_state();
+}
+
 // Callbacks
 static void on_page_roller_change(lv_event_t *e)
 {
     LV_UNUSED(e);
     nvs_user_cfg_t cfg = *nvs_cfg_get();
-    cfg.default_page = 0;
+    cfg.default_page = (uint8_t)lv_roller_get_selected(s_roller_page);
     nvs_cfg_set(&cfg);
 }
 
@@ -68,12 +81,39 @@ static void on_settings_background(lv_event_t *e)
 void ui_ScreenPageSettings_screen_init(void)
 {
     const nvs_user_cfg_t *cfg = nvs_cfg_get();
+    const ui_dashboard_cfg_t *dashboard_cfg = &cfg->dashboard_cfg;
     ui_settings_layout_t layout;
+    char page_names[64] = {0};
+    uint8_t page_option_count = (uint8_t)(dashboard_cfg->gauge_page_count + 1u);
+    uint8_t selected_default_page = cfg->default_page;
     ui_settings_layout_get(&layout);
+
+    if (page_option_count > DEFAULT_PAGE_COUNT) {
+        page_option_count = DEFAULT_PAGE_COUNT;
+    }
+    if (page_option_count == 0u) {
+        page_option_count = 1u;
+    }
+
+    strlcpy(page_names, "MENU", sizeof(page_names));
+    for (uint8_t i = 1; i < page_option_count; ++i) {
+        char option[16];
+        snprintf(option, sizeof(option), "\nGAUGE %u", (unsigned)i);
+        strlcat(page_names, option, sizeof(page_names));
+    }
+
+    if (selected_default_page >= page_option_count) {
+        selected_default_page = 0u;
+    }
 
     ui_ScreenPageSettings = lv_obj_create(NULL);
     ui_round_screen_apply_base(ui_ScreenPageSettings, lv_color_hex(0x000000));
     ui_round_shell_create_ring(ui_ScreenPageSettings, &layout.shell);
+    lv_obj_add_event_cb(ui_ScreenPageSettings,
+                        scr_unloaded_delete_cb,
+                        LV_EVENT_SCREEN_UNLOADED,
+                        &ui_ScreenPageSettings);
+    lv_obj_add_event_cb(ui_ScreenPageSettings, ui_settings_screen_deleted, LV_EVENT_DELETE, NULL);
 
     // ====== Title ======
     lv_obj_t *title = lv_label_create(ui_ScreenPageSettings);
@@ -93,7 +133,7 @@ void ui_ScreenPageSettings_screen_init(void)
     lv_obj_clear_flag(s_roller_page, LV_OBJ_FLAG_GESTURE_BUBBLE); // 滚动选值时不触发页面手势
     lv_roller_set_options(s_roller_page, page_names, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_roller_page, 1);
-    lv_roller_set_selected(s_roller_page, 0, LV_ANIM_OFF);
+    lv_roller_set_selected(s_roller_page, selected_default_page, LV_ANIM_OFF);
     lv_obj_set_width(s_roller_page, layout.roller_width);
     lv_obj_set_style_text_font(s_roller_page, ui_font_typoder(20), LV_PART_MAIN);
     lv_obj_set_style_text_font(s_roller_page, ui_font_typoder(20), LV_PART_SELECTED);

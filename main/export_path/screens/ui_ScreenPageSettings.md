@@ -24,6 +24,11 @@
 -> 更新 `cfg.default_page`
 -> `nvs_cfg_set()`
 
+当前语义已经不是旧固定页枚举，而是动态首页启动页：
+
+- `0` = `MENU`
+- `1..8` = `GAUGE 1..8`
+
 ### 亮度切换
 
 `on_bright_slider_change()`

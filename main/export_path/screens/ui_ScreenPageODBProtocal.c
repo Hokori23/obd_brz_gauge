@@ -11,6 +11,23 @@
 
 extern void ui_event_obd_prot_background(lv_event_t * e);
 
+static void ui_obd_protocol_screen_reset_state(void)
+{
+    ui_ScreenPageODBProtocal = NULL;
+    ui_SpinnerODBProtocalEgg = NULL;
+    ui_ArcPageODBProtocalBack = NULL;
+    ui_RollerODBProtocalChoose = NULL;
+    ui_ImageODBProtocalBlackEar = NULL;
+    ui_LabelOBDIIText = NULL;
+    ui_LabelSureTipText = NULL;
+}
+
+static void ui_obd_protocol_screen_deleted(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    ui_obd_protocol_screen_reset_state();
+}
+
 void ui_ScreenPageODBProtocal_screen_init(void)
 {
     ui_obd_protocol_layout_t layout;
@@ -19,6 +36,11 @@ void ui_ScreenPageODBProtocal_screen_init(void)
     ui_ScreenPageODBProtocal = lv_obj_create(NULL);
     ui_round_screen_apply_base(ui_ScreenPageODBProtocal, lv_color_hex(0x000000));
     ui_SpinnerODBProtocalEgg = ui_round_shell_create_ring(ui_ScreenPageODBProtocal, &layout.shell);
+    lv_obj_add_event_cb(ui_ScreenPageODBProtocal,
+                        scr_unloaded_delete_cb,
+                        LV_EVENT_SCREEN_UNLOADED,
+                        &ui_ScreenPageODBProtocal);
+    lv_obj_add_event_cb(ui_ScreenPageODBProtocal, ui_obd_protocol_screen_deleted, LV_EVENT_DELETE, NULL);
 
     ui_ArcPageODBProtocalBack = lv_arc_create(ui_ScreenPageODBProtocal);
     lv_obj_set_width(ui_ArcPageODBProtocalBack, layout.inner_arc_diameter);

@@ -17,6 +17,7 @@ void ui_home_runtime_screen_init(void);
 void ui_home_runtime_show_page(uint8_t page_id, lv_scr_load_anim_t anim);
 void ui_home_runtime_refresh_active_tile(void);
 uint8_t ui_home_runtime_page_from_default(uint8_t default_page);
+void ui_home_runtime_rebuild_and_load(uint8_t page_id, lv_scr_load_anim_t anim);
 
 #ifdef __cplusplus
 } /* extern "C" */
