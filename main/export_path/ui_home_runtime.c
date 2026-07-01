@@ -1117,10 +1117,10 @@ void ui_home_runtime_screen_init(void)
     for (uint8_t i = 0; i < s_home_tile_count; ++i) {
         lv_dir_t dir = 0;
         if (i > 0u) {
-            dir |= LV_DIR_RIGHT;
+            dir |= LV_DIR_LEFT;
         }
         if ((uint8_t)(i + 1u) < s_home_tile_count) {
-            dir |= LV_DIR_LEFT;
+            dir |= LV_DIR_RIGHT;
         }
         s_home_tiles[i] = ui_home_create_tile(s_home_tileview, i, dir);
     }
