@@ -38,6 +38,13 @@ typedef struct {
 } ui_home_tile_desc_t;
 
 typedef struct {
+    lv_coord_t x;
+    lv_coord_t y;
+    lv_coord_t w;
+    lv_coord_t h;
+} ui_home_slot_layout_t;
+
+typedef struct {
     lv_obj_t *root;
     lv_obj_t *name_labels[UI_DASHBOARD_MAX_SLOTS];
     lv_obj_t *value_labels[UI_DASHBOARD_MAX_SLOTS];
@@ -93,6 +100,10 @@ static void ui_home_create_divider(lv_obj_t *parent,
                                    lv_coord_t y,
                                    lv_coord_t w,
                                    lv_coord_t h);
+static lv_coord_t ui_home_pct(lv_coord_t total, uint8_t percent);
+static void ui_home_build_gauge_layout(lv_obj_t *parent,
+                                       uint8_t slot_count,
+                                       ui_home_slot_layout_t layouts[UI_DASHBOARD_MAX_SLOTS]);
 static void ui_home_menu_open_settings(lv_event_t *e);
 static void ui_home_open_menu_overlay(lv_dir_t dir);
 static void ui_home_gauge_long_pressed(lv_event_t *e);
@@ -431,6 +442,11 @@ static void ui_home_create_menu_content(uint8_t tile_id, lv_obj_t *parent)
     rt->menu_settings_btn = btn;
 }
 
+static lv_coord_t ui_home_pct(lv_coord_t total, uint8_t percent)
+{
+    return (lv_coord_t)((total * percent) / 100);
+}
+
 static void ui_home_create_slot_card(lv_obj_t *parent,
                                      lv_coord_t x,
                                      lv_coord_t y,
@@ -440,15 +456,16 @@ static void ui_home_create_slot_card(lv_obj_t *parent,
                                      lv_obj_t **value_out,
                                      lv_obj_t **unit_out)
 {
-    bool compact = w <= ui_layout_px(190);
-    lv_coord_t label_inset_x = compact ? ui_layout_px(6) : ui_layout_px(10);
-    lv_coord_t label_inset_y = compact ? ui_layout_px(4) : ui_layout_px(8);
-    lv_coord_t unit_inset_x = compact ? ui_layout_px(6) : ui_layout_px(10);
-    lv_coord_t unit_inset_y = compact ? ui_layout_px(2) : ui_layout_px(6);
+    bool tiny = (w <= ui_layout_px(140)) || (h <= ui_layout_px(84));
+    bool compact = tiny || (w <= ui_layout_px(170)) || (h <= ui_layout_px(110));
+    lv_coord_t label_inset_x = tiny ? ui_layout_px(4) : (compact ? ui_layout_px(6) : ui_layout_px(10));
+    lv_coord_t label_inset_y = tiny ? ui_layout_px(2) : (compact ? ui_layout_px(4) : ui_layout_px(8));
+    lv_coord_t unit_inset_x = tiny ? ui_layout_px(4) : (compact ? ui_layout_px(6) : ui_layout_px(10));
+    lv_coord_t unit_inset_y = tiny ? ui_layout_px(1) : (compact ? ui_layout_px(2) : ui_layout_px(6));
     lv_coord_t text_width = w - (label_inset_x * 2);
-    lv_coord_t name_font = compact ? 14 : 16;
-    lv_coord_t value_font = compact ? 32 : 36;
-    lv_coord_t unit_font = compact ? 14 : 16;
+    lv_coord_t name_font = tiny ? 11 : (compact ? 13 : 16);
+    lv_coord_t value_font = tiny ? 22 : (compact ? 26 : 34);
+    lv_coord_t unit_font = tiny ? 11 : (compact ? 12 : 16);
 
     lv_obj_t *panel = lv_obj_create(parent);
     lv_obj_set_size(panel, w, h);
@@ -462,6 +479,7 @@ static void ui_home_create_slot_card(lv_obj_t *parent,
     lv_obj_t *name = lv_label_create(panel);
     lv_label_set_text(name, "RPM");
     lv_obj_set_width(name, text_width);
+    lv_label_set_long_mode(name, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_font(name, ui_font_typoder(name_font), LV_PART_MAIN);
     lv_obj_set_style_text_color(name, lv_color_hex(0x9A9A9A), LV_PART_MAIN);
     lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
@@ -479,6 +497,7 @@ static void ui_home_create_slot_card(lv_obj_t *parent,
     lv_obj_t *unit = lv_label_create(panel);
     lv_label_set_text(unit, "");
     lv_obj_set_width(unit, text_width);
+    lv_label_set_long_mode(unit, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(unit, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
     lv_obj_set_style_text_font(unit, ui_font_typoder(unit_font), LV_PART_MAIN);
     lv_obj_set_style_text_color(unit, lv_color_hex(0x707070), LV_PART_MAIN);
@@ -504,18 +523,150 @@ static void ui_home_create_divider(lv_obj_t *parent,
     lv_obj_set_style_bg_opa(divider, LV_OPA_COVER, LV_PART_MAIN);
 }
 
+static void ui_home_build_gauge_layout(lv_obj_t *parent,
+                                       uint8_t slot_count,
+                                       ui_home_slot_layout_t layouts[UI_DASHBOARD_MAX_SLOTS])
+{
+    lv_coord_t w;
+    lv_coord_t h;
+    lv_coord_t cx;
+    lv_coord_t safe_left;
+    lv_coord_t safe_right;
+    lv_coord_t safe_width;
+    lv_coord_t line_thickness = ui_layout_px(1);
+    lv_coord_t center_line_y;
+    lv_coord_t narrow_col_w;
+    lv_coord_t full_col_w;
+    lv_coord_t left_col_x;
+    lv_coord_t right_col_x;
+    lv_coord_t top_y;
+    lv_coord_t top_h;
+    lv_coord_t bottom_y;
+    lv_coord_t bottom_h;
+    lv_coord_t mid_row_y;
+    lv_coord_t row_h;
+    lv_coord_t row_gap;
+
+    lv_obj_update_layout(parent);
+    w = lv_obj_get_content_width(parent);
+    h = lv_obj_get_content_height(parent);
+    if (w <= 0) {
+        w = lv_obj_get_width(parent);
+    }
+    if (h <= 0) {
+        h = lv_obj_get_height(parent);
+    }
+    if (line_thickness < 1) {
+        line_thickness = 1;
+    }
+
+    cx = w / 2;
+    safe_left = ui_home_pct(w, 12);
+    safe_right = w - safe_left;
+    safe_width = safe_right - safe_left;
+    center_line_y = ui_home_pct(h, 49);
+    narrow_col_w = ui_home_pct(w, 29);
+    full_col_w = safe_width;
+    left_col_x = safe_left;
+    right_col_x = safe_right - narrow_col_w;
+
+    memset(layouts, 0, sizeof(ui_home_slot_layout_t) * UI_DASHBOARD_MAX_SLOTS);
+
+    switch (slot_count) {
+    case 1:
+        layouts[0] = (ui_home_slot_layout_t){
+            safe_left,
+            ui_home_pct(h, 21),
+            full_col_w,
+            ui_home_pct(h, 38),
+        };
+        break;
+    case 2:
+        layouts[0] = (ui_home_slot_layout_t){
+            safe_left,
+            ui_home_pct(h, 13),
+            full_col_w,
+            ui_home_pct(h, 34),
+        };
+        layouts[1] = (ui_home_slot_layout_t){
+            safe_left,
+            center_line_y + ui_home_pct(h, 2),
+            full_col_w,
+            ui_home_pct(h, 23),
+        };
+        ui_home_create_divider(parent, safe_left, center_line_y, full_col_w, line_thickness);
+        break;
+    case 3:
+        top_y = ui_home_pct(h, 12);
+        top_h = center_line_y - top_y;
+        bottom_y = center_line_y + line_thickness + ui_home_pct(h, 1);
+        bottom_h = ui_home_pct(h, 23);
+
+        layouts[0] = (ui_home_slot_layout_t){left_col_x, top_y, narrow_col_w, top_h};
+        layouts[1] = (ui_home_slot_layout_t){right_col_x, top_y, narrow_col_w, top_h};
+        layouts[2] = (ui_home_slot_layout_t){safe_left, bottom_y, full_col_w, bottom_h};
+
+        ui_home_create_divider(parent, cx, top_y, line_thickness, (center_line_y - top_y) + line_thickness);
+        ui_home_create_divider(parent, safe_left, center_line_y, full_col_w, line_thickness);
+        break;
+    case 4:
+        top_y = ui_home_pct(h, 12);
+        top_h = center_line_y - top_y;
+        bottom_y = center_line_y + line_thickness + ui_home_pct(h, 1);
+        bottom_h = ui_home_pct(h, 23);
+
+        layouts[0] = (ui_home_slot_layout_t){left_col_x, top_y, narrow_col_w, top_h};
+        layouts[1] = (ui_home_slot_layout_t){right_col_x, top_y, narrow_col_w, top_h};
+        layouts[2] = (ui_home_slot_layout_t){left_col_x, bottom_y, narrow_col_w, bottom_h};
+        layouts[3] = (ui_home_slot_layout_t){right_col_x, bottom_y, narrow_col_w, bottom_h};
+
+        ui_home_create_divider(parent, cx, top_y, line_thickness, (bottom_y + bottom_h) - top_y);
+        ui_home_create_divider(parent, safe_left, center_line_y, full_col_w, line_thickness);
+        break;
+    case 5:
+        top_y = ui_home_pct(h, 7);
+        row_h = ui_home_pct(h, 20);
+        row_gap = ui_home_pct(h, 3);
+        mid_row_y = top_y + row_h + row_gap + line_thickness;
+        bottom_y = top_y + (row_h * 2) + (row_gap * 2) + line_thickness;
+        bottom_h = ui_home_pct(h, 18);
+
+        layouts[0] = (ui_home_slot_layout_t){left_col_x, top_y, narrow_col_w, row_h};
+        layouts[1] = (ui_home_slot_layout_t){right_col_x, top_y, narrow_col_w, row_h};
+        layouts[2] = (ui_home_slot_layout_t){left_col_x, mid_row_y, narrow_col_w, row_h};
+        layouts[3] = (ui_home_slot_layout_t){right_col_x, mid_row_y, narrow_col_w, row_h};
+        layouts[4] = (ui_home_slot_layout_t){safe_left, bottom_y, full_col_w, bottom_h};
+
+        ui_home_create_divider(parent, cx, top_y, line_thickness, (mid_row_y + row_h) - top_y);
+        ui_home_create_divider(parent, safe_left, top_y + row_h + row_gap, full_col_w, line_thickness);
+        ui_home_create_divider(parent, safe_left, bottom_y - ui_home_pct(h, 2), full_col_w, line_thickness);
+        break;
+    default:
+        top_y = ui_home_pct(h, 7);
+        row_h = ui_home_pct(h, 18);
+        row_gap = ui_home_pct(h, 4);
+        mid_row_y = top_y + row_h + row_gap + line_thickness;
+        bottom_y = mid_row_y + row_h + row_gap + line_thickness;
+
+        layouts[0] = (ui_home_slot_layout_t){left_col_x, top_y, narrow_col_w, row_h};
+        layouts[1] = (ui_home_slot_layout_t){right_col_x, top_y, narrow_col_w, row_h};
+        layouts[2] = (ui_home_slot_layout_t){left_col_x, mid_row_y, narrow_col_w, row_h};
+        layouts[3] = (ui_home_slot_layout_t){right_col_x, mid_row_y, narrow_col_w, row_h};
+        layouts[4] = (ui_home_slot_layout_t){left_col_x, bottom_y, narrow_col_w, row_h};
+        layouts[5] = (ui_home_slot_layout_t){right_col_x, bottom_y, narrow_col_w, row_h};
+
+        ui_home_create_divider(parent, cx, top_y, line_thickness, (bottom_y + row_h) - top_y);
+        ui_home_create_divider(parent, safe_left, top_y + row_h + row_gap, full_col_w, line_thickness);
+        ui_home_create_divider(parent, safe_left, mid_row_y + row_h + row_gap, full_col_w, line_thickness);
+        break;
+    }
+}
+
 static void ui_home_create_gauge_content(uint8_t tile_id, lv_obj_t *parent, uint8_t gauge_index)
 {
-    typedef struct {
-        lv_coord_t x;
-        lv_coord_t y;
-        lv_coord_t w;
-        lv_coord_t h;
-    } ui_home_slot_layout_t;
-
     const ui_dashboard_page_cfg_t *page = ui_home_get_gauge_cfg(gauge_index);
     ui_home_tile_runtime_t *rt = &s_home_tile_runtime[tile_id];
-    ui_home_slot_layout_t layouts[UI_DASHBOARD_MAX_SLOTS] = {0};
+    ui_home_slot_layout_t layouts[UI_DASHBOARD_MAX_SLOTS];
 
     if (page == NULL) {
         return;
@@ -523,53 +674,7 @@ static void ui_home_create_gauge_content(uint8_t tile_id, lv_obj_t *parent, uint
 
     rt->root = parent;
     rt->slot_count = page->slot_count;
-
-    switch (page->slot_count) {
-    case 1:
-        layouts[0] = (ui_home_slot_layout_t){ui_layout_px(48), ui_layout_px(86), ui_layout_px(370), ui_layout_px(196)};
-        break;
-    case 2:
-        layouts[0] = (ui_home_slot_layout_t){ui_layout_px(44), ui_layout_px(44), ui_layout_px(378), ui_layout_px(162)};
-        layouts[1] = (ui_home_slot_layout_t){ui_layout_px(44), ui_layout_px(252), ui_layout_px(378), ui_layout_px(126)};
-        ui_home_create_divider(parent, ui_layout_px(35), ui_layout_px(229), ui_layout_px(396), 1);
-        break;
-    case 3:
-        layouts[0] = (ui_home_slot_layout_t){ui_layout_px(46), ui_layout_px(46), ui_layout_px(154), ui_layout_px(146)};
-        layouts[1] = (ui_home_slot_layout_t){ui_layout_px(266), ui_layout_px(46), ui_layout_px(154), ui_layout_px(146)};
-        layouts[2] = (ui_home_slot_layout_t){ui_layout_px(52), ui_layout_px(250), ui_layout_px(362), ui_layout_px(120)};
-        ui_home_create_divider(parent, ui_layout_px(233), ui_layout_px(42), 1, ui_layout_px(160));
-        ui_home_create_divider(parent, ui_layout_px(35), ui_layout_px(229), ui_layout_px(396), 1);
-        break;
-    case 4:
-        layouts[0] = (ui_home_slot_layout_t){ui_layout_px(46), ui_layout_px(46), ui_layout_px(154), ui_layout_px(146)};
-        layouts[1] = (ui_home_slot_layout_t){ui_layout_px(266), ui_layout_px(46), ui_layout_px(154), ui_layout_px(146)};
-        layouts[2] = (ui_home_slot_layout_t){ui_layout_px(46), ui_layout_px(250), ui_layout_px(154), ui_layout_px(120)};
-        layouts[3] = (ui_home_slot_layout_t){ui_layout_px(266), ui_layout_px(250), ui_layout_px(154), ui_layout_px(120)};
-        ui_home_create_divider(parent, ui_layout_px(233), ui_layout_px(42), 1, ui_layout_px(336));
-        ui_home_create_divider(parent, ui_layout_px(35), ui_layout_px(229), ui_layout_px(396), 1);
-        break;
-    case 5:
-        layouts[0] = (ui_home_slot_layout_t){ui_layout_px(46), ui_layout_px(24), ui_layout_px(154), ui_layout_px(96)};
-        layouts[1] = (ui_home_slot_layout_t){ui_layout_px(266), ui_layout_px(24), ui_layout_px(154), ui_layout_px(96)};
-        layouts[2] = (ui_home_slot_layout_t){ui_layout_px(46), ui_layout_px(150), ui_layout_px(154), ui_layout_px(96)};
-        layouts[3] = (ui_home_slot_layout_t){ui_layout_px(266), ui_layout_px(150), ui_layout_px(154), ui_layout_px(96)};
-        layouts[4] = (ui_home_slot_layout_t){ui_layout_px(52), ui_layout_px(282), ui_layout_px(362), ui_layout_px(84)};
-        ui_home_create_divider(parent, ui_layout_px(233), ui_layout_px(24), 1, ui_layout_px(222));
-        ui_home_create_divider(parent, ui_layout_px(35), ui_layout_px(136), ui_layout_px(396), 1);
-        ui_home_create_divider(parent, ui_layout_px(35), ui_layout_px(262), ui_layout_px(396), 1);
-        break;
-    default:
-        layouts[0] = (ui_home_slot_layout_t){ui_layout_px(46), ui_layout_px(24), ui_layout_px(154), ui_layout_px(88)};
-        layouts[1] = (ui_home_slot_layout_t){ui_layout_px(266), ui_layout_px(24), ui_layout_px(154), ui_layout_px(88)};
-        layouts[2] = (ui_home_slot_layout_t){ui_layout_px(46), ui_layout_px(144), ui_layout_px(154), ui_layout_px(88)};
-        layouts[3] = (ui_home_slot_layout_t){ui_layout_px(266), ui_layout_px(144), ui_layout_px(154), ui_layout_px(88)};
-        layouts[4] = (ui_home_slot_layout_t){ui_layout_px(46), ui_layout_px(264), ui_layout_px(154), ui_layout_px(88)};
-        layouts[5] = (ui_home_slot_layout_t){ui_layout_px(266), ui_layout_px(264), ui_layout_px(154), ui_layout_px(88)};
-        ui_home_create_divider(parent, ui_layout_px(233), ui_layout_px(24), 1, ui_layout_px(328));
-        ui_home_create_divider(parent, ui_layout_px(35), ui_layout_px(128), ui_layout_px(396), 1);
-        ui_home_create_divider(parent, ui_layout_px(35), ui_layout_px(248), ui_layout_px(396), 1);
-        break;
-    }
+    ui_home_build_gauge_layout(parent, page->slot_count, layouts);
 
     for (uint8_t i = 0; i < page->slot_count; ++i) {
         ui_home_create_slot_card(parent,
