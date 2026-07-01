@@ -408,6 +408,8 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Start UI");
     if (app_lvgl_lock(-1)) {
+        lv_disp_set_bg_color(lv_disp_get_default(), lv_color_black());
+        lv_disp_set_bg_opa(lv_disp_get_default(), LV_OPA_COVER);
         ui_init();
         app_lvgl_unlock();
     }
