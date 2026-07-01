@@ -473,20 +473,32 @@ static void ui_home_create_slot_card(lv_obj_t *parent,
                                      lv_obj_t **value_out,
                                      lv_obj_t **unit_out)
 {
-    bool tiny = (w <= ui_layout_px(140)) || (h <= ui_layout_px(84));
-    bool compact = tiny || (w <= ui_layout_px(170)) || (h <= ui_layout_px(110));
-    lv_coord_t label_inset_x = tiny ? ui_layout_px(4) : (compact ? ui_layout_px(6) : ui_layout_px(10));
-    lv_coord_t label_inset_y = tiny ? ui_layout_px(2) : (compact ? ui_layout_px(4) : ui_layout_px(8));
+    lv_coord_t label_inset_x = w * 4 / 100;
+    lv_coord_t label_inset_y = h * 3 / 100;
+    lv_coord_t unit_inset_x = label_inset_x;
+    lv_coord_t unit_inset_y = h * 2 / 100;
+    if (label_inset_x < ui_layout_px(3)) label_inset_x = ui_layout_px(3);
+    if (label_inset_y < ui_layout_px(2)) label_inset_y = ui_layout_px(2);
+    if (unit_inset_x < ui_layout_px(3)) unit_inset_x = ui_layout_px(3);
+    if (unit_inset_y < ui_layout_px(1)) unit_inset_y = ui_layout_px(1);
     lv_coord_t circ_extra = ui_home_circular_safe_left(x, y + label_inset_y);
     if (circ_extra > label_inset_x) {
         label_inset_x = circ_extra;
     }
-    lv_coord_t unit_inset_x = tiny ? ui_layout_px(4) : (compact ? ui_layout_px(6) : ui_layout_px(10));
-    lv_coord_t unit_inset_y = tiny ? ui_layout_px(1) : (compact ? ui_layout_px(2) : ui_layout_px(6));
-    lv_coord_t text_width = w - (label_inset_x * 2);
-    lv_coord_t name_font = tiny ? 11 : (compact ? 13 : 16);
-    lv_coord_t value_font = tiny ? 22 : (compact ? 26 : 34);
-    lv_coord_t unit_font = tiny ? 11 : (compact ? 12 : 16);
+    lv_coord_t text_width = w - (label_inset_x + unit_inset_x);
+    lv_coord_t value_target_px = h * 32 / 100;
+    lv_coord_t max_for_width = text_width * 10 / 35;
+    if (value_target_px > max_for_width) {
+        value_target_px = max_for_width;
+    }
+    uint16_t scr_min = ui_screen_width() < ui_screen_height()
+                       ? ui_screen_width() : ui_screen_height();
+    lv_coord_t value_font = (lv_coord_t)((int32_t)value_target_px *
+                            UI_PLATFORM_BASE_RES / (int32_t)scr_min);
+    if (value_font < 18) value_font = 18;
+    lv_coord_t name_font = value_font * 40 / 100;
+    if (name_font < 11) name_font = 11;
+    lv_coord_t unit_font = name_font;
 
     lv_obj_t *panel = lv_obj_create(parent);
     lv_obj_set_size(panel, w, h);
