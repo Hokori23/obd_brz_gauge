@@ -6,6 +6,7 @@
 #include "../ui.h"
 #include "../ui_font_profile.h"
 #include "../ui_layout.h"
+#include "../ui_round_shell.h"
 #include "bsp_obd_dsp/nvs_storage.h"
 
 extern void ui_event_obd_prot_background(lv_event_t * e);
@@ -16,23 +17,8 @@ void ui_ScreenPageODBProtocal_screen_init(void)
     ui_obd_protocol_layout_get(&layout);
 
     ui_ScreenPageODBProtocal = lv_obj_create(NULL);
-    lv_obj_clear_flag(ui_ScreenPageODBProtocal, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
-    lv_obj_set_style_radius(ui_ScreenPageODBProtocal, layout.shell.ring_diameter, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui_ScreenPageODBProtocal, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui_ScreenPageODBProtocal, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    ui_SpinnerODBProtocalEgg = lv_spinner_create(ui_ScreenPageODBProtocal, 1000, 90);
-    lv_obj_set_width(ui_SpinnerODBProtocalEgg, layout.shell.ring_diameter);
-    lv_obj_set_height(ui_SpinnerODBProtocalEgg, layout.shell.ring_diameter);
-    lv_obj_set_align(ui_SpinnerODBProtocalEgg, LV_ALIGN_CENTER);
-    lv_obj_clear_flag(ui_SpinnerODBProtocalEgg, LV_OBJ_FLAG_CLICKABLE);      /// Flags
-    lv_obj_set_style_arc_color(ui_SpinnerODBProtocalEgg, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_opa(ui_SpinnerODBProtocalEgg, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(ui_SpinnerODBProtocalEgg, layout.shell.ring_arc_width, LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    lv_obj_set_style_arc_color(ui_SpinnerODBProtocalEgg, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_opa(ui_SpinnerODBProtocalEgg, 0, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(ui_SpinnerODBProtocalEgg, layout.shell.ring_arc_width, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    ui_round_screen_apply_base(ui_ScreenPageODBProtocal, lv_color_hex(0x000000));
+    ui_SpinnerODBProtocalEgg = ui_round_shell_create_ring(ui_ScreenPageODBProtocal, &layout.shell);
 
     ui_ArcPageODBProtocalBack = lv_arc_create(ui_ScreenPageODBProtocal);
     lv_obj_set_width(ui_ArcPageODBProtocalBack, layout.inner_arc_diameter);
@@ -62,24 +48,19 @@ void ui_ScreenPageODBProtocal_screen_init(void)
     lv_obj_set_height(ui_RollerODBProtocalChoose, layout.roller_height);
     lv_obj_set_width(ui_RollerODBProtocalChoose, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_align(ui_RollerODBProtocalChoose, LV_ALIGN_CENTER);
-    lv_obj_set_style_text_color(ui_RollerODBProtocalChoose, lv_color_hex(0x615F5F), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(ui_RollerODBProtocalChoose, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_RollerODBProtocalChoose, ui_font_typoder(16), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui_RollerODBProtocalChoose, layout.roller_radius, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui_RollerODBProtocalChoose, lv_color_hex(0x333333), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui_RollerODBProtocalChoose, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(ui_RollerODBProtocalChoose, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_opa(ui_RollerODBProtocalChoose, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    lv_obj_set_style_text_color(ui_RollerODBProtocalChoose, lv_color_hex(0xFFFFFF), LV_PART_SELECTED | LV_STATE_DEFAULT);
+    ui_round_shell_apply_roller_theme(ui_RollerODBProtocalChoose,
+                                      layout.roller_radius,
+                                      lv_color_hex(0x333333),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0x615F5F),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0x584E58),
+                                      lv_color_hex(0x000000));
     lv_obj_set_style_text_opa(ui_RollerODBProtocalChoose, 255, LV_PART_SELECTED | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_RollerODBProtocalChoose, ui_font_typoder(20), LV_PART_SELECTED | LV_STATE_DEFAULT);
     lv_obj_set_style_radius(ui_RollerODBProtocalChoose, layout.selected_radius, LV_PART_SELECTED | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui_RollerODBProtocalChoose, lv_color_hex(0xFFFFFF), LV_PART_SELECTED | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui_RollerODBProtocalChoose, 255, LV_PART_SELECTED | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(ui_RollerODBProtocalChoose, lv_color_hex(0x584E58), LV_PART_SELECTED | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_opa(ui_RollerODBProtocalChoose, 255, LV_PART_SELECTED | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(ui_RollerODBProtocalChoose, 1, LV_PART_SELECTED | LV_STATE_DEFAULT);
 
     ui_ImageODBProtocalBlackEar = lv_img_create(ui_ScreenPageODBProtocal);
     lv_img_set_src(ui_ImageODBProtocalBlackEar, &ui_img_pngblackear_png);
@@ -103,7 +84,7 @@ void ui_ScreenPageODBProtocal_screen_init(void)
     lv_obj_set_width(ui_LabelSureTipText, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_LabelSureTipText, LV_SIZE_CONTENT);    /// 1
     lv_obj_align(ui_LabelSureTipText, LV_ALIGN_CENTER, layout.hint_x, layout.hint_y);
-    lv_label_set_text(ui_LabelSureTipText, "Long press confirm \nSlide back");
+    lv_label_set_text(ui_LabelSureTipText, "Long press confirm\nSwipe up to go back");
     lv_obj_set_style_text_color(ui_LabelSureTipText, lv_color_hex(0x333333), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(ui_LabelSureTipText, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(ui_LabelSureTipText, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -111,7 +92,10 @@ void ui_ScreenPageODBProtocal_screen_init(void)
 
 
     /* 事件回调 */
-    lv_obj_add_event_cb(ui_ScreenPageODBProtocal, ui_event_obd_prot_background, LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(ui_ScreenPageODBProtocal, ui_event_obd_prot_background, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_event_cb(ui_ScreenPageODBProtocal, ui_event_obd_prot_background, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(ui_ScreenPageODBProtocal, ui_event_obd_prot_background, LV_EVENT_LONG_PRESSED_REPEAT, NULL);
+    lv_obj_add_event_cb(ui_ScreenPageODBProtocal, ui_event_obd_prot_background, LV_EVENT_RELEASED, NULL);
     /* 根据 NVS 当前协议设置初始滚轮 */
     const nvs_user_cfg_t *cfg = nvs_cfg_get();
     lv_roller_set_selected(ui_RollerODBProtocalChoose, cfg->protocol, LV_ANIM_OFF);

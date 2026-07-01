@@ -4,6 +4,7 @@
 #include "../ui.h"
 #include "../ui_font_profile.h"
 #include "../ui_layout.h"
+#include "../ui_round_shell.h"
 #include "bsp_obd_dsp/elm327_ble_client.h"
 #include "bsp_obd_dsp/nvs_storage.h"
 #include "esp_log.h"
@@ -91,7 +92,7 @@ static void on_device_selected(lv_event_t *e) {
     if (s_spinner) lv_obj_clear_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
 
     elm327_ble_connect_by_name(name);
-    _ui_screen_change(&ui_ScreenPageTemp, LV_SCR_LOAD_ANIM_FADE_ON, 300, 500, &ui_ScreenPageTemp_screen_init);
+    ui_show_home_page(UI_HOME_PAGE_EASTER_EGG_ID, LV_SCR_LOAD_ANIM_FADE_ON);
 }
 
 // 删除已保存设备
@@ -127,22 +128,8 @@ void ui_ScreenPageBLEScan_screen_init(void)
     ui_ble_scan_layout_get(&layout);
 
     ui_ScreenPageBLEScan = lv_obj_create(NULL);
-    lv_obj_clear_flag(ui_ScreenPageBLEScan, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(ui_ScreenPageBLEScan, LV_RADIUS_CIRCLE, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui_ScreenPageBLEScan, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui_ScreenPageBLEScan, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_all(ui_ScreenPageBLEScan, 0, LV_PART_MAIN);
-
-    // White border ring
-    lv_obj_t *spinner_ring = lv_spinner_create(ui_ScreenPageBLEScan, 1000, 90);
-    lv_obj_set_size(spinner_ring, layout.shell.ring_diameter, layout.shell.ring_diameter);
-    lv_obj_set_align(spinner_ring, LV_ALIGN_CENTER);
-    lv_obj_clear_flag(spinner_ring, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_arc_color(spinner_ring, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(spinner_ring, 255, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(spinner_ring, layout.shell.ring_arc_width, LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(spinner_ring, 0, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(spinner_ring, layout.shell.ring_arc_width, LV_PART_INDICATOR);
+    ui_round_screen_apply_base(ui_ScreenPageBLEScan, lv_color_hex(0x000000));
+    ui_round_shell_create_ring(ui_ScreenPageBLEScan, &layout.shell);
 
     // Title
     lv_obj_t *label_title = lv_label_create(ui_ScreenPageBLEScan);
@@ -187,6 +174,7 @@ void ui_ScreenPageBLEScan_screen_init(void)
     lv_obj_set_style_bg_opa(s_saved_panel, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_radius(s_saved_panel, layout.saved_panel_radius, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_pad_all(s_saved_panel, layout.saved_panel_pad, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_clip_corner(s_saved_panel, true, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_clear_flag(s_saved_panel, LV_OBJ_FLAG_SCROLLABLE);
     if (!has_saved) lv_obj_add_flag(s_saved_panel, LV_OBJ_FLAG_HIDDEN);
 
@@ -231,16 +219,18 @@ void ui_ScreenPageBLEScan_screen_init(void)
     s_list = lv_list_create(ui_ScreenPageBLEScan);
     lv_obj_set_size(s_list, layout.list_width, layout.list_height);
     lv_obj_align(s_list, LV_ALIGN_TOP_MID, 0, layout.list_y);
+    lv_obj_add_flag(s_list, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_set_style_bg_color(s_list, lv_color_hex(0x111111), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(s_list, 255, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_list, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(s_list, lv_color_hex(0x444444), LV_PART_MAIN);
     lv_obj_set_style_pad_all(s_list, layout.list_pad, LV_PART_MAIN);
     lv_obj_set_style_radius(s_list, layout.list_radius, LV_PART_MAIN);
+    lv_obj_set_style_clip_corner(s_list, true, LV_PART_MAIN);
 
     // Hint text at bottom
     lv_obj_t *label_hint = lv_label_create(ui_ScreenPageBLEScan);
-    lv_label_set_text(label_hint, "Tap to connect  Slide to back");
+    lv_label_set_text(label_hint, "Tap to connect  Swipe down to go back");
     lv_obj_set_style_text_font(label_hint, ui_font_hint(12), LV_PART_MAIN);
     lv_obj_set_style_text_color(label_hint, lv_color_hex(0x555555), LV_PART_MAIN);
     lv_obj_set_style_text_align(label_hint, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);

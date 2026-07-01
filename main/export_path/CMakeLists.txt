@@ -2,6 +2,7 @@ SET(SOURCES screens/ui_ScreenPageEasterEgg.c
     screens/ui_ScreenPageODBProtocal.c
     screens/ui_ScreenPageInfo.c
     ui.c
+    ui_round_shell.c
     components/ui_comp_hook.c
     ui_helpers.c
     images/ui_img_pngmainback_png.c

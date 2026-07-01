@@ -13,7 +13,7 @@
 - `ui_ScreenPageOilPressure.c` / `OilWarn.c`：机油压力显示与告警
 - `ui_ScreenPageNeedle.c`：指针仪表页
 - `ui_ScreenPageSettings.c`：设置页
-- `ui_ScreenPageEasterEgg.c`：彩蛋页
+- `ui_ScreenPageEasterEgg.c`：车型/设备信息页
 
 ## 读这些页面时看什么
 

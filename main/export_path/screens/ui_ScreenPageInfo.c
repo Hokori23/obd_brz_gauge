@@ -7,6 +7,7 @@
 #include "../ui.h"
 #include "../ui_font_profile.h"
 #include "../ui_layout.h"
+#include "../ui_round_shell.h"
 
 lv_obj_t *ui_ScreenPageInfo  = NULL;
 lv_obj_t *ui_LabelInfoCLT    = NULL;
@@ -86,28 +87,43 @@ static void create_vdiv(lv_obj_t *parent, lv_coord_t x, lv_coord_t y, lv_coord_t
     lv_obj_clear_flag(div, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 }
 
+lv_obj_t *ui_page_info_content_create(lv_obj_t *parent)
+{
+    ui_info_layout_t layout;
+    ui_info_layout_get(&layout);
+
+    lv_obj_t *title = lv_label_create(parent);
+    lv_label_set_text(title, "INFO");
+    lv_obj_set_style_text_font(title, ui_font_typoder(20), LV_PART_MAIN);
+    lv_obj_set_style_text_color(title, lv_color_hex(0x666666), LV_PART_MAIN);
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, layout.title_y);
+
+    create_hdiv(parent, layout.hdiv1_y, layout.hdiv1_width);
+    create_hdiv(parent, layout.hdiv2_y, layout.hdiv2_width);
+    create_vdiv(parent, layout.vdiv_x, layout.vdiv_y, layout.vdiv_height);
+
+    ui_LabelInfoCLT = create_info_tile(parent, &layout, &ui_LabelInfoName[0], &ui_LabelInfoUnit[0], "CLT", lv_color_hex(0x44AAFF), "掳C", layout.left_col_x, layout.row1_cy);
+    ui_LabelInfoOil = create_info_tile(parent, &layout, &ui_LabelInfoName[1], &ui_LabelInfoUnit[1], "OIL", lv_color_hex(0xFF7722), "掳C", layout.right_col_x, layout.row1_cy);
+    ui_LabelInfoLoad = create_info_tile(parent, &layout, &ui_LabelInfoName[2], &ui_LabelInfoUnit[2], "LOAD", lv_color_hex(0xFFCC00), "%", layout.left_col_x, layout.row2_cy);
+    ui_LabelInfoTPS = create_info_tile(parent, &layout, &ui_LabelInfoName[3], &ui_LabelInfoUnit[3], "TPS", lv_color_hex(0xFF8844), "%", layout.right_col_x, layout.row2_cy);
+    ui_LabelInfoIAT = create_info_tile(parent, &layout, &ui_LabelInfoName[4], &ui_LabelInfoUnit[4], "IAT", lv_color_hex(0x44FF88), "掳C", layout.center_col_x, layout.row3_cy);
+
+    ui_LabelInfoValue[0] = ui_LabelInfoCLT;
+    ui_LabelInfoValue[1] = ui_LabelInfoOil;
+    ui_LabelInfoValue[2] = ui_LabelInfoLoad;
+    ui_LabelInfoValue[3] = ui_LabelInfoTPS;
+    ui_LabelInfoValue[4] = ui_LabelInfoIAT;
+    return parent;
+}
+
 void ui_ScreenPageInfo_screen_init(void)
 {
     ui_info_layout_t layout;
     ui_info_layout_get(&layout);
 
     ui_ScreenPageInfo = lv_obj_create(NULL);
-    lv_obj_clear_flag(ui_ScreenPageInfo, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(ui_ScreenPageInfo, LV_RADIUS_CIRCLE, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui_ScreenPageInfo, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui_ScreenPageInfo, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    // Outer spinner ring (decorative, white)
-    lv_obj_t *ring = lv_spinner_create(ui_ScreenPageInfo, 1000, 90);
-    lv_obj_set_size(ring, layout.shell.ring_diameter, layout.shell.ring_diameter);
-    lv_obj_set_align(ring, LV_ALIGN_CENTER);
-    lv_obj_clear_flag(ring, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_arc_color(ring, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_opa(ring, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(ring, layout.shell.ring_arc_width, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_color(ring, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_opa(ring, 0, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(ring, layout.shell.ring_arc_width, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    ui_round_screen_apply_base(ui_ScreenPageInfo, lv_color_hex(0x000000));
+    ui_round_shell_create_ring(ui_ScreenPageInfo, &layout.shell);
 
     // Page title
     lv_obj_t *title = lv_label_create(ui_ScreenPageInfo);

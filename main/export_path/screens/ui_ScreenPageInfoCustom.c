@@ -1,6 +1,7 @@
 #include "../ui.h"
 #include "../ui_font_profile.h"
 #include "../ui_layout.h"
+#include "../ui_round_shell.h"
 #include "bsp_obd_dsp/nvs_storage.h"
 
 extern lv_obj_t *ui_ScreenPageInfoCustom;
@@ -31,6 +32,8 @@ static void on_info_map_changed(lv_event_t *e)
 
 static void create_row(const ui_info_custom_layout_t *layout, lv_obj_t *parent, int idx, const char *title, lv_coord_t y)
 {
+    const lv_coord_t roller_radius = ui_layout_px(8);
+
     lv_obj_t *lbl = lv_label_create(parent);
     lv_label_set_text(lbl, title);
     lv_obj_set_style_text_font(lbl, ui_font_hint(12), LV_PART_MAIN);
@@ -45,11 +48,14 @@ static void create_row(const ui_info_custom_layout_t *layout, lv_obj_t *parent, 
     lv_obj_set_height(s_info_rollers[idx], layout->roller_height);
     lv_obj_set_style_text_font(s_info_rollers[idx], ui_font_typoder(20), LV_PART_MAIN);
     lv_obj_set_style_text_font(s_info_rollers[idx], ui_font_typoder(20), LV_PART_SELECTED);
-    lv_obj_set_style_bg_color(s_info_rollers[idx], lv_color_hex(0x222222), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_info_rollers[idx], 255, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_info_rollers[idx], lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_info_rollers[idx], lv_color_hex(0xFFFFFF), LV_PART_SELECTED);
-    lv_obj_set_style_text_color(s_info_rollers[idx], lv_color_hex(0x000000), LV_PART_SELECTED);
+    ui_round_shell_apply_roller_theme(s_info_rollers[idx],
+                                      roller_radius,
+                                      lv_color_hex(0x222222),
+                                      lv_color_hex(0x444444),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0xCFCFCF),
+                                      lv_color_hex(0x000000));
     lv_obj_align(s_info_rollers[idx], LV_ALIGN_CENTER, layout->roller_x, y);
     lv_obj_add_event_cb(s_info_rollers[idx], on_info_map_changed, LV_EVENT_VALUE_CHANGED, (void *)idx);
 }
@@ -61,19 +67,8 @@ void ui_ScreenPageInfoCustom_screen_init(void)
     ui_info_custom_layout_get(&layout);
 
     ui_ScreenPageInfoCustom = lv_obj_create(NULL);
-    lv_obj_clear_flag(ui_ScreenPageInfoCustom, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(ui_ScreenPageInfoCustom, layout.shell.ring_diameter, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(ui_ScreenPageInfoCustom, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(ui_ScreenPageInfoCustom, 255, LV_PART_MAIN);
-
-    lv_obj_t *ring = lv_spinner_create(ui_ScreenPageInfoCustom, 1000, 90);
-    lv_obj_set_size(ring, layout.shell.ring_diameter, layout.shell.ring_diameter);
-    lv_obj_set_align(ring, LV_ALIGN_CENTER);
-    lv_obj_clear_flag(ring, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_arc_color(ring, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(ring, 255, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(ring, layout.shell.ring_arc_width, LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(ring, 0, LV_PART_INDICATOR);
+    ui_round_screen_apply_base(ui_ScreenPageInfoCustom, lv_color_hex(0x000000));
+    ui_round_shell_create_ring(ui_ScreenPageInfoCustom, &layout.shell);
 
     lv_obj_t *title = lv_label_create(ui_ScreenPageInfoCustom);
     lv_label_set_text(title, "INFO CUSTOM");
@@ -92,7 +87,7 @@ void ui_ScreenPageInfoCustom_screen_init(void)
     }
 
     lv_obj_t *hint = lv_label_create(ui_ScreenPageInfoCustom);
-    lv_label_set_text(hint, "Swipe up/left/right to return");
+    lv_label_set_text(hint, "Swipe up to return");
     lv_obj_set_style_text_font(hint, ui_font_hint(12), LV_PART_MAIN);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x666666), LV_PART_MAIN);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, layout.hint_y);

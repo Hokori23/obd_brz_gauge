@@ -18,6 +18,12 @@ extern "C" {
 #include "app_obd_dsp/obd_data_cache.h"
 
 #define USE_GIF_LOGO        0
+#define UI_HOME_PAGE_TEMP_ID          0u
+#define UI_HOME_PAGE_INFO_ID          1u
+#define UI_HOME_PAGE_NEEDLE_ID        2u
+#define UI_HOME_PAGE_OIL_PRESSURE_ID  3u
+#define UI_HOME_PAGE_BRAKE_TEMP_ID    4u
+#define UI_HOME_PAGE_EASTER_EGG_ID    5u
 #define USE_GIF_EASTER_EGG  0
 
 #define COLOR_MITSUBISHI_RED    0xFFFFFF //主色调白色(原三菱红)
@@ -42,6 +48,7 @@ extern lv_obj_t * ui_LabelSureTipText;
 
 // SCREEN: ui_ScreenPageEasterEgg
 void ui_ScreenPageEasterEgg_screen_init(void);
+lv_obj_t *ui_page_easter_egg_content_create(lv_obj_t *parent);
 extern lv_obj_t * ui_ScreenPageEasterEgg;
 extern lv_obj_t * ui_SpinnerEasterEgg;
 extern lv_obj_t * ArcPageEasterEggBack;
@@ -58,6 +65,7 @@ void ui_event_ble_scan_background(lv_event_t * e);
 
 // SCREEN: ui_ScreenPageTemp
 void ui_ScreenPageTemp_screen_init(void);
+lv_obj_t *ui_page_temp_content_create(lv_obj_t *parent);
 extern lv_obj_t * ui_ScreenPageTemp;
 extern lv_obj_t * ui_LabelCoolantTempText;
 extern lv_obj_t * ui_LabelOilTempText;
@@ -74,6 +82,7 @@ void ui_event_temp_custom_background(lv_event_t * e);
 
 // SCREEN: ui_ScreenPageBrakeTemp
 void ui_ScreenPageBrakeTemp_screen_init(void);
+lv_obj_t *ui_page_brake_temp_content_create(lv_obj_t *parent);
 extern lv_obj_t * ui_ScreenPageBrakeTemp;
 extern lv_obj_t * ui_LabelBrakeTempText;
 extern lv_obj_t * ui_ChartBrakeTemp;
@@ -82,6 +91,7 @@ void ui_event_brake_temp_background(lv_event_t * e);
 
 // SCREEN: ui_ScreenPageOilPressure
 void ui_ScreenPageOilPressure_screen_init(void);
+lv_obj_t *ui_page_oil_pressure_content_create(lv_obj_t *parent);
 extern lv_obj_t * ui_ScreenPageOilPressure;
 extern lv_obj_t * ui_LabelOilPressureText;
 extern lv_obj_t * ui_ChartOilPressure;
@@ -90,6 +100,7 @@ void ui_event_oil_pressure_background(lv_event_t * e);
 
 // SCREEN: ui_ScreenPageInfo
 void ui_ScreenPageInfo_screen_init(void);
+lv_obj_t *ui_page_info_content_create(lv_obj_t *parent);
 extern lv_obj_t * ui_ScreenPageInfo;
 extern lv_obj_t * ui_LabelInfoCLT;
 extern lv_obj_t * ui_LabelInfoIAT;
@@ -125,6 +136,7 @@ void ui_event_oil_warn_background(lv_event_t * e);
 
 // SCREEN: ui_ScreenPageNeedle (指针式可配置仪表)
 void ui_ScreenPageNeedle_screen_init(void);
+lv_obj_t *ui_page_needle_content_create(lv_obj_t *parent);
 extern lv_obj_t * ui_ScreenPageNeedle;
 void ui_event_needle_background(lv_event_t * e);
 // 指针页控件 (由 screen_init 创建, ui.c 的定时器刷新)
@@ -188,6 +200,7 @@ LV_FONT_DECLARE(ui_font_FontTypoderSize140);
 
 // UI INIT
 void ui_init(void);
+void ui_show_home_page(uint8_t page_id, lv_scr_load_anim_t anim);
 void ui_event_logo_background(lv_event_t * e);
 void ui_event_main_background(lv_event_t * e);
 void ui_event_gear_background(lv_event_t * e);

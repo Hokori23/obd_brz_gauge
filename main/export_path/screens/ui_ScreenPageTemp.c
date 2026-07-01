@@ -4,6 +4,7 @@
 #include "../ui.h"
 #include "../ui_font_profile.h"
 #include "../ui_layout.h"
+#include "../ui_round_shell.h"
 
 // Value labels (externally accessible from timer callback)
 lv_obj_t *ui_LabelCoolantTempText = NULL;
@@ -80,28 +81,45 @@ static void make_hdiv(lv_obj_t *parent, lv_coord_t y, lv_coord_t w)
     lv_obj_clear_flag(div, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 }
 
+lv_obj_t *ui_page_temp_content_create(lv_obj_t *parent)
+{
+    ui_temp_layout_get(&s_temp_layout);
+
+    lv_obj_t *arc_bg = lv_arc_create(parent);
+    lv_obj_set_width(arc_bg, s_temp_layout.inner_arc_diameter);
+    lv_obj_set_height(arc_bg, s_temp_layout.inner_arc_diameter);
+    lv_obj_set_align(arc_bg, LV_ALIGN_CENTER);
+    lv_obj_clear_flag(arc_bg, LV_OBJ_FLAG_CLICKABLE);
+    lv_arc_set_value(arc_bg, 0);
+    lv_arc_set_bg_angles(arc_bg, 0, 360);
+    lv_obj_set_style_arc_color(arc_bg, lv_color_hex(0x333333), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_opa(arc_bg, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_width(arc_bg, s_temp_layout.inner_arc_width, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_rounded(arc_bg, false, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_color(arc_bg, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_opa(arc_bg, 0, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_width(arc_bg, s_temp_layout.inner_arc_width, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(arc_bg, 0, LV_PART_KNOB | LV_STATE_DEFAULT);
+
+    make_row(parent, &ui_LabelTempName[0], &ui_LabelTempValue[0], &ui_LabelTempUnit[0], s_temp_layout.row1_cy, lv_color_hex(0x44AAFF), "CLT", "掳C");
+    make_hdiv(parent, s_temp_layout.divider1_y, s_temp_layout.divider_width);
+    make_row(parent, &ui_LabelTempName[1], &ui_LabelTempValue[1], &ui_LabelTempUnit[1], s_temp_layout.row2_cy, lv_color_hex(0x44FF88), "IAT", "掳C");
+    make_hdiv(parent, s_temp_layout.divider2_y, s_temp_layout.divider_width);
+    make_row(parent, &ui_LabelTempName[2], &ui_LabelTempValue[2], &ui_LabelTempUnit[2], s_temp_layout.row3_cy, lv_color_hex(0xFF7722), "OIL", "掳C");
+
+    ui_LabelCoolantTempText = ui_LabelTempValue[0];
+    ui_LabelIntakeTempText = ui_LabelTempValue[1];
+    ui_LabelOilTempText = ui_LabelTempValue[2];
+    return parent;
+}
+
 void ui_ScreenPageTemp_screen_init(void)
 {
     ui_temp_layout_get(&s_temp_layout);
 
     ui_ScreenPageTemp = lv_obj_create(NULL);
-    lv_obj_clear_flag(ui_ScreenPageTemp, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(ui_ScreenPageTemp, LV_RADIUS_CIRCLE, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui_ScreenPageTemp, lv_color_hex(0x440000), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui_ScreenPageTemp, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    // White border ring
-    lv_obj_t *spinner_ring = lv_spinner_create(ui_ScreenPageTemp, 1000, 90);
-    lv_obj_set_width(spinner_ring, s_temp_layout.shell.ring_diameter);
-    lv_obj_set_height(spinner_ring, s_temp_layout.shell.ring_diameter);
-    lv_obj_set_align(spinner_ring, LV_ALIGN_CENTER);
-    lv_obj_clear_flag(spinner_ring, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_arc_color(spinner_ring, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_opa(spinner_ring, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(spinner_ring, s_temp_layout.shell.ring_arc_width, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_color(spinner_ring, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_opa(spinner_ring, 0, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(spinner_ring, s_temp_layout.shell.ring_arc_width, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    ui_round_screen_apply_base(ui_ScreenPageTemp, lv_color_hex(0x440000));
+    ui_round_shell_create_ring(ui_ScreenPageTemp, &s_temp_layout.shell);
 
     // Inner arc ring (decorative)
     lv_obj_t *arc_bg = lv_arc_create(ui_ScreenPageTemp);

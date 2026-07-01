@@ -6,6 +6,7 @@
 #include "../ui.h"
 #include "../ui_font_profile.h"
 #include "../ui_layout.h"
+#include "../ui_round_shell.h"
 
 void ui_ScreenPageLogo_screen_init(void)
 {
@@ -13,10 +14,7 @@ void ui_ScreenPageLogo_screen_init(void)
     ui_logo_layout_get(&layout);
 
     ui_ScreenPageLogo = lv_obj_create(NULL);
-    lv_obj_clear_flag(ui_ScreenPageLogo, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
-    lv_obj_set_style_radius(ui_ScreenPageLogo, layout.shell.ring_diameter, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui_ScreenPageLogo, lv_color_hex(0x0000), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui_ScreenPageLogo, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+    ui_round_screen_apply_base(ui_ScreenPageLogo, lv_color_hex(0x000000));
 #if USE_GIF_LOGO == 1
     imageLogo = lv_gif_create(ui_ScreenPageLogo);
     lv_gif_set_src(imageLogo, &gifSnake400);
@@ -39,19 +37,8 @@ void ui_ScreenPageLogo_screen_init(void)
 
     imageLogo = NULL; // No image logo anymore
 
-    // White border ring (same as Gear page style)
-    lv_obj_t *spinnerLogo = lv_spinner_create(ui_ScreenPageLogo, 1000, 90);
-    lv_obj_set_width(spinnerLogo, layout.shell.ring_diameter);
-    lv_obj_set_height(spinnerLogo, layout.shell.ring_diameter);
-    lv_obj_set_align(spinnerLogo, LV_ALIGN_CENTER);
-    lv_obj_clear_flag(spinnerLogo, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_arc_color(spinnerLogo, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_opa(spinnerLogo, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(spinnerLogo, layout.shell.ring_arc_width, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_color(spinnerLogo, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_opa(spinnerLogo, 0, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(spinnerLogo, layout.shell.ring_arc_width, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    ui_round_shell_create_ring(ui_ScreenPageLogo, &layout.shell);
 #endif
-    lv_obj_add_event_cb(ui_ScreenPageLogo, ui_event_logo_background, LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(ui_ScreenPageLogo, ui_event_logo_background, LV_EVENT_CLICKED, NULL);
 }
 

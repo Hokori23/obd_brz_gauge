@@ -3,6 +3,7 @@
 #include "../ui.h"
 #include "../ui_font_profile.h"
 #include "../ui_layout.h"
+#include "../ui_round_shell.h"
 #include "bsp_obd_dsp/nvs_storage.h"
 
 static lv_obj_t *s_slider_oil_warn = NULL;
@@ -31,20 +32,8 @@ void ui_ScreenPageOilWarn_screen_init(void)
     ui_warn_layout_get(&layout);
 
     ui_ScreenPageOilWarn = lv_obj_create(NULL);
-    lv_obj_clear_flag(ui_ScreenPageOilWarn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(ui_ScreenPageOilWarn, layout.shell.ring_diameter, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(ui_ScreenPageOilWarn, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(ui_ScreenPageOilWarn, 255, LV_PART_MAIN);
-
-    lv_obj_t *ring = lv_spinner_create(ui_ScreenPageOilWarn, 1000, 90);
-    lv_obj_set_size(ring, layout.shell.ring_diameter, layout.shell.ring_diameter);
-    lv_obj_set_align(ring, LV_ALIGN_CENTER);
-    lv_obj_clear_flag(ring, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_arc_color(ring, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(ring, 255, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(ring, layout.shell.ring_arc_width, LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(ring, 0, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(ring, layout.shell.ring_arc_width, LV_PART_INDICATOR);
+    ui_round_screen_apply_base(ui_ScreenPageOilWarn, lv_color_hex(0x000000));
+    ui_round_shell_create_ring(ui_ScreenPageOilWarn, &layout.shell);
 
     lv_obj_t *title = lv_label_create(ui_ScreenPageOilWarn);
     lv_label_set_text(title, "OIL WARN");

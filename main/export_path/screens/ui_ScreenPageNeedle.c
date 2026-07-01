@@ -7,6 +7,7 @@
 #include "../ui.h"
 #include "../ui_font_profile.h"
 #include "../ui_layout.h"
+#include "../ui_round_shell.h"
 #include <string.h>
 #include "bsp_obd_dsp/nvs_storage.h"
 #include "app_obd_dsp/vehicle_profiles.h"
@@ -58,31 +59,69 @@ static void on_needle_source_changed(lv_event_t *e)
     ui_needle_apply_source();
 }
 
+lv_obj_t *ui_page_needle_content_create(lv_obj_t *parent)
+{
+    ui_needle_layout_t layout;
+    ui_needle_layout_get(&layout);
+
+    ui_NeedleMeter = lv_meter_create(parent);
+    lv_obj_set_size(ui_NeedleMeter, layout.meter_size, layout.meter_size);
+    lv_obj_center(ui_NeedleMeter);
+    lv_obj_clear_flag(ui_NeedleMeter, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_opa(ui_NeedleMeter, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_width(ui_NeedleMeter, 0, LV_PART_MAIN);
+    lv_obj_set_style_text_font(ui_NeedleMeter, ui_font_typoder(16), LV_PART_TICKS);
+    lv_obj_set_style_text_color(ui_NeedleMeter, lv_color_hex(0xCCCCCC), LV_PART_TICKS);
+
+    ui_NeedleScale = lv_meter_add_scale(ui_NeedleMeter);
+    lv_meter_set_scale_ticks(ui_NeedleMeter, ui_NeedleScale, 21,
+                             layout.tick_width, layout.tick_length, lv_color_hex(0x666666));
+    lv_meter_set_scale_major_ticks(ui_NeedleMeter, ui_NeedleScale, 5,
+                                   layout.major_tick_width, layout.major_tick_length,
+                                   lv_color_hex(0xFFFFFF), layout.major_label_gap);
+    lv_meter_set_scale_range(ui_NeedleMeter, ui_NeedleScale, 0, 100, 270, 135);
+
+    ui_NeedleIndic = lv_meter_add_needle_line(ui_NeedleMeter, ui_NeedleScale,
+                                              layout.indicator_width, lv_color_hex(0xFF3030),
+                                              layout.indicator_r_mod);
+
+    ui_NeedleNameLabel = lv_label_create(parent);
+    lv_label_set_text(ui_NeedleNameLabel, "");
+    lv_obj_set_style_text_font(ui_NeedleNameLabel, ui_font_typoder(24), LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_NeedleNameLabel, lv_color_hex(0xAAAAAA), LV_PART_MAIN);
+    lv_obj_set_style_text_align(ui_NeedleNameLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_align(ui_NeedleNameLabel, LV_ALIGN_CENTER, 0, layout.name_y);
+
+    ui_NeedleValueLabel = lv_label_create(parent);
+    lv_label_set_text(ui_NeedleValueLabel, "--");
+    lv_obj_set_style_text_font(ui_NeedleValueLabel, ui_font_typoder(36), LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_NeedleValueLabel, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_text_align(ui_NeedleValueLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_align(ui_NeedleValueLabel, LV_ALIGN_CENTER, 0, layout.value_y);
+
+    ui_NeedleUnitLabel = lv_label_create(parent);
+    lv_label_set_text(ui_NeedleUnitLabel, "");
+    lv_obj_set_style_text_font(ui_NeedleUnitLabel, ui_font_typoder(20), LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_NeedleUnitLabel, lv_color_hex(0x888888), LV_PART_MAIN);
+    lv_obj_set_style_text_align(ui_NeedleUnitLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_align(ui_NeedleUnitLabel, LV_ALIGN_CENTER, 0, layout.unit_y);
+
+    ui_needle_apply_source();
+    return parent;
+}
+
 void ui_ScreenPageNeedle_screen_init(void)
 {
     ui_needle_layout_t layout;
     ui_needle_layout_get(&layout);
 
     ui_ScreenPageNeedle = lv_obj_create(NULL);
-    lv_obj_clear_flag(ui_ScreenPageNeedle, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(ui_ScreenPageNeedle, layout.shell.ring_diameter, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(ui_ScreenPageNeedle, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(ui_ScreenPageNeedle, 255, LV_PART_MAIN);
+    ui_round_screen_apply_base(ui_ScreenPageNeedle, lv_color_hex(0x000000));
     lv_obj_set_style_border_width(ui_ScreenPageNeedle, 0, LV_PART_MAIN);  // 关默认主题边框，改用白环
-    lv_obj_set_style_pad_all(ui_ScreenPageNeedle, 0, LV_PART_MAIN);
     lv_obj_set_style_outline_width(ui_ScreenPageNeedle, 0, LV_PART_MAIN);
 
     // ====== 外圈白环（与其它页面一致）======
-    lv_obj_t *ring = lv_spinner_create(ui_ScreenPageNeedle, 1000, 90);
-    lv_obj_set_size(ring, layout.shell.ring_diameter, layout.shell.ring_diameter);
-    lv_obj_set_align(ring, LV_ALIGN_CENTER);
-    lv_obj_clear_flag(ring, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_arc_color(ring, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_opa(ring, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(ring, layout.shell.ring_arc_width, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_color(ring, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_opa(ring, 0, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(ring, layout.shell.ring_arc_width, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    ui_round_shell_create_ring(ui_ScreenPageNeedle, &layout.shell);
 
     // ====== 指针表盘 ======
     ui_NeedleMeter = lv_meter_create(ui_ScreenPageNeedle);
@@ -147,13 +186,8 @@ void ui_ScreenPageNeedleConfig_screen_init(void)
     ui_needle_config_layout_get(&layout);
 
     ui_ScreenPageNeedleConfig = lv_obj_create(NULL);
-    lv_obj_clear_flag(ui_ScreenPageNeedleConfig, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(ui_ScreenPageNeedleConfig, layout.shell.ring_diameter, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(ui_ScreenPageNeedleConfig, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(ui_ScreenPageNeedleConfig, 255, LV_PART_MAIN);
+    ui_round_screen_apply_base(ui_ScreenPageNeedleConfig, lv_color_hex(0x000000));
     lv_obj_set_style_border_width(ui_ScreenPageNeedleConfig, 0, LV_PART_MAIN);  // 去掉默认主题白边
-    lv_obj_set_style_pad_all(ui_ScreenPageNeedleConfig, 0, LV_PART_MAIN);
-    lv_obj_set_style_outline_width(ui_ScreenPageNeedleConfig, 0, LV_PART_MAIN);
 
     // 标题
     lv_obj_t *title = lv_label_create(ui_ScreenPageNeedleConfig);
@@ -179,22 +213,21 @@ void ui_ScreenPageNeedleConfig_screen_init(void)
     lv_roller_set_selected(s_roller_source, source_to_roller_pos(cfg->needle_source_idx), LV_ANIM_OFF);
     lv_obj_set_width(s_roller_source, layout.roller_width);
     lv_obj_set_style_text_font(s_roller_source, ui_font_typoder(24), LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_roller_source, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_roller_source, lv_color_hex(0x222222), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_roller_source, 255, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_roller_source, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(s_roller_source, lv_color_hex(0x444444), LV_PART_MAIN);
-    lv_obj_set_style_radius(s_roller_source, layout.roller_radius, LV_PART_MAIN);
     lv_obj_set_style_text_font(s_roller_source, ui_font_typoder(24), LV_PART_SELECTED);
-    lv_obj_set_style_text_color(s_roller_source, lv_color_hex(0x000000), LV_PART_SELECTED);
-    lv_obj_set_style_bg_color(s_roller_source, lv_color_hex(0xFFFFFF), LV_PART_SELECTED);
-    lv_obj_set_style_bg_opa(s_roller_source, 255, LV_PART_SELECTED);
+    ui_round_shell_apply_roller_theme(s_roller_source,
+                                      layout.roller_radius,
+                                      lv_color_hex(0x222222),
+                                      lv_color_hex(0x444444),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0xCFCFCF),
+                                      lv_color_hex(0x000000));
     lv_obj_align(s_roller_source, LV_ALIGN_CENTER, 0, layout.roller_y);
     lv_obj_add_event_cb(s_roller_source, on_needle_source_changed, LV_EVENT_VALUE_CHANGED, NULL);
 
     // 提示
     lv_obj_t *hint = lv_label_create(ui_ScreenPageNeedleConfig);
-    lv_label_set_text(hint, "Swipe to go back");
+    lv_label_set_text(hint, "Swipe up to go back");
     lv_obj_set_style_text_font(hint, ui_font_hint(12), LV_PART_MAIN);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x555555), LV_PART_MAIN);
     lv_obj_align(hint, LV_ALIGN_CENTER, 0, layout.hint_y);

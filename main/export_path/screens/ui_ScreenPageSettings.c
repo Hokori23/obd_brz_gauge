@@ -4,6 +4,7 @@
 #include "../ui.h"
 #include "../ui_font_profile.h"
 #include "../ui_layout.h"
+#include "../ui_round_shell.h"
 #include <string.h>
 #include "app_obd_dsp/default_page_ids.h"
 #include "bsp_obd_dsp/boards/board_api.h"
@@ -60,21 +61,8 @@ void ui_ScreenPageSettings_screen_init(void)
     ui_settings_layout_get(&layout);
 
     ui_ScreenPageSettings = lv_obj_create(NULL);
-    lv_obj_clear_flag(ui_ScreenPageSettings, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(ui_ScreenPageSettings, LV_RADIUS_CIRCLE, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(ui_ScreenPageSettings, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(ui_ScreenPageSettings, 255, LV_PART_MAIN);
-
-    // White border ring
-    lv_obj_t *ring = lv_spinner_create(ui_ScreenPageSettings, 1000, 90);
-    lv_obj_set_size(ring, layout.shell.ring_diameter, layout.shell.ring_diameter);
-    lv_obj_set_align(ring, LV_ALIGN_CENTER);
-    lv_obj_clear_flag(ring, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_arc_color(ring, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(ring, 255, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(ring, layout.shell.ring_arc_width, LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(ring, 0, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(ring, layout.shell.ring_arc_width, LV_PART_INDICATOR);
+    ui_round_screen_apply_base(ui_ScreenPageSettings, lv_color_hex(0x000000));
+    ui_round_shell_create_ring(ui_ScreenPageSettings, &layout.shell);
 
     // ====== Title ======
     lv_obj_t *title = lv_label_create(ui_ScreenPageSettings);
@@ -97,19 +85,15 @@ void ui_ScreenPageSettings_screen_init(void)
     lv_roller_set_selected(s_roller_page, cfg->default_page, LV_ANIM_OFF);
     lv_obj_set_width(s_roller_page, layout.roller_width);
     lv_obj_set_style_text_font(s_roller_page, ui_font_typoder(20), LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_roller_page, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_roller_page, lv_color_hex(0x222222), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_roller_page, 255, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_roller_page, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(s_roller_page, lv_color_hex(0x444444), LV_PART_MAIN);
-    lv_obj_set_style_radius(s_roller_page, layout.roller_radius, LV_PART_MAIN);
-    lv_obj_set_style_clip_corner(s_roller_page, true, LV_PART_MAIN);
     lv_obj_set_style_text_font(s_roller_page, ui_font_typoder(20), LV_PART_SELECTED);
-    lv_obj_set_style_text_color(s_roller_page, lv_color_hex(0x000000), LV_PART_SELECTED);
-    lv_obj_set_style_bg_color(s_roller_page, lv_color_hex(0xFFFFFF), LV_PART_SELECTED);
-    lv_obj_set_style_bg_opa(s_roller_page, 255, LV_PART_SELECTED);
-    lv_obj_set_style_radius(s_roller_page, layout.roller_radius, LV_PART_SELECTED);
-    lv_obj_set_style_border_width(s_roller_page, 0, LV_PART_SELECTED);
+    ui_round_shell_apply_roller_theme(s_roller_page,
+                                      layout.roller_radius,
+                                      lv_color_hex(0x222222),
+                                      lv_color_hex(0x444444),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0xCFCFCF),
+                                      lv_color_hex(0x000000));
     lv_obj_align(s_roller_page, LV_ALIGN_CENTER, 0, layout.roller_page_y);
     lv_obj_add_event_cb(s_roller_page, on_page_roller_change, LV_EVENT_VALUE_CHANGED, NULL);
 
@@ -145,19 +129,15 @@ void ui_ScreenPageSettings_screen_init(void)
     lv_roller_set_selected(s_roller_vehicle, (cfg->vehicle_profile_idx < vehicle_count) ? cfg->vehicle_profile_idx : 0, LV_ANIM_OFF);
     lv_obj_set_width(s_roller_vehicle, layout.roller_width);
     lv_obj_set_style_text_font(s_roller_vehicle, ui_font_typoder(20), LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_roller_vehicle, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_roller_vehicle, lv_color_hex(0x222222), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_roller_vehicle, 255, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_roller_vehicle, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(s_roller_vehicle, lv_color_hex(0x444444), LV_PART_MAIN);
-    lv_obj_set_style_radius(s_roller_vehicle, layout.roller_radius, LV_PART_MAIN);
-    lv_obj_set_style_clip_corner(s_roller_vehicle, true, LV_PART_MAIN);
     lv_obj_set_style_text_font(s_roller_vehicle, ui_font_typoder(20), LV_PART_SELECTED);
-    lv_obj_set_style_text_color(s_roller_vehicle, lv_color_hex(0x000000), LV_PART_SELECTED);
-    lv_obj_set_style_bg_color(s_roller_vehicle, lv_color_hex(0xFFFFFF), LV_PART_SELECTED);
-    lv_obj_set_style_bg_opa(s_roller_vehicle, 255, LV_PART_SELECTED);
-    lv_obj_set_style_radius(s_roller_vehicle, layout.roller_radius, LV_PART_SELECTED);
-    lv_obj_set_style_border_width(s_roller_vehicle, 0, LV_PART_SELECTED);
+    ui_round_shell_apply_roller_theme(s_roller_vehicle,
+                                      layout.roller_radius,
+                                      lv_color_hex(0x222222),
+                                      lv_color_hex(0x444444),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0xCFCFCF),
+                                      lv_color_hex(0x000000));
     lv_obj_align(s_roller_vehicle, LV_ALIGN_CENTER, 0, layout.roller_vehicle_y);
     lv_obj_add_event_cb(s_roller_vehicle, on_vehicle_roller_change, LV_EVENT_VALUE_CHANGED, NULL);
 
@@ -200,7 +180,7 @@ void ui_ScreenPageSettings_screen_init(void)
 
     // ====== Hint ======
     lv_obj_t *hint = lv_label_create(ui_ScreenPageSettings);
-    lv_label_set_text(hint, "Swipe to go back\nVehicle applies after reconnect");
+    lv_label_set_text(hint, "Swipe up to go back\nVehicle applies after reconnect");
     lv_obj_set_style_text_font(hint, ui_font_hint(12), LV_PART_MAIN);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x555555), LV_PART_MAIN);
     lv_obj_align(hint, LV_ALIGN_CENTER, 0, layout.hint_y);

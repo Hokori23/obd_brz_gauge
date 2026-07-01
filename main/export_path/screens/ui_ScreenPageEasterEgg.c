@@ -7,11 +7,54 @@
 #include "../ui.h"
 #include "../ui_font_profile.h"
 #include "../ui_layout.h"
+#include "../ui_round_shell.h"
 #include "esp_system.h"
 #include "esp_idf_version.h"
 #include "bsp_obd_dsp/nvs_storage.h"
 #include "bsp_obd_dsp/elm327_ble_client.h"
 #include "app_obd_dsp/vehicle_profiles.h"
+
+lv_obj_t *ui_page_easter_egg_content_create(lv_obj_t *parent)
+{
+    ui_easter_egg_layout_t layout;
+    ui_easter_egg_layout_get(&layout);
+
+    const vehicle_profile_t *active_vehicle = vehicle_profile_get_active();
+    const char *vehicle_name = (active_vehicle && active_vehicle->name) ? active_vehicle->name : "VEHICLE";
+
+    lv_obj_t *label_title = lv_label_create(parent);
+    lv_label_set_text(label_title, vehicle_name);
+    lv_obj_set_style_text_font(label_title, ui_font_typoder(24), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(label_title, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_width(label_title, layout.info_width);
+    lv_obj_set_style_text_align(label_title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_align(label_title, LV_ALIGN_CENTER, 0, layout.title_y);
+
+    const char *ble_name = elm327_ble_get_connected_name();
+    if (!ble_name || ble_name[0] == '\0') ble_name = "Not set";
+    bool connected = elm327_ble_is_connected();
+
+    ui_LabelEasterEggInfo = lv_label_create(parent);
+    lv_label_set_long_mode(ui_LabelEasterEggInfo, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(ui_LabelEasterEggInfo, layout.info_width);
+    lv_label_set_text_fmt(ui_LabelEasterEggInfo,
+        "ESP32-S3  IDF %d.%d.%d\n"
+        "LVGL %d.%d.%d\n"
+        "BLE: %s\n"
+        "Status: %s",
+        ESP_IDF_VERSION_MAJOR, ESP_IDF_VERSION_MINOR, ESP_IDF_VERSION_PATCH,
+        LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR, LVGL_VERSION_PATCH,
+        ble_name,
+        connected ? "Connected" : "Disconnected");
+    lv_obj_set_style_text_font(ui_LabelEasterEggInfo, ui_font_typoder(16), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(ui_LabelEasterEggInfo, lv_color_hex(0xAAAAAA), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(ui_LabelEasterEggInfo, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_line_space(ui_LabelEasterEggInfo, layout.info_line_space, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_align(ui_LabelEasterEggInfo, LV_ALIGN_CENTER, 0, layout.info_y);
+
+    imageEasterEgg = NULL;
+    return parent;
+}
 
 void ui_ScreenPageEasterEgg_screen_init(void)
 {
@@ -19,23 +62,8 @@ void ui_ScreenPageEasterEgg_screen_init(void)
     ui_easter_egg_layout_get(&layout);
 
     ui_ScreenPageEasterEgg = lv_obj_create(NULL);
-    lv_obj_clear_flag(ui_ScreenPageEasterEgg, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
-    lv_obj_set_style_radius(ui_ScreenPageEasterEgg, layout.shell.ring_diameter, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(ui_ScreenPageEasterEgg, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui_ScreenPageEasterEgg, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    // White border ring
-    lv_obj_t *spinner_ring = lv_spinner_create(ui_ScreenPageEasterEgg, 1000, 90);
-    lv_obj_set_width(spinner_ring, layout.shell.ring_diameter);
-    lv_obj_set_height(spinner_ring, layout.shell.ring_diameter);
-    lv_obj_set_align(spinner_ring, LV_ALIGN_CENTER);
-    lv_obj_clear_flag(spinner_ring, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_arc_color(spinner_ring, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_opa(spinner_ring, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(spinner_ring, layout.shell.ring_arc_width, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_color(spinner_ring, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_opa(spinner_ring, 0, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-    lv_obj_set_style_arc_width(spinner_ring, layout.shell.ring_arc_width, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    ui_round_screen_apply_base(ui_ScreenPageEasterEgg, lv_color_hex(0x000000));
+    ui_round_shell_create_ring(ui_ScreenPageEasterEgg, &layout.shell);
 
     /* ---- Device Info Page ---- */
     const vehicle_profile_t *active_vehicle = vehicle_profile_get_active();
@@ -75,5 +103,5 @@ void ui_ScreenPageEasterEgg_screen_init(void)
     imageEasterEgg = NULL;
 
     // Gesture event on screen for page navigation
-    lv_obj_add_event_cb(ui_ScreenPageEasterEgg, ui_event_easter_egg_background, LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(ui_ScreenPageEasterEgg, ui_event_easter_egg_background, LV_EVENT_GESTURE, NULL);
 }

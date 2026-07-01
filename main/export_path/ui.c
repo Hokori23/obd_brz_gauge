@@ -6,7 +6,12 @@
 #include "ui.h"
 #include "ui_font_profile.h"
 #include "ui_helpers.h"
+#include "ui_layout.h"
+#include "ui_round_shell.h"
+#include <stdarg.h>
+#include <stdio.h>
 #include <driver/gpio.h>
+#include <string.h>
 #include "app_obd_dsp/default_page_ids.h"
 #include "bsp_obd_dsp/boards/board_api.h"
 #include "bsp_obd_dsp/nvs_storage.h"
@@ -20,6 +25,50 @@ static bool s_logo_transition_started = false;
 
 #define UI_NAV_ANIM_MS 200
 #define UI_NAV_ANIM_LOGO_MS 300
+#define UI_HOME_PAGE_PEEK_PX 28
+#define UI_HOME_PAGE_MIN_OPA 168
+#define UI_HOME_PAGE_MIN_ZOOM 236
+#define UI_HOME_PAGE_MAX_Y_SHIFT_PX 8
+
+typedef enum {
+    UI_HOME_PAGE_TEMP = 0,
+    UI_HOME_PAGE_INFO,
+    UI_HOME_PAGE_NEEDLE,
+    UI_HOME_PAGE_OIL_PRESSURE,
+    UI_HOME_PAGE_BRAKE_TEMP,
+    UI_HOME_PAGE_EASTER_EGG,
+    UI_HOME_PAGE_COUNT
+} ui_home_page_id_t;
+
+static lv_obj_t *ui_ScreenPageHome;
+static lv_obj_t *s_home_tileview;
+static lv_obj_t *s_home_tiles[UI_HOME_PAGE_COUNT];
+static lv_obj_t *s_home_content_roots[UI_HOME_PAGE_COUNT];
+static bool s_home_tile_mounted[UI_HOME_PAGE_COUNT];
+static uint8_t s_home_active_page = UI_HOME_PAGE_TEMP;
+static int32_t s_home_last_scroll_left = INT32_MIN;
+static int16_t s_home_last_translate_x[UI_HOME_PAGE_COUNT] = {INT16_MIN, INT16_MIN, INT16_MIN, INT16_MIN, INT16_MIN, INT16_MIN};
+static int16_t s_home_last_translate_y[UI_HOME_PAGE_COUNT] = {INT16_MIN, INT16_MIN, INT16_MIN, INT16_MIN, INT16_MIN, INT16_MIN};
+static int16_t s_home_last_zoom[UI_HOME_PAGE_COUNT] = {INT16_MIN, INT16_MIN, INT16_MIN, INT16_MIN, INT16_MIN, INT16_MIN};
+static uint8_t s_home_last_opa[UI_HOME_PAGE_COUNT] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+static uint8_t s_temp_slot_item_cache[3] = {0xFF, 0xFF, 0xFF};
+static uint8_t s_info_slot_item_cache[5] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+static bool s_easter_info_last_connected = false;
+static char s_easter_info_last_name[64] = "";
+
+static void ui_home_load(lv_scr_load_anim_t anim, uint8_t page_id);
+static void ui_home_open_vertical_target(uint8_t page_id, lv_dir_t dir);
+static void ui_home_tileview_value_changed(lv_event_t *e);
+static void ui_home_tileview_gesture(lv_event_t *e);
+static void ui_home_tileview_scroll(lv_event_t *e);
+static void ui_home_screen_init(void);
+static bool ui_home_page_is_visible(uint8_t page_id);
+static void ui_home_sync_tile_mounts(uint8_t active_page);
+static void ui_home_update_tile_effects(void);
+static void ui_home_invalidate_tile_effects(void);
+static void ui_home_reset_tile_effect_cache(uint8_t page_id);
+static void ui_label_set_text_if_changed(lv_obj_t *label, const char *text);
+static void ui_label_set_text_fmt_if_changed(lv_obj_t *label, const char *fmt, ...);
 
 static void ui_screen_change_with_anim(lv_obj_t **target_scr,
                                        lv_scr_load_anim_t anim,
@@ -38,6 +87,44 @@ static void ui_nav_horizontal(lv_dir_t dir, lv_obj_t **target_scr, void (*target
 static void ui_nav_vertical(lv_scr_load_anim_t anim, lv_obj_t **target_scr, void (*target_init)(void))
 {
     ui_screen_change_with_anim(target_scr, anim, target_init);
+}
+
+static uint8_t ui_home_page_from_default_page(uint8_t default_page)
+{
+    switch (default_page) {
+    case DEFAULT_PAGE_INFO:
+        return UI_HOME_PAGE_INFO;
+    case DEFAULT_PAGE_BRAKE_TEMP:
+        return UI_HOME_PAGE_BRAKE_TEMP;
+    case DEFAULT_PAGE_OIL_PRESSURE:
+        return UI_HOME_PAGE_OIL_PRESSURE;
+    case DEFAULT_PAGE_NEEDLE:
+        return UI_HOME_PAGE_NEEDLE;
+    case DEFAULT_PAGE_TEMP:
+    default:
+        return UI_HOME_PAGE_TEMP;
+    }
+}
+
+static void ui_home_set_active_page(uint8_t page_id, lv_anim_enable_t anim_en)
+{
+    if (page_id >= UI_HOME_PAGE_COUNT) {
+        page_id = UI_HOME_PAGE_TEMP;
+    }
+
+    if (s_home_tileview != NULL &&
+        s_home_active_page == page_id &&
+        lv_tileview_get_tile_act(s_home_tileview) == s_home_tiles[page_id]) {
+        ui_home_update_tile_effects();
+        return;
+    }
+
+    s_home_active_page = page_id;
+    ui_home_sync_tile_mounts(page_id);
+    if (s_home_tileview != NULL) {
+        lv_obj_set_tile_id(s_home_tileview, page_id, 0, anim_en);
+        ui_home_update_tile_effects();
+    }
 }
 
 static const char *gesture_dir_name(lv_dir_t dir)
@@ -59,6 +146,231 @@ static const char *gesture_dir_name(lv_dir_t dir)
 static void log_gesture_event(const char *screen_name, lv_dir_t dir)
 {
     ESP_LOGI(TAG, "%s gesture=%s", screen_name, gesture_dir_name(dir));
+}
+
+static bool ui_home_page_is_visible(uint8_t page_id)
+{
+    if (page_id >= UI_HOME_PAGE_COUNT || ui_ScreenPageHome == NULL) {
+        return false;
+    }
+
+    return lv_scr_act() == ui_ScreenPageHome && s_home_active_page == page_id;
+}
+
+static int32_t ui_abs32(int32_t value)
+{
+    return (value < 0) ? -value : value;
+}
+
+static lv_obj_t *ui_home_create_content_root(lv_obj_t *tile)
+{
+    lv_obj_t *root = lv_obj_create(tile);
+    lv_obj_remove_style_all(root);
+    lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
+    lv_obj_center(root);
+    lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_update_layout(root);
+    lv_obj_set_style_transform_pivot_x(root, lv_obj_get_width(root) / 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_transform_pivot_y(root, lv_obj_get_height(root) / 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_translate_x(root, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_translate_y(root, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_opa(root, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_transform_zoom(root, 256, LV_PART_MAIN | LV_STATE_DEFAULT);
+    return root;
+}
+
+static void ui_home_clear_page_refs(uint8_t page_id)
+{
+    switch (page_id) {
+    case UI_HOME_PAGE_TEMP:
+        ui_LabelCoolantTempText = NULL;
+        ui_LabelOilTempText = NULL;
+        ui_LabelIntakeTempText = NULL;
+        memset(ui_LabelTempValue, 0, sizeof(ui_LabelTempValue));
+        memset(ui_LabelTempName, 0, sizeof(ui_LabelTempName));
+        memset(ui_LabelTempUnit, 0, sizeof(ui_LabelTempUnit));
+        memset(s_temp_slot_item_cache, 0xFF, sizeof(s_temp_slot_item_cache));
+        break;
+    case UI_HOME_PAGE_INFO:
+        ui_LabelInfoCLT = NULL;
+        ui_LabelInfoIAT = NULL;
+        ui_LabelInfoLoad = NULL;
+        ui_LabelInfoTPS = NULL;
+        ui_LabelInfoOil = NULL;
+        memset(ui_LabelInfoValue, 0, sizeof(ui_LabelInfoValue));
+        memset(ui_LabelInfoName, 0, sizeof(ui_LabelInfoName));
+        memset(ui_LabelInfoUnit, 0, sizeof(ui_LabelInfoUnit));
+        memset(s_info_slot_item_cache, 0xFF, sizeof(s_info_slot_item_cache));
+        break;
+    case UI_HOME_PAGE_NEEDLE:
+        ui_NeedleMeter = NULL;
+        ui_NeedleScale = NULL;
+        ui_NeedleIndic = NULL;
+        ui_NeedleValueLabel = NULL;
+        ui_NeedleNameLabel = NULL;
+        ui_NeedleUnitLabel = NULL;
+        break;
+    case UI_HOME_PAGE_OIL_PRESSURE:
+        ui_LabelOilPressureText = NULL;
+        ui_ChartOilPressure = NULL;
+        ui_OilPressureChartSeries = NULL;
+        break;
+    case UI_HOME_PAGE_BRAKE_TEMP:
+        ui_LabelBrakeTempText = NULL;
+        ui_ChartBrakeTemp = NULL;
+        ui_BrakeTempChartSeries = NULL;
+        break;
+    case UI_HOME_PAGE_EASTER_EGG:
+        ui_LabelEasterEggInfo = NULL;
+        imageEasterEgg = NULL;
+        s_easter_info_last_connected = false;
+        s_easter_info_last_name[0] = '\0';
+        break;
+    default:
+        break;
+    }
+}
+
+static void ui_home_mount_page(uint8_t page_id)
+{
+    if (page_id >= UI_HOME_PAGE_COUNT || s_home_tile_mounted[page_id] || s_home_tiles[page_id] == NULL) {
+        return;
+    }
+
+    lv_obj_t *root = ui_home_create_content_root(s_home_tiles[page_id]);
+    s_home_content_roots[page_id] = root;
+    ui_home_reset_tile_effect_cache(page_id);
+
+    switch (page_id) {
+    case UI_HOME_PAGE_TEMP:
+        ui_page_temp_content_create(root);
+        break;
+    case UI_HOME_PAGE_INFO:
+        ui_page_info_content_create(root);
+        break;
+    case UI_HOME_PAGE_NEEDLE:
+        ui_page_needle_content_create(root);
+        break;
+    case UI_HOME_PAGE_OIL_PRESSURE:
+        ui_page_oil_pressure_content_create(root);
+        break;
+    case UI_HOME_PAGE_BRAKE_TEMP:
+        ui_page_brake_temp_content_create(root);
+        break;
+    case UI_HOME_PAGE_EASTER_EGG:
+        ui_page_easter_egg_content_create(root);
+        break;
+    default:
+        break;
+    }
+
+    s_home_tile_mounted[page_id] = true;
+}
+
+static void ui_home_unmount_page(uint8_t page_id)
+{
+    if (page_id >= UI_HOME_PAGE_COUNT || !s_home_tile_mounted[page_id]) {
+        return;
+    }
+
+    ui_home_clear_page_refs(page_id);
+    ui_home_reset_tile_effect_cache(page_id);
+    if (s_home_content_roots[page_id] != NULL) {
+        lv_obj_del(s_home_content_roots[page_id]);
+        s_home_content_roots[page_id] = NULL;
+    }
+    s_home_tile_mounted[page_id] = false;
+}
+
+static void ui_home_sync_tile_mounts(uint8_t active_page)
+{
+    for (uint8_t i = 0; i < UI_HOME_PAGE_COUNT; i++) {
+        bool should_mount = (i == active_page) ||
+                            (active_page > 0 && i == (uint8_t)(active_page - 1)) ||
+                            (active_page + 1 < UI_HOME_PAGE_COUNT && i == (uint8_t)(active_page + 1));
+        if (should_mount) {
+            ui_home_mount_page(i);
+        } else {
+            ui_home_unmount_page(i);
+        }
+    }
+
+    ui_home_invalidate_tile_effects();
+}
+
+static void ui_home_invalidate_tile_effects(void)
+{
+    s_home_last_scroll_left = INT32_MIN;
+}
+
+static void ui_home_reset_tile_effect_cache(uint8_t page_id)
+{
+    if (page_id >= UI_HOME_PAGE_COUNT) {
+        return;
+    }
+
+    s_home_last_translate_x[page_id] = INT16_MIN;
+    s_home_last_translate_y[page_id] = INT16_MIN;
+    s_home_last_zoom[page_id] = INT16_MIN;
+    s_home_last_opa[page_id] = 0xFF;
+}
+
+static void ui_home_update_tile_effects(void)
+{
+    if (s_home_tileview == NULL) {
+        return;
+    }
+
+    lv_coord_t tile_width = lv_obj_get_content_width(s_home_tileview);
+    if (tile_width <= 0) {
+        return;
+    }
+
+    int32_t scroll_left = lv_obj_get_scroll_left(s_home_tileview);
+    if (scroll_left == s_home_last_scroll_left) {
+        return;
+    }
+
+    for (uint8_t i = 0; i < UI_HOME_PAGE_COUNT; i++) {
+        lv_obj_t *root = s_home_content_roots[i];
+        if (root == NULL) {
+            continue;
+        }
+
+        int32_t offset = ((int32_t)i * tile_width) - scroll_left;
+        int32_t abs_offset = ui_abs32(offset);
+        if (abs_offset > tile_width) {
+            abs_offset = tile_width;
+        }
+
+        int32_t visible = tile_width - abs_offset;
+        int32_t eased_visible = (visible * visible + (tile_width / 2)) / tile_width;
+        int32_t translate_x = (-offset * UI_HOME_PAGE_PEEK_PX) / tile_width;
+        int32_t translate_y = (abs_offset * UI_HOME_PAGE_MAX_Y_SHIFT_PX) / tile_width;
+        int32_t opa = UI_HOME_PAGE_MIN_OPA +
+                      (eased_visible * (LV_OPA_COVER - UI_HOME_PAGE_MIN_OPA)) / tile_width;
+        int32_t zoom = UI_HOME_PAGE_MIN_ZOOM +
+                       (eased_visible * (256 - UI_HOME_PAGE_MIN_ZOOM)) / tile_width;
+
+        if (s_home_last_translate_x[i] != (int16_t)translate_x) {
+            lv_obj_set_style_translate_x(root, (lv_coord_t)translate_x, LV_PART_MAIN | LV_STATE_DEFAULT);
+            s_home_last_translate_x[i] = (int16_t)translate_x;
+        }
+        if (s_home_last_translate_y[i] != (int16_t)translate_y) {
+            lv_obj_set_style_translate_y(root, (lv_coord_t)translate_y, LV_PART_MAIN | LV_STATE_DEFAULT);
+            s_home_last_translate_y[i] = (int16_t)translate_y;
+        }
+        if (s_home_last_opa[i] != (uint8_t)opa) {
+            lv_obj_set_style_opa(root, (lv_opa_t)opa, LV_PART_MAIN | LV_STATE_DEFAULT);
+            s_home_last_opa[i] = (uint8_t)opa;
+        }
+        if (s_home_last_zoom[i] != (int16_t)zoom) {
+            lv_obj_set_style_transform_zoom(root, (lv_coord_t)zoom, LV_PART_MAIN | LV_STATE_DEFAULT);
+            s_home_last_zoom[i] = (int16_t)zoom;
+        }
+    }
+
+    s_home_last_scroll_left = scroll_left;
 }
 
 static void ui_logo_unloaded_cb(lv_event_t *e)
@@ -211,7 +523,6 @@ static uint32_t s_brake_temp_trend_tick = 0;
 static int16_t s_oil_pressure_trend[OIL_PRESS_TREND_POINTS];
 static bool s_oil_pressure_trend_ready = false;
 static uint32_t s_oil_pressure_trend_tick = 0;
-
 typedef enum {
     DISP_ITEM_CLT = 0,
     DISP_ITEM_IAT,
@@ -303,23 +614,23 @@ static void disp_item_set_text(lv_obj_t *label, disp_item_t item, int32_t value,
     lv_obj_set_style_text_font(label, ui_font_typoder(36), LV_PART_MAIN);
 
     if (!valid) {
-        lv_label_set_text(label, "--");
+        ui_label_set_text_if_changed(label, "--");
         return;
     }
 
     if (item == DISP_ITEM_BAT) {
-        lv_label_set_text_fmt(label, "%d.%d", (int)(value / 1000), (int)((value % 1000) / 100));
+        ui_label_set_text_fmt_if_changed(label, "%d.%d", (int)(value / 1000), (int)((value % 1000) / 100));
     } else if (item == DISP_ITEM_OILP) {
         int32_t abs_val = (value < 0) ? -value : value;
-        lv_label_set_text_fmt(label, "%d.%d", (int)(value / 10), (int)(abs_val % 10));
+        ui_label_set_text_fmt_if_changed(label, "%d.%d", (int)(value / 10), (int)(abs_val % 10));
     } else if (item == DISP_ITEM_BKT) {
-        lv_label_set_text_fmt(label, "%ld", (long)(value / 10));
+        ui_label_set_text_fmt_if_changed(label, "%ld", (long)(value / 10));
     } else if (item == DISP_ITEM_BOOST) {
         // 表压可为负(真空)，带符号显示一位小数, e.g. -0.6 / 1.2
         int32_t a = (value < 0) ? -value : value;
-        lv_label_set_text_fmt(label, "%s%d.%d", (value < 0) ? "-" : "", (int)(a / 10), (int)(a % 10));
+        ui_label_set_text_fmt_if_changed(label, "%s%d.%d", (value < 0) ? "-" : "", (int)(a / 10), (int)(a % 10));
     } else {
-        lv_label_set_text_fmt(label, "%ld", (long)value);
+        ui_label_set_text_fmt_if_changed(label, "%ld", (long)value);
     }
 }
 
@@ -335,6 +646,25 @@ static void disp_item_set_value_color(lv_obj_t *label, disp_item_t item, int32_t
         color = lv_color_hex(0xFF4D4D);
     }
     lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
+}
+
+static void disp_item_sync_meta(lv_obj_t *name_label,
+                                lv_obj_t *unit_label,
+                                uint8_t *cache_slot,
+                                disp_item_t item)
+{
+    if (!name_label || !unit_label || !cache_slot) {
+        return;
+    }
+
+    if (*cache_slot == (uint8_t)item) {
+        return;
+    }
+
+    lv_label_set_text(name_label, s_disp_meta[item].name);
+    lv_label_set_text(unit_label, s_disp_meta[item].unit);
+    lv_obj_set_style_text_color(name_label, lv_color_hex(s_disp_meta[item].color), LV_PART_MAIN);
+    *cache_slot = (uint8_t)item;
 }
 
 // ============ 指针页 (Needle) 运行时逻辑，复用上面的 disp_item 系统 ============
@@ -540,6 +870,12 @@ void my_timerMain(lv_timer_t * timer)
     const nvs_user_cfg_t *user_cfg = nvs_cfg_get();
     int16_t brake_warn_x10 = (int16_t)(user_cfg->brake_temp_warn_c * 10);
     int16_t oil_warn_x10 = (int16_t)user_cfg->oil_pressure_warn_x10;
+    bool temp_page_visible = ui_home_page_is_visible(UI_HOME_PAGE_TEMP);
+    bool info_page_visible = ui_home_page_is_visible(UI_HOME_PAGE_INFO);
+    bool needle_page_visible = ui_home_page_is_visible(UI_HOME_PAGE_NEEDLE);
+    bool oil_page_visible = ui_home_page_is_visible(UI_HOME_PAGE_OIL_PRESSURE);
+    bool brake_page_visible = ui_home_page_is_visible(UI_HOME_PAGE_BRAKE_TEMP);
+    bool easter_page_visible = ui_home_page_is_visible(UI_HOME_PAGE_EASTER_EGG);
 
     /* ---- 检测 BLE 连接，触发刷表 ---- */
     bool ble_now = elm327_ble_is_connected();
@@ -578,10 +914,12 @@ void my_timerMain(lv_timer_t * timer)
     (void)eGear;
 
  /*指针页 (可配置数据源, 刷表时同步扫表)*/
-    ui_needle_page_update(sweep_ratio);
+    if(needle_page_visible) {
+        ui_needle_page_update(sweep_ratio);
+    }
 
  /*温度页面*/
-    if(ui_LabelTempValue[0]) {
+    if(temp_page_visible && ui_LabelTempValue[0]) {
         if(s_sweep_step > 0) {
             int step = s_sweep_step - 1; // already incremented
             float r;
@@ -590,9 +928,7 @@ void my_timerMain(lv_timer_t * timer)
 
             for (int i = 0; i < 3; ++i) {
                 disp_item_t item = (disp_item_t)(user_cfg->temp_display_map[i] % DISP_ITEM_COUNT);
-                lv_label_set_text(ui_LabelTempName[i], s_disp_meta[item].name);
-                lv_label_set_text(ui_LabelTempUnit[i], s_disp_meta[item].unit);
-                lv_obj_set_style_text_color(ui_LabelTempName[i], lv_color_hex(s_disp_meta[item].color), LV_PART_MAIN);
+                disp_item_sync_meta(ui_LabelTempName[i], ui_LabelTempUnit[i], &s_temp_slot_item_cache[i], item);
 
                 int32_t sw = disp_item_sweep_value(item, r);
                 disp_item_set_text(ui_LabelTempValue[i], item, sw, true);
@@ -601,9 +937,7 @@ void my_timerMain(lv_timer_t * timer)
         } else {
             for (int i = 0; i < 3; ++i) {
                 disp_item_t item = (disp_item_t)(user_cfg->temp_display_map[i] % DISP_ITEM_COUNT);
-                lv_label_set_text(ui_LabelTempName[i], s_disp_meta[item].name);
-                lv_label_set_text(ui_LabelTempUnit[i], s_disp_meta[item].unit);
-                lv_obj_set_style_text_color(ui_LabelTempName[i], lv_color_hex(s_disp_meta[item].color), LV_PART_MAIN);
+                disp_item_sync_meta(ui_LabelTempName[i], ui_LabelTempUnit[i], &s_temp_slot_item_cache[i], item);
 
                 int32_t value = 0;
                 bool valid = disp_item_read_value(item, clt, iat, oil, load_pct, tps, bat_mv, oilp_x10, brake_x10, usRpm, ucSpeed, boost_x10, &value);
@@ -623,23 +957,16 @@ void my_timerMain(lv_timer_t * timer)
             float r;
             if (step <= SWEEP_STEPS_UP) r = (float)step / (float)SWEEP_STEPS_UP;
             else r = (float)(SWEEP_TOTAL - step) / (float)SWEEP_STEPS_DOWN;
-            int16_t sw_oilp_x10 = (int16_t)(100.0f * r);
-            lv_label_set_text_fmt(ui_LabelOilPressureText, "%d.%d", (int)(sw_oilp_x10 / 10), (int)(sw_oilp_x10 % 10));
-            display_oilp_x10 = sw_oilp_x10;
+            display_oilp_x10 = (int16_t)(100.0f * r);
         } else {
             if (oilp_x10 >= 0) {
-                int16_t abs_val = (oilp_x10 < 0) ? (int16_t)(-oilp_x10) : oilp_x10;
-                lv_label_set_text_fmt(ui_LabelOilPressureText, "%d.%d", (int)(oilp_x10 / 10), (int)(abs_val % 10));
                 display_oilp_x10 = oilp_x10;
-            } else {
-                lv_label_set_text(ui_LabelOilPressureText, "--.-");
             }
         }
 
         if (display_oilp_x10 >= oil_warn_x10 && display_oilp_x10 >= 0) {
             oilp_color = lv_color_hex(0xFF4D4D);
         }
-        lv_obj_set_style_text_color(ui_LabelOilPressureText, oilp_color, LV_PART_MAIN);
 
         uint32_t now = lv_tick_get();
         if (s_oil_pressure_trend_tick == 0) {
@@ -651,7 +978,16 @@ void my_timerMain(lv_timer_t * timer)
             s_oil_pressure_trend_tick += OIL_PRESS_TREND_SAMPLE_MS;
         }
 
-        oil_pressure_chart_refresh();
+        if (oil_page_visible) {
+            if (display_oilp_x10 >= 0) {
+                int16_t abs_val = (display_oilp_x10 < 0) ? (int16_t)(-display_oilp_x10) : display_oilp_x10;
+                ui_label_set_text_fmt_if_changed(ui_LabelOilPressureText, "%d.%d", (int)(display_oilp_x10 / 10), (int)(abs_val % 10));
+            } else {
+                ui_label_set_text_if_changed(ui_LabelOilPressureText, "--.-");
+            }
+            lv_obj_set_style_text_color(ui_LabelOilPressureText, oilp_color, LV_PART_MAIN);
+            oil_pressure_chart_refresh();
+        }
     }
 
     /* 刹车温度页面更新 */
@@ -663,26 +999,16 @@ void my_timerMain(lv_timer_t * timer)
             float r;
             if (step <= SWEEP_STEPS_UP) r = (float)step / (float)SWEEP_STEPS_UP;
             else r = (float)(SWEEP_TOTAL - step) / (float)SWEEP_STEPS_DOWN;
-            int16_t sw_brake_x10 = (int16_t)(600.0f * r); // 0.0 -> 60.0 -> 0.0
-            int16_t abs_val = (sw_brake_x10 < 0) ? (int16_t)(-sw_brake_x10) : sw_brake_x10;
-            lv_label_set_text_fmt(ui_LabelBrakeTempText, "%d.%d", (int)(sw_brake_x10 / 10), (int)(abs_val % 10));
-            display_brake_x10 = sw_brake_x10;
+            display_brake_x10 = (int16_t)(600.0f * r); // 0.0 -> 60.0 -> 0.0
         } else {
             if (brake_x10 > -1000) {
-                int16_t abs_val = (brake_x10 < 0) ? (int16_t)(-brake_x10) : brake_x10;
-                lv_label_set_text_fmt(ui_LabelBrakeTempText, "%d.%d", (int)(brake_x10 / 10), (int)(abs_val % 10));
                 display_brake_x10 = brake_x10;
-            } else {
-                lv_label_set_text(ui_LabelBrakeTempText, "--.-");
             }
         }
 
         if (display_brake_x10 >= brake_warn_x10) {
             temp_color = lv_color_hex(0xFF4D4D);
         }
-
-        lv_obj_set_style_text_font(ui_LabelBrakeTempText, ui_font_brake_temp_value(display_brake_x10), LV_PART_MAIN);
-        lv_obj_set_style_text_color(ui_LabelBrakeTempText, temp_color, LV_PART_MAIN);
 
         uint32_t now = lv_tick_get();
         if (s_brake_temp_trend_tick == 0) {
@@ -694,11 +1020,21 @@ void my_timerMain(lv_timer_t * timer)
             s_brake_temp_trend_tick += BRAKE_TEMP_TREND_SAMPLE_MS;
         }
 
-        brake_temp_chart_refresh();
+        if (brake_page_visible) {
+            if (display_brake_x10 > BRAKE_TEMP_TREND_INVALID) {
+                int16_t abs_val = (display_brake_x10 < 0) ? (int16_t)(-display_brake_x10) : display_brake_x10;
+                ui_label_set_text_fmt_if_changed(ui_LabelBrakeTempText, "%d.%d", (int)(display_brake_x10 / 10), (int)(abs_val % 10));
+            } else {
+                ui_label_set_text_if_changed(ui_LabelBrakeTempText, "--.-");
+            }
+            lv_obj_set_style_text_font(ui_LabelBrakeTempText, ui_font_brake_temp_value(display_brake_x10), LV_PART_MAIN);
+            lv_obj_set_style_text_color(ui_LabelBrakeTempText, temp_color, LV_PART_MAIN);
+            brake_temp_chart_refresh();
+        }
     }
 
     /* Info 页更新 */
-    if (ui_LabelInfoValue[0]) {
+    if (info_page_visible && ui_LabelInfoValue[0]) {
         if (s_sweep_step > 0) {
             int step = s_sweep_step - 1; // already incremented above
             float r;
@@ -707,9 +1043,7 @@ void my_timerMain(lv_timer_t * timer)
 
             for (int i = 0; i < 5; ++i) {
                 disp_item_t item = (disp_item_t)(user_cfg->info_display_map[i] % DISP_ITEM_COUNT);
-                lv_label_set_text(ui_LabelInfoName[i], s_disp_meta[item].name);
-                lv_label_set_text(ui_LabelInfoUnit[i], s_disp_meta[item].unit);
-                lv_obj_set_style_text_color(ui_LabelInfoName[i], lv_color_hex(s_disp_meta[item].color), LV_PART_MAIN);
+                disp_item_sync_meta(ui_LabelInfoName[i], ui_LabelInfoUnit[i], &s_info_slot_item_cache[i], item);
 
                 int32_t sw = disp_item_sweep_value(item, r);
                 disp_item_set_text(ui_LabelInfoValue[i], item, sw, true);
@@ -718,9 +1052,7 @@ void my_timerMain(lv_timer_t * timer)
         } else {
             for (int i = 0; i < 5; ++i) {
                 disp_item_t item = (disp_item_t)(user_cfg->info_display_map[i] % DISP_ITEM_COUNT);
-                lv_label_set_text(ui_LabelInfoName[i], s_disp_meta[item].name);
-                lv_label_set_text(ui_LabelInfoUnit[i], s_disp_meta[item].unit);
-                lv_obj_set_style_text_color(ui_LabelInfoName[i], lv_color_hex(s_disp_meta[item].color), LV_PART_MAIN);
+                disp_item_sync_meta(ui_LabelInfoName[i], ui_LabelInfoUnit[i], &s_info_slot_item_cache[i], item);
 
                 int32_t value = 0;
                 bool valid = disp_item_read_value(item, clt, iat, oil, load_pct, tps, bat_mv, oilp_x10, brake_x10, usRpm, ucSpeed, boost_x10, &value);
@@ -731,18 +1063,22 @@ void my_timerMain(lv_timer_t * timer)
     }
 
     /* 动态更新 EasterEgg 页面 BLE 信息 */
-    if(ui_LabelEasterEggInfo) {
+    if(easter_page_visible && ui_LabelEasterEggInfo) {
         const char *dev_name = elm327_ble_get_connected_name();
         if(!dev_name || dev_name[0] == '\0') dev_name = "Not set";
-        lv_label_set_text_fmt(ui_LabelEasterEggInfo,
-            "ESP32-S3  IDF %d.%d.%d\n"
-            "LVGL %d.%d.%d\n"
-            "BLE: %s\n"
-            "Status: %s",
-            ESP_IDF_VERSION_MAJOR, ESP_IDF_VERSION_MINOR, ESP_IDF_VERSION_PATCH,
-            LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR, LVGL_VERSION_PATCH,
-            dev_name,
-            ble_now ? "Connected" : "Disconnected");
+        if (s_easter_info_last_connected != ble_now || strcmp(s_easter_info_last_name, dev_name) != 0) {
+            lv_label_set_text_fmt(ui_LabelEasterEggInfo,
+                "ESP32-S3  IDF %d.%d.%d\n"
+                "LVGL %d.%d.%d\n"
+                "BLE: %s\n"
+                "Status: %s",
+                ESP_IDF_VERSION_MAJOR, ESP_IDF_VERSION_MINOR, ESP_IDF_VERSION_PATCH,
+                LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR, LVGL_VERSION_PATCH,
+                dev_name,
+                ble_now ? "Connected" : "Disconnected");
+            s_easter_info_last_connected = ble_now;
+            strlcpy(s_easter_info_last_name, dev_name, sizeof(s_easter_info_last_name));
+        }
     }
  
     //等待500ms后开亮度，避免没有初始化完成就提前点亮面板，只执行一次
@@ -789,6 +1125,11 @@ void my_timerMain(lv_timer_t * timer)
                 case DEFAULT_PAGE_NEEDLE: target_scr = &ui_ScreenPageNeedle; target_init = ui_ScreenPageNeedle_screen_init;  break;
                 default: target_scr = &ui_ScreenPageTemp; target_init = ui_ScreenPageTemp_screen_init;  break;
             }
+            s_home_active_page = ui_home_page_from_default_page(pg_cfg->default_page);
+            target_scr = &ui_ScreenPageHome;
+            target_init = ui_home_screen_init;
+            ui_home_screen_init();
+            ui_home_set_active_page(s_home_active_page, LV_ANIM_OFF);
             if(*target_scr == NULL) target_init();
             ui_logo_transition_to(target_scr, target_init, "timeout");
             // Logo 结束后检查是否有挂起的刷表请求
@@ -862,9 +1203,38 @@ void ui_event_temp_custom_background(lv_event_t * e)
         log_gesture_event("TempCustom", dir);
         if (dir == LV_DIR_TOP) {
             lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageTemp, &ui_ScreenPageTemp_screen_init);
+            ui_home_load(LV_SCR_LOAD_ANIM_MOVE_TOP, UI_HOME_PAGE_TEMP);
         }
     }
+}
+
+static void ui_label_set_text_if_changed(lv_obj_t *label, const char *text)
+{
+    if (!label || !text) {
+        return;
+    }
+
+    const char *current = lv_label_get_text(label);
+    if (current != NULL && strcmp(current, text) == 0) {
+        return;
+    }
+
+    lv_label_set_text(label, text);
+}
+
+static void ui_label_set_text_fmt_if_changed(lv_obj_t *label, const char *fmt, ...)
+{
+    if (!label || !fmt) {
+        return;
+    }
+
+    char buf[128];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    ui_label_set_text_if_changed(label, buf);
 }
 
 void ui_event_brake_temp_background(lv_event_t * e)
@@ -917,7 +1287,7 @@ void ui_event_brake_warn_background(lv_event_t * e)
         log_gesture_event("BrakeWarn", dir);
         if(dir == LV_DIR_TOP){
             lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageBrakeTemp, &ui_ScreenPageBrakeTemp_screen_init);
+            ui_home_load(LV_SCR_LOAD_ANIM_MOVE_TOP, UI_HOME_PAGE_BRAKE_TEMP);
         }
     }
 }
@@ -930,7 +1300,7 @@ void ui_event_oil_warn_background(lv_event_t * e)
         log_gesture_event("OilWarn", dir);
         if(dir == LV_DIR_TOP){
             lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageOilPressure, &ui_ScreenPageOilPressure_screen_init);
+            ui_home_load(LV_SCR_LOAD_ANIM_MOVE_TOP, UI_HOME_PAGE_OIL_PRESSURE);
         }
     }
 }
@@ -967,7 +1337,7 @@ void ui_event_needle_config_background(lv_event_t * e)
         log_gesture_event("NeedleConfig", dir);
         if(dir == LV_DIR_TOP){
             lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageNeedle, &ui_ScreenPageNeedle_screen_init);
+            ui_home_load(LV_SCR_LOAD_ANIM_MOVE_TOP, UI_HOME_PAGE_NEEDLE);
         }
     }
 }
@@ -1001,7 +1371,7 @@ void ui_event_info_custom_background(lv_event_t * e)
         log_gesture_event("InfoCustom", dir);
         if (dir == LV_DIR_TOP) {
             lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageInfo, &ui_ScreenPageInfo_screen_init);
+            ui_home_load(LV_SCR_LOAD_ANIM_MOVE_TOP, UI_HOME_PAGE_INFO);
         }
     }
 }
@@ -1031,6 +1401,157 @@ void ui_event_easter_egg_background(lv_event_t * e)
         }
     }
 }
+
+static void ui_home_tileview_value_changed(lv_event_t *e)
+{
+    if (lv_event_get_target(e) != s_home_tileview) {
+        return;
+    }
+
+    lv_obj_t *active_tile = lv_tileview_get_tile_act(s_home_tileview);
+    for (uint8_t i = 0; i < UI_HOME_PAGE_COUNT; i++) {
+        if (s_home_tiles[i] == active_tile) {
+            if (s_home_active_page != i) {
+                s_home_active_page = i;
+                ui_home_sync_tile_mounts(i);
+            }
+            ui_home_update_tile_effects();
+            ESP_LOGI(TAG, "Home tile active=%u", (unsigned)i);
+            break;
+        }
+    }
+}
+
+static void ui_home_tileview_scroll(lv_event_t *e)
+{
+    if (lv_event_get_target(e) != s_home_tileview) {
+        return;
+    }
+
+    ui_home_update_tile_effects();
+}
+
+static void ui_home_tileview_gesture(lv_event_t *e)
+{
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+    log_gesture_event("Home", dir);
+    if (dir == LV_DIR_TOP || dir == LV_DIR_BOTTOM) {
+        lv_indev_wait_release(lv_indev_get_act());
+        ui_home_open_vertical_target(s_home_active_page, dir);
+    }
+}
+
+static void ui_home_open_vertical_target(uint8_t page_id, lv_dir_t dir)
+{
+    switch (page_id) {
+    case UI_HOME_PAGE_TEMP:
+        if (dir == LV_DIR_BOTTOM) {
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageTempCustom, &ui_ScreenPageTempCustom_screen_init);
+        }
+        break;
+    case UI_HOME_PAGE_INFO:
+        if (dir == LV_DIR_BOTTOM) {
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageInfoCustom, &ui_ScreenPageInfoCustom_screen_init);
+        }
+        break;
+    case UI_HOME_PAGE_NEEDLE:
+        if (dir == LV_DIR_BOTTOM) {
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageNeedleConfig, &ui_ScreenPageNeedleConfig_screen_init);
+        }
+        break;
+    case UI_HOME_PAGE_OIL_PRESSURE:
+        if (dir == LV_DIR_BOTTOM) {
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageOilWarn, &ui_ScreenPageOilWarn_screen_init);
+        }
+        break;
+    case UI_HOME_PAGE_BRAKE_TEMP:
+        if (dir == LV_DIR_BOTTOM) {
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageBrakeWarn, &ui_ScreenPageBrakeWarn_screen_init);
+        }
+        break;
+    case UI_HOME_PAGE_EASTER_EGG:
+        if (dir == LV_DIR_TOP) {
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageBLEScan, &ui_ScreenPageBLEScan_screen_init);
+        } else if (dir == LV_DIR_BOTTOM) {
+            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageSettings, &ui_ScreenPageSettings_screen_init);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+static lv_obj_t *ui_home_create_tile(lv_obj_t *parent, uint8_t col, lv_dir_t dir)
+{
+    lv_obj_t *tile = lv_tileview_add_tile(parent, col, 0, dir);
+    lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_opa(tile, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(tile, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(tile, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    return tile;
+}
+
+static void ui_home_screen_init(void)
+{
+    if (ui_ScreenPageHome != NULL) {
+        return;
+    }
+
+    ui_temp_layout_t temp_layout;
+    ui_temp_layout_get(&temp_layout);
+
+    ui_ScreenPageHome = lv_obj_create(NULL);
+    ui_round_screen_apply_base(ui_ScreenPageHome, lv_color_hex(0x000000));
+    lv_obj_set_style_border_width(ui_ScreenPageHome, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_outline_width(ui_ScreenPageHome, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    s_home_tileview = lv_tileview_create(ui_ScreenPageHome);
+    lv_obj_set_size(s_home_tileview, LV_PCT(100), LV_PCT(100));
+    lv_obj_center(s_home_tileview);
+    lv_obj_set_style_bg_opa(s_home_tileview, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(s_home_tileview, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(s_home_tileview, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_scrollbar_mode(s_home_tileview, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_clear_flag(s_home_tileview, LV_OBJ_FLAG_SCROLL_ELASTIC);
+    lv_obj_add_event_cb(s_home_tileview, ui_home_tileview_value_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(s_home_tileview, ui_home_tileview_gesture, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_event_cb(s_home_tileview, ui_home_tileview_scroll, LV_EVENT_SCROLL, NULL);
+
+    s_home_tiles[UI_HOME_PAGE_TEMP] = ui_home_create_tile(s_home_tileview, UI_HOME_PAGE_TEMP, LV_DIR_LEFT);
+    s_home_tiles[UI_HOME_PAGE_INFO] = ui_home_create_tile(s_home_tileview, UI_HOME_PAGE_INFO, LV_DIR_LEFT | LV_DIR_RIGHT);
+    s_home_tiles[UI_HOME_PAGE_NEEDLE] = ui_home_create_tile(s_home_tileview, UI_HOME_PAGE_NEEDLE, LV_DIR_LEFT | LV_DIR_RIGHT);
+    s_home_tiles[UI_HOME_PAGE_OIL_PRESSURE] = ui_home_create_tile(s_home_tileview, UI_HOME_PAGE_OIL_PRESSURE, LV_DIR_LEFT | LV_DIR_RIGHT);
+    s_home_tiles[UI_HOME_PAGE_BRAKE_TEMP] = ui_home_create_tile(s_home_tileview, UI_HOME_PAGE_BRAKE_TEMP, LV_DIR_LEFT | LV_DIR_RIGHT);
+    s_home_tiles[UI_HOME_PAGE_EASTER_EGG] = ui_home_create_tile(s_home_tileview, UI_HOME_PAGE_EASTER_EGG, LV_DIR_RIGHT);
+    memset(s_home_content_roots, 0, sizeof(s_home_content_roots));
+    memset(s_home_tile_mounted, 0, sizeof(s_home_tile_mounted));
+    for (uint8_t i = 0; i < UI_HOME_PAGE_COUNT; i++) {
+        ui_home_reset_tile_effect_cache(i);
+    }
+
+    ui_round_shell_create_ring(ui_ScreenPageHome, &temp_layout.shell);
+
+    ui_ScreenPageTemp = ui_ScreenPageHome;
+    ui_ScreenPageInfo = ui_ScreenPageHome;
+    ui_ScreenPageNeedle = ui_ScreenPageHome;
+    ui_ScreenPageOilPressure = ui_ScreenPageHome;
+    ui_ScreenPageBrakeTemp = ui_ScreenPageHome;
+    ui_ScreenPageEasterEgg = ui_ScreenPageHome;
+
+    ui_home_set_active_page(s_home_active_page, LV_ANIM_OFF);
+}
+
+static void ui_home_load(lv_scr_load_anim_t anim, uint8_t page_id)
+{
+    ui_home_screen_init();
+    ui_home_set_active_page(page_id, LV_ANIM_OFF);
+    lv_scr_load_anim(ui_ScreenPageHome, anim, UI_NAV_ANIM_MS, 0, false);
+}
+
+void ui_show_home_page(uint8_t page_id, lv_scr_load_anim_t anim)
+{
+    ui_home_load(anim, page_id);
+}
 ///////////////////// SCREENS ////////////////////
 
 void ui_init(void)
@@ -1042,15 +1563,20 @@ void ui_init(void)
     lv_disp_set_theme(dispp, theme);
     ui_ScreenPageLogo_screen_init();
     // Main / Gear / Rpm / Speed 页面已删除
-    ui_ScreenPageTemp_screen_init();
-    ui_ScreenPageBrakeTemp_screen_init();
-    ui_ScreenPageOilPressure_screen_init();
+    ui_ScreenPageHome = NULL;
+    s_home_tileview = NULL;
+    s_home_active_page = ui_home_page_from_default_page(nvs_cfg_get()->default_page);
+    memset(s_home_tiles, 0, sizeof(s_home_tiles));
     ui_ScreenPageBrakeWarn_screen_init();
     ui_ScreenPageOilWarn_screen_init();
     ui_ScreenPageODBProtocal_screen_init();
-    ui_ScreenPageNeedle_screen_init();
+    ui_ScreenPageTemp = NULL;
+    ui_ScreenPageBrakeTemp = NULL;
+    ui_ScreenPageOilPressure = NULL;
+    ui_ScreenPageNeedle = NULL;
     // Info 页按需懒加载，screen 指针须初始化为 NULL
     ui_ScreenPageInfo = NULL;
+    ui_ScreenPageEasterEgg = NULL;
     ui_ScreenPageTempCustom = NULL;
     ui_ScreenPageInfoCustom = NULL;
     ui_ScreenPageNeedleConfig = NULL;   // 配置页懒加载
@@ -1068,11 +1594,11 @@ void ui_event_obd_prot_background(lv_event_t * e)
     if(code == LV_EVENT_GESTURE){
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
         log_gesture_event("OBDProtocal", dir);
-        if(dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT){
+        if(dir == LV_DIR_TOP){
             ESP_LOGI(TAG, "OBDProtocal gesture: switch to Temp target=%p active_before=%p",
                      (void *)ui_ScreenPageTemp, (void *)lv_scr_act());
             lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageTemp, &ui_ScreenPageTemp_screen_init);
+            ui_home_load(LV_SCR_LOAD_ANIM_MOVE_TOP, ui_home_page_from_default_page(nvs_cfg_get()->default_page));
             ESP_LOGI(TAG, "OBDProtocal gesture: switch requested active_after=%p", (void *)lv_scr_act());
         }
     }else if(code == LV_EVENT_LONG_PRESSED){
@@ -1101,7 +1627,7 @@ void ui_event_ble_scan_background(lv_event_t * e)
         if(dir == LV_DIR_BOTTOM){
             elm327_ble_scan_only_stop();
             lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageEasterEgg, &ui_ScreenPageEasterEgg_screen_init);
+            ui_home_load(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, UI_HOME_PAGE_EASTER_EGG);
         }
     }
 }
@@ -1115,7 +1641,7 @@ void ui_event_settings_background(lv_event_t * e)
         log_gesture_event("Settings", dir);
         if(dir == LV_DIR_TOP){
             lv_indev_wait_release(lv_indev_get_act());
-            ui_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageEasterEgg, &ui_ScreenPageEasterEgg_screen_init);
+            ui_home_load(LV_SCR_LOAD_ANIM_MOVE_TOP, UI_HOME_PAGE_EASTER_EGG);
         }
     }
 }
