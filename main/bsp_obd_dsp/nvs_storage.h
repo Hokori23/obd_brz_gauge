@@ -13,6 +13,23 @@ typedef struct {
     uint8_t rsv[5];
 } theme_cfg_t;
 
+#define UI_DASHBOARD_CFG_VERSION 1u
+#define UI_DASHBOARD_MAX_PAGES   8u
+#define UI_DASHBOARD_MAX_SLOTS   6u
+
+typedef struct {
+    uint8_t slot_count;
+    uint8_t slot_items[UI_DASHBOARD_MAX_SLOTS];
+    uint8_t rsv;
+} ui_dashboard_page_cfg_t;
+
+typedef struct {
+    uint8_t version;
+    uint8_t gauge_page_count;
+    uint8_t rsv[2];
+    ui_dashboard_page_cfg_t pages[UI_DASHBOARD_MAX_PAGES];
+} ui_dashboard_cfg_t;
+
 #define NVS_DEFAULT_PAGE_TEMP          DEFAULT_PAGE_TEMP
 #define NVS_DEFAULT_PAGE_INFO          DEFAULT_PAGE_INFO
 #define NVS_DEFAULT_PAGE_BRAKE_TEMP    DEFAULT_PAGE_BRAKE_TEMP
@@ -33,6 +50,7 @@ typedef struct {
     uint8_t info_display_map[5];
     uint8_t needle_source_idx;
     uint8_t rsv[2];
+    ui_dashboard_cfg_t dashboard_cfg;
 } nvs_user_cfg_t;
 
 typedef struct {

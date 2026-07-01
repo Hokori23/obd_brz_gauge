@@ -57,6 +57,7 @@ foreach ($test in $tests) {
         -Wextra `
         -Werror `
         -I (Join-Path $PSScriptRoot "..") `
+        -I (Join-Path $PSScriptRoot "..\main") `
         -c $test.Source `
         -o $test.Output
 
@@ -93,6 +94,11 @@ if ($LASTEXITCODE -ne 0) {
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\ui_font_profile\test_ui_font_profile_contract.ps1")
 if ($LASTEXITCODE -ne 0) {
     throw "ui font profile contract checks failed"
+}
+
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\nvs_storage\test_nvs_storage_dashboard_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "nvs storage dashboard contract checks failed"
 }
 
 $mainCMake = Get-Content (Join-Path $PSScriptRoot "..\main\CMakeLists.txt") -Raw

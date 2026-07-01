@@ -3,18 +3,15 @@
 
 #include "../ui.h"
 #include "../ui_font_profile.h"
+#include "../ui_home_runtime.h"
 #include "../ui_layout.h"
 #include "../ui_round_shell.h"
 #include <string.h>
-#include "app_obd_dsp/default_page_ids.h"
 #include "bsp_obd_dsp/boards/board_api.h"
 #include "bsp_obd_dsp/nvs_storage.h"
 #include "app_obd_dsp/vehicle_profiles.h"
 
-// Page names for roller
-static const char *page_names = "TEMP\nINFO\nBRAKE\nOILP\nNEEDLE";
-
-_Static_assert(DEFAULT_PAGE_COUNT == 5u, "Boot page roller options must stay aligned with default page ids");
+static const char *page_names = "MENU";
 
 // Local references for settings widgets
 static lv_obj_t *s_roller_page = NULL;
@@ -25,8 +22,9 @@ static lv_obj_t *s_label_bright_val = NULL;
 // Callbacks
 static void on_page_roller_change(lv_event_t *e)
 {
+    LV_UNUSED(e);
     nvs_user_cfg_t cfg = *nvs_cfg_get();
-    cfg.default_page = lv_roller_get_selected(s_roller_page);
+    cfg.default_page = 0;
     nvs_cfg_set(&cfg);
 }
 
@@ -52,6 +50,19 @@ static void on_vehicle_roller_change(lv_event_t *e)
 
     // 同步更新当前激活车型，档位识别等运行时逻辑立即生效。
     vehicle_profile_set_active(selected);
+}
+
+static void on_settings_background(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_GESTURE) {
+        return;
+    }
+
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+    if (dir == LV_DIR_LEFT) {
+        lv_indev_wait_release(lv_indev_get_act());
+        ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_MOVE_LEFT);
+    }
 }
 
 void ui_ScreenPageSettings_screen_init(void)
@@ -82,7 +93,7 @@ void ui_ScreenPageSettings_screen_init(void)
     lv_obj_clear_flag(s_roller_page, LV_OBJ_FLAG_GESTURE_BUBBLE); // 滚动选值时不触发页面手势
     lv_roller_set_options(s_roller_page, page_names, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_roller_page, 1);
-    lv_roller_set_selected(s_roller_page, cfg->default_page, LV_ANIM_OFF);
+    lv_roller_set_selected(s_roller_page, 0, LV_ANIM_OFF);
     lv_obj_set_width(s_roller_page, layout.roller_width);
     lv_obj_set_style_text_font(s_roller_page, ui_font_typoder(20), LV_PART_MAIN);
     lv_obj_set_style_text_font(s_roller_page, ui_font_typoder(20), LV_PART_SELECTED);
@@ -180,11 +191,11 @@ void ui_ScreenPageSettings_screen_init(void)
 
     // ====== Hint ======
     lv_obj_t *hint = lv_label_create(ui_ScreenPageSettings);
-    lv_label_set_text(hint, "Swipe up to go back\nVehicle applies after reconnect");
+    lv_label_set_text(hint, "Swipe left to go back\nVehicle applies after reconnect");
     lv_obj_set_style_text_font(hint, ui_font_hint(12), LV_PART_MAIN);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x555555), LV_PART_MAIN);
     lv_obj_align(hint, LV_ALIGN_CENTER, 0, layout.hint_y);
 
     // Events - swipe to go back
-    lv_obj_add_event_cb(ui_ScreenPageSettings, ui_event_settings_background, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_event_cb(ui_ScreenPageSettings, on_settings_background, LV_EVENT_GESTURE, NULL);
 }

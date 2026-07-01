@@ -3,6 +3,7 @@
 
 #include "../ui.h"
 #include "../ui_font_profile.h"
+#include "../ui_home_runtime.h"
 #include "../ui_layout.h"
 #include "../ui_round_shell.h"
 #include "bsp_obd_dsp/elm327_ble_client.h"
@@ -26,6 +27,7 @@ static bool s_scanning = false;
 static void start_scan(void);
 static void on_device_selected(lv_event_t *e);
 static void on_saved_device_delete(lv_event_t *e);
+static void on_ble_scan_background(lv_event_t *e);
 
 // LVGL locking bridge (implemented in app_main.c)
 extern bool app_lvgl_lock(int timeout_ms);
@@ -92,7 +94,7 @@ static void on_device_selected(lv_event_t *e) {
     if (s_spinner) lv_obj_clear_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
 
     elm327_ble_connect_by_name(name);
-    ui_show_home_page(UI_HOME_PAGE_EASTER_EGG_ID, LV_SCR_LOAD_ANIM_FADE_ON);
+    ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_FADE_ON);
 }
 
 // 删除已保存设备
@@ -120,6 +122,20 @@ static void start_scan(void) {
     if (s_spinner) lv_obj_clear_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
 
     elm327_ble_scan_only_start(15, scan_result_cb);
+}
+
+static void on_ble_scan_background(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_GESTURE) {
+        return;
+    }
+
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+    if (dir == LV_DIR_BOTTOM) {
+        elm327_ble_scan_only_stop();
+        lv_indev_wait_release(lv_indev_get_act());
+        ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_MOVE_BOTTOM);
+    }
 }
 
 void ui_ScreenPageBLEScan_screen_init(void)
@@ -237,7 +253,7 @@ void ui_ScreenPageBLEScan_screen_init(void)
     lv_obj_align(label_hint, LV_ALIGN_BOTTOM_MID, 0, layout.hint_y);
 
     // Gesture event for navigation
-    lv_obj_add_event_cb(ui_ScreenPageBLEScan, ui_event_ble_scan_background, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_event_cb(ui_ScreenPageBLEScan, on_ble_scan_background, LV_EVENT_GESTURE, NULL);
 
     // Start scanning
     start_scan();

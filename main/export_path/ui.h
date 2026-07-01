@@ -13,17 +13,12 @@ extern "C" {
 #include "lvgl.h"
 
 #include "ui_helpers.h"
+#include "ui_home_runtime.h"
 #include "ui_events.h"
 #include "esp_log.h"
 #include "app_obd_dsp/obd_data_cache.h"
 
 #define USE_GIF_LOGO        0
-#define UI_HOME_PAGE_TEMP_ID          0u
-#define UI_HOME_PAGE_INFO_ID          1u
-#define UI_HOME_PAGE_NEEDLE_ID        2u
-#define UI_HOME_PAGE_OIL_PRESSURE_ID  3u
-#define UI_HOME_PAGE_BRAKE_TEMP_ID    4u
-#define UI_HOME_PAGE_EASTER_EGG_ID    5u
 #define USE_GIF_EASTER_EGG  0
 
 #define COLOR_MITSUBISHI_RED    0xFFFFFF //主色调白色(原三菱红)
@@ -60,7 +55,6 @@ extern lv_obj_t * ui_LabelEasterEggInfo;  // \u52a8\u6001\u66f4\u65b0\u7684\u8bb
 // SCREEN: ui_ScreenPageBLEScan
 void ui_ScreenPageBLEScan_screen_init(void);
 extern lv_obj_t * ui_ScreenPageBLEScan;
-void ui_event_ble_scan_background(lv_event_t * e);
 // CUSTOM VARIABLES
 
 // SCREEN: ui_ScreenPageTemp
@@ -121,7 +115,6 @@ void ui_event_info_custom_background(lv_event_t * e);
 // SCREEN: ui_ScreenPageSettings
 void ui_ScreenPageSettings_screen_init(void);
 extern lv_obj_t * ui_ScreenPageSettings;
-void ui_event_settings_background(lv_event_t * e);
 // CUSTOM VARIABLES
 
 // SCREEN: ui_ScreenPageBrakeWarn
@@ -200,7 +193,6 @@ LV_FONT_DECLARE(ui_font_FontTypoderSize140);
 
 // UI INIT
 void ui_init(void);
-void ui_show_home_page(uint8_t page_id, lv_scr_load_anim_t anim);
 void ui_event_logo_background(lv_event_t * e);
 void ui_event_main_background(lv_event_t * e);
 void ui_event_gear_background(lv_event_t * e);
