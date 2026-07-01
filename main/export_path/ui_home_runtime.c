@@ -20,7 +20,7 @@
 
 static const char *TAG = "ui_home";
 
-#define UI_NAV_ANIM_MS 200
+#define UI_NAV_ANIM_MS 280
 #define UI_HOME_MAX_TILE_COUNT (1u + UI_DASHBOARD_MAX_PAGES + 1u)
 #define UI_HOME_PAGE_PEEK_PX 28
 #define UI_HOME_PAGE_MIN_OPA 168
@@ -291,7 +291,7 @@ static void ui_home_menu_open_settings(lv_event_t *e)
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
-    ui_home_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageSettings, &ui_ScreenPageSettings_screen_init);
+    ui_home_nav_vertical(LV_SCR_LOAD_ANIM_OVER_BOTTOM, &ui_ScreenPageSettings, &ui_ScreenPageSettings_screen_init);
 }
 
 static void ui_home_menu_open_ble_scan(lv_event_t *e)
@@ -299,7 +299,7 @@ static void ui_home_menu_open_ble_scan(lv_event_t *e)
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
-    ui_home_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageBLEScan, &ui_ScreenPageBLEScan_screen_init);
+    ui_home_nav_vertical(LV_SCR_LOAD_ANIM_OVER_TOP, &ui_ScreenPageBLEScan, &ui_ScreenPageBLEScan_screen_init);
 }
 
 static void ui_home_add_page_click(lv_event_t *e)
@@ -1226,9 +1226,9 @@ static void ui_home_tileview_gesture(lv_event_t *e)
 static void ui_home_open_menu_overlay(lv_dir_t dir)
 {
     if (dir == LV_DIR_TOP) {
-        ui_home_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_TOP, &ui_ScreenPageBLEScan, &ui_ScreenPageBLEScan_screen_init);
+        ui_home_nav_vertical(LV_SCR_LOAD_ANIM_OVER_TOP, &ui_ScreenPageBLEScan, &ui_ScreenPageBLEScan_screen_init);
     } else if (dir == LV_DIR_BOTTOM) {
-        ui_home_nav_vertical(LV_SCR_LOAD_ANIM_MOVE_BOTTOM, &ui_ScreenPageSettings, &ui_ScreenPageSettings_screen_init);
+        ui_home_nav_vertical(LV_SCR_LOAD_ANIM_OVER_BOTTOM, &ui_ScreenPageSettings, &ui_ScreenPageSettings_screen_init);
     }
 }
 
