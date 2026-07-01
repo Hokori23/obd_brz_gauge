@@ -308,22 +308,22 @@ void app_main(void)
 #if CONFIG_OBD_BOARD_WS_175_AMOLED
     {
         esp_lv_adapter_config_t lvgl_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG();
-        esp_lv_adapter_display_config_t disp_cfg = {
-            .panel = board_ctx.panel,
-            .panel_io = board_ctx.panel_io,
-            .profile = {
-                .interface = ESP_LV_ADAPTER_PANEL_IF_OTHER,
-                .rotation = ESP_LV_ADAPTER_ROTATE_0,
-                .hor_res = board_ctx.hor_res,
-                .ver_res = board_ctx.ver_res,
-                .buffer_height = board_ctx.ver_res,
-                .use_psram = true,
-                .enable_ppa_accel = true,
-                .require_double_buffer = true,
-            },
-            .tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_DOUBLE_FULL,
-        };
+        esp_lv_adapter_display_config_t disp_cfg = ESP_LV_ADAPTER_DISPLAY_SPI_WITH_PSRAM_DEFAULT_CONFIG(
+            board_ctx.panel, board_ctx.panel_io, board_ctx.hor_res, board_ctx.ver_res, ESP_LV_ADAPTER_ROTATE_0);
         lv_display_t *disp = NULL;
+
+        /* QSPI OLED still transmits through SPI DMA, so full-frame PSRAM buffers
+         * force the SPI driver to allocate a huge internal bounce buffer per flush.
+         * Keep the adapter on small line buffers to match the validated board profile.
+         */
+        disp_cfg.profile.buffer_height = board_ctx.draw_buffer_lines;
+        disp_cfg.profile.enable_ppa_accel = false;
+
+        ESP_LOGI(TAG, "WS175 LVGL adapter: buffer_height=%u double_buffer=%d use_psram=%d tear_mode=%d",
+                 disp_cfg.profile.buffer_height,
+                 disp_cfg.profile.require_double_buffer,
+                 disp_cfg.profile.use_psram,
+                 disp_cfg.tear_avoid_mode);
 
         ESP_LOGI(TAG, "Initialize LVGL through esp_lvgl_adapter");
         ESP_ERROR_CHECK(esp_lv_adapter_init(&lvgl_cfg));
