@@ -72,9 +72,9 @@ static void on_settings_background(lv_event_t *e)
     }
 
     lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-    if (dir == LV_DIR_LEFT) {
+    if (dir == LV_DIR_TOP) {
         lv_indev_wait_release(lv_indev_get_act());
-        ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_MOVE_LEFT);
+        ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_MOVE_TOP);
     }
 }
 
@@ -231,7 +231,7 @@ void ui_ScreenPageSettings_screen_init(void)
 
     // ====== Hint ======
     lv_obj_t *hint = lv_label_create(ui_ScreenPageSettings);
-    lv_label_set_text(hint, "Swipe left to go back\nVehicle applies after reconnect");
+    lv_label_set_text(hint, "Swipe up to go back\nVehicle applies after reconnect");
     lv_obj_set_style_text_font(hint, ui_font_hint(12), LV_PART_MAIN);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x555555), LV_PART_MAIN);
     lv_obj_align(hint, LV_ALIGN_CENTER, 0, layout.hint_y);

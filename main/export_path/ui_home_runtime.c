@@ -258,7 +258,7 @@ static lv_obj_t *ui_home_create_content_root(lv_obj_t *tile)
     lv_obj_remove_style_all(root);
     lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
     lv_obj_center(root);
-    lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_update_layout(root);
     lv_obj_set_style_transform_pivot_x(root, lv_obj_get_width(root) / 2, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_transform_pivot_y(root, lv_obj_get_height(root) / 2, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -411,6 +411,7 @@ static void ui_home_create_menu_content(uint8_t tile_id, lv_obj_t *parent)
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x202020), LV_PART_MAIN);
     lv_obj_set_style_border_width(btn, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(btn, lv_color_hex(0x444444), LV_PART_MAIN);
+    lv_obj_add_flag(btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(btn, ui_home_menu_open_settings, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *btn_label = lv_label_create(btn);
@@ -547,6 +548,7 @@ static void ui_home_create_add_content(uint8_t tile_id, lv_obj_t *parent)
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x121212), LV_PART_MAIN);
     lv_obj_set_style_border_width(btn, 2, LV_PART_MAIN);
     lv_obj_set_style_border_color(btn, lv_color_hex(0x2A2A2A), LV_PART_MAIN);
+    lv_obj_add_flag(btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(btn, ui_home_add_page_click, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *plus = lv_label_create(btn);
