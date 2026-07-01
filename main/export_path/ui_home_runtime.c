@@ -8,6 +8,7 @@
 #include "ui_round_shell.h"
 #include "ui_runtime_common.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -470,7 +471,7 @@ static void ui_home_create_slot_card(lv_obj_t *parent,
     lv_obj_t *panel = lv_obj_create(parent);
     lv_obj_set_size(panel, w, h);
     lv_obj_align(panel, LV_ALIGN_TOP_LEFT, x, y);
-    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_radius(panel, 0, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(panel, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(panel, 0, LV_PART_MAIN);
