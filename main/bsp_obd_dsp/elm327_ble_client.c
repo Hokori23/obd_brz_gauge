@@ -1214,6 +1214,9 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
         // 没收到 '>' 就继续等
         if (memchr(s_accum_buf, '>', s_accum_len) == NULL) break;
 
+        bool expect_mode21 = s_expect_mode21;
+        s_expect_mode21 = false;
+
         // 收到完整响应，开始解析
         char *buf = s_accum_buf;
         ESP_LOGI(TAG, "FULL[%d]: %.100s", (int)s_accum_len, buf); // 诊断: 打印每条完整响应
@@ -1225,10 +1228,9 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
         char *p41 = strstr(buf, "41 ");
         char *p62 = strstr(buf, "62 ");
 
-        if (p61 != NULL) {
+        if (p61 != NULL && expect_mode21) {
             // Mode 21 多帧响应 (Toyota 2101)
             // 只有确认发出了 21 01 命令才解析，防止其他响应的数据字节碰巧包含 "61 01"
-            s_expect_mode21 = false;
             uint32_t d[64] = {0};
             int count = parse_mode21_data(buf, d, 64);
             int32_t oil_c = 0;
@@ -1242,7 +1244,7 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
                 ESP_LOGW(TAG, "21 01 parse failed: count=%d", count);
                 record_oil_temp_failure(OIL_TEMP_MODE_TOYOTA_21_01);
             }
-        } else if (p41 != NULL && !s_expect_mode21) {
+        } else if (p41 != NULL) {
             // Mode 01 响应: "41 PP DD ..."
             uint32_t d[6] = {0};
             uint32_t mode = 0, pid = 0;
@@ -1361,6 +1363,9 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
             }
         } else {
             // 无效数据或纯文本（NO DATA、SEARCHING、OK 等）
+            if (expect_mode21) {
+                record_oil_temp_failure(OIL_TEMP_MODE_TOYOTA_21_01);
+            }
             if (strstr(buf, "NO DATA")) {
                 ESP_LOGI(TAG, "NO DATA for last PID"); // 诊断: 哪个PID无数据
             } else if (strstr(buf, "SEARCHING")) {
