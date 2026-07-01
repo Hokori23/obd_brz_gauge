@@ -158,8 +158,6 @@ void disp_item_set_text(lv_obj_t *label, disp_item_t item, int32_t value, bool v
         return;
     }
 
-    lv_obj_set_style_text_font(label, ui_font_typoder(36), LV_PART_MAIN);
-
     if (!valid) {
         ui_label_set_text_if_changed(label, "--");
         return;
