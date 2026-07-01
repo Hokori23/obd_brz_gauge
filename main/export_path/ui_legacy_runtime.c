@@ -23,16 +23,16 @@ static bool s_sweep_pending = false;
 static bool s_prev_ble_connected = false;
 
 static const disp_item_meta_t s_disp_meta[DISP_ITEM_COUNT] = {
-    {"CLT", "C", 0x44AAFF},
-    {"IAT", "C", 0x44FF88},
-    {"OIL", "C", 0xFF7722},
+    {"CLT", "\xC2\xB0" "C", 0x44AAFF},
+    {"IAT", "\xC2\xB0" "C", 0x44FF88},
+    {"OIL", "\xC2\xB0" "C", 0xFF7722},
     {"LOD", "%", 0xFFCC00},
     {"TPS", "%", 0xFF8844},
     {"RPM", "rpm", 0x66CCFF},
     {"SPD", "km/h", 0xFFFFFF},
     {"BAT", "V", 0xAACCFF},
     {"OIP", "bar", 0xFFD166},
-    {"BKT", "C", 0xFF5A5A},
+    {"BKT", "\xC2\xB0" "C", 0xFF5A5A},
     {"BST", "bar", 0x00DD88},
 };
 

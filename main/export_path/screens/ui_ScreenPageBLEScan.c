@@ -6,6 +6,7 @@
 #include "../ui_home_runtime.h"
 #include "../ui_layout.h"
 #include "../ui_round_shell.h"
+#include "app_obd_dsp/aux_sensor_demand.h"
 #include "bsp_obd_dsp/elm327_ble_client.h"
 #include "bsp_obd_dsp/nvs_storage.h"
 #include "esp_log.h"
@@ -133,7 +134,7 @@ static void on_ble_scan_background(lv_event_t *e)
     }
 
     lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-    if (dir == LV_DIR_BOTTOM) {
+    if (dir == LV_DIR_TOP) {
         elm327_ble_scan_only_stop();
         lv_indev_wait_release(lv_indev_get_act());
         ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_NONE);
@@ -272,16 +273,9 @@ void ui_ScreenPageBLEScan_screen_init(void)
     lv_obj_set_style_radius(s_list, layout.list_radius, LV_PART_MAIN);
     lv_obj_set_style_clip_corner(s_list, true, LV_PART_MAIN);
 
-    // Hint text at bottom
-    lv_obj_t *label_hint = lv_label_create(ui_ScreenPageBLEScan);
-    lv_label_set_text(label_hint, "Tap to connect  Swipe down to go back");
-    lv_obj_set_style_text_font(label_hint, ui_font_hint(12), LV_PART_MAIN);
-    lv_obj_set_style_text_color(label_hint, lv_color_hex(0x555555), LV_PART_MAIN);
-    lv_obj_set_style_text_align(label_hint, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_align(label_hint, LV_ALIGN_BOTTOM_MID, 0, layout.hint_y);
-
     // Gesture event for navigation
     lv_obj_add_event_cb(ui_ScreenPageBLEScan, on_ble_scan_background, LV_EVENT_GESTURE, NULL);
+    aux_sensor_demand_refresh();
 
     // Start scanning
     start_scan();

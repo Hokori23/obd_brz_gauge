@@ -15,6 +15,7 @@
 #include "esp_gatt_common_api.h"
 #include "esp_bt.h"
 
+#include "app_obd_dsp/aux_sensor_demand.h"
 #include "app_obd_dsp/obd_data_cache.h"
 
 #define RC_TAG "racechrono_diy"
@@ -278,6 +279,25 @@ static bool is_known_pid(uint32_t pid)
     return false;
 }
 
+bool racechrono_ble_diy_is_pid_enabled(uint32_t pid)
+{
+    if (!s_connected || !s_notify_enabled || !s_attr_ready) {
+        return false;
+    }
+
+    if (s_allow_all) {
+        return is_known_pid(pid);
+    }
+
+    for (uint8_t i = 0; i < s_rule_count; i++) {
+        if (s_rules[i].pid == pid) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static bool map_index_to_pid(uint32_t idx, uint32_t *out_pid)
 {
     if (out_pid == NULL) {
@@ -398,6 +418,7 @@ static void process_filter_write(const uint8_t *buf, uint16_t len)
         s_allow_all = false;
         s_rule_count = 0;
         ESP_LOGI(RC_TAG, "Filter: deny all");
+        aux_sensor_demand_refresh();
         return;
     }
 
@@ -411,6 +432,7 @@ static void process_filter_write(const uint8_t *buf, uint16_t len)
         s_allow_all = true;
         s_rule_count = 0;
         ESP_LOGI(RC_TAG, "Filter: allow all, interval=%u ms", s_allow_all_interval_ms);
+        aux_sensor_demand_refresh();
         return;
     }
 
@@ -435,6 +457,7 @@ static void process_filter_write(const uint8_t *buf, uint16_t len)
             if (s_rules[i].pid == pid) {
                 s_rules[i].interval_ms = interval_ms;
                 ESP_LOGI(RC_TAG, "Filter: update PID=0x%08" PRIX32 " interval=%u", pid, interval_ms);
+                aux_sensor_demand_refresh();
                 return;
             }
         }
@@ -445,6 +468,7 @@ static void process_filter_write(const uint8_t *buf, uint16_t len)
             s_rules[s_rule_count].last_sent_us = 0;
             s_rule_count++;
             ESP_LOGI(RC_TAG, "Filter: allow PID=0x%08" PRIX32 " interval=%u", pid, interval_ms);
+            aux_sensor_demand_refresh();
         }
     }
 }
@@ -528,12 +552,14 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble
         memset(s_last_all_sent_us, 0, sizeof(s_last_all_sent_us));
         s_last_send_err_log_us = 0;
         ESP_LOGI(RC_TAG, "RaceChrono connected");
+        aux_sensor_demand_refresh();
         break;
 
     case ESP_GATTS_DISCONNECT_EVT:
         s_connected = false;
         s_notify_enabled = false;
         ESP_LOGI(RC_TAG, "RaceChrono disconnected");
+        aux_sensor_demand_refresh();
         start_advertising_if_ready();
         break;
 
@@ -542,6 +568,7 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble
             uint16_t cccd = (uint16_t)param->write.value[0] | ((uint16_t)param->write.value[1] << 8);
             s_notify_enabled = ((cccd & 0x0003u) != 0);
             ESP_LOGI(RC_TAG, "CAN main cccd=0x%04X stream %s", cccd, s_notify_enabled ? "EN" : "DIS");
+            aux_sensor_demand_refresh();
         } else if (s_attr_ready && param->write.handle == s_handle_filter) {
             process_filter_write(param->write.value, param->write.len);
         }

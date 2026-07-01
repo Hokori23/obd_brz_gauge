@@ -18,6 +18,7 @@
 
 static const char *TAG = "brake_temp";
 static bool s_started = false;
+static bool s_enabled = false;
 static int s_uart_baud_cur = -1;
 static int s_uart_parity_cur = -1;
 static int s_uart_stop_bits_cur = -1;
@@ -288,6 +289,14 @@ static void rs485_temp_task(void *arg)
              (int)CONFIG_OBD_RS485_DE_RE_GPIO);
 
     while (1) {
+        if (!s_enabled) {
+            s_fail_count = 0;
+            obd_data_set_brake_temp_x10(-1000);
+            obd_data_set_brake_rs485_status(BRAKE_RS485_IDLE);
+            vTaskDelay(pdMS_TO_TICKS(250));
+            continue;
+        }
+
         int16_t temp_x10 = -1000;
         query_status_t st = query_with_cfg(&s_cfg, &temp_x10);
         if (st == QUERY_OK) {
@@ -316,4 +325,14 @@ void rs485_brake_temp_start(void)
     if (s_started) return;
     s_started = true;
     xTaskCreate(rs485_temp_task, "brake_temp", 3072, NULL, 4, NULL);
+}
+
+void rs485_brake_temp_set_enabled(bool enabled)
+{
+    s_enabled = enabled;
+}
+
+bool rs485_brake_temp_is_enabled(void)
+{
+    return s_enabled;
 }

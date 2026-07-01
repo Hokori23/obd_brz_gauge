@@ -5,7 +5,7 @@ _Static_assert(sizeof(BOARD_WS_175_AMOLED_NAME) == sizeof("Waveshare ESP32-S3-To
 _Static_assert(BOARD_WS_175_AMOLED_H_RES == 466, "WS175 horizontal resolution should stay 466");
 _Static_assert(BOARD_WS_175_AMOLED_V_RES == 466, "WS175 vertical resolution should stay 466");
 _Static_assert(BOARD_WS_175_AMOLED_COLOR_BITS == 16, "WS175 color depth should stay RGB565");
-_Static_assert(BOARD_WS_175_AMOLED_DRAW_BUFFER_LINES == 20, "WS175 draw buffer lines should stay board-defined");
+_Static_assert(BOARD_WS_175_AMOLED_DRAW_BUFFER_LINES == 50, "WS175 draw buffer lines should stay board-defined");
 _Static_assert(BOARD_WS_175_AMOLED_HAS_TOUCH == 1, "WS175 should keep touch enabled");
 _Static_assert(BOARD_WS_175_AMOLED_BRIGHTNESS_CMD == 0x51, "WS175 should keep using register 0x51 for brightness");
 _Static_assert(BOARD_WS_175_AMOLED_LCD_GAP_X == 0x06, "WS175 should preserve the validated panel X gap");

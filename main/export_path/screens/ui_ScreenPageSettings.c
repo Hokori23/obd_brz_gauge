@@ -7,6 +7,7 @@
 #include "../ui_layout.h"
 #include "../ui_round_shell.h"
 #include <string.h>
+#include "app_obd_dsp/aux_sensor_demand.h"
 #include "bsp_obd_dsp/boards/board_api.h"
 #include "bsp_obd_dsp/nvs_storage.h"
 #include "app_obd_dsp/vehicle_profiles.h"
@@ -229,13 +230,7 @@ void ui_ScreenPageSettings_screen_init(void)
     lv_obj_set_style_text_color(s_label_bright_val, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_align(s_label_bright_val, LV_ALIGN_CENTER, 0, layout.brightness_value_y);
 
-    // ====== Hint ======
-    lv_obj_t *hint = lv_label_create(ui_ScreenPageSettings);
-    lv_label_set_text(hint, "Swipe up to go back\nVehicle applies after reconnect");
-    lv_obj_set_style_text_font(hint, ui_font_hint(12), LV_PART_MAIN);
-    lv_obj_set_style_text_color(hint, lv_color_hex(0x555555), LV_PART_MAIN);
-    lv_obj_align(hint, LV_ALIGN_CENTER, 0, layout.hint_y);
-
     // Events - swipe to go back
     lv_obj_add_event_cb(ui_ScreenPageSettings, on_settings_background, LV_EVENT_GESTURE, NULL);
+    aux_sensor_demand_refresh();
 }

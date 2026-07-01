@@ -7,6 +7,7 @@
 #include "../ui_font_profile.h"
 #include "../ui_layout.h"
 #include "../ui_round_shell.h"
+#include "app_obd_dsp/aux_sensor_demand.h"
 #include "bsp_obd_dsp/nvs_storage.h"
 
 extern void ui_event_obd_prot_background(lv_event_t * e);
@@ -102,17 +103,6 @@ void ui_ScreenPageODBProtocal_screen_init(void)
     lv_obj_set_style_text_align(ui_LabelOBDIIText, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_LabelOBDIIText, ui_font_typoder(36), LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    ui_LabelSureTipText = lv_label_create(ui_ScreenPageODBProtocal);
-    lv_obj_set_width(ui_LabelSureTipText, LV_SIZE_CONTENT);   /// 1
-    lv_obj_set_height(ui_LabelSureTipText, LV_SIZE_CONTENT);    /// 1
-    lv_obj_align(ui_LabelSureTipText, LV_ALIGN_CENTER, layout.hint_x, layout.hint_y);
-    lv_label_set_text(ui_LabelSureTipText, "Long press confirm\nSwipe up to go back");
-    lv_obj_set_style_text_color(ui_LabelSureTipText, lv_color_hex(0x333333), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(ui_LabelSureTipText, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_align(ui_LabelSureTipText, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui_LabelSureTipText, ui_font_typoder(20), LV_PART_MAIN | LV_STATE_DEFAULT);
-
-
     /* 事件回调 */
     lv_obj_add_event_cb(ui_ScreenPageODBProtocal, ui_event_obd_prot_background, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(ui_ScreenPageODBProtocal, ui_event_obd_prot_background, LV_EVENT_LONG_PRESSED, NULL);
@@ -121,5 +111,6 @@ void ui_ScreenPageODBProtocal_screen_init(void)
     /* 根据 NVS 当前协议设置初始滚轮 */
     const nvs_user_cfg_t *cfg = nvs_cfg_get();
     lv_roller_set_selected(ui_RollerODBProtocalChoose, cfg->protocol, LV_ANIM_OFF);
+    aux_sensor_demand_refresh();
 
 }

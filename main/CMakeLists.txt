@@ -1,6 +1,13 @@
 file(GLOB_RECURSE SOURCES_C *.c)
 file(GLOB_RECURSE SOURCES_CPP *.cpp)
 
+# Keep newly added runtime helpers from being skipped by stale incremental
+# configure state when the source tree changes under an existing build dir.
+set(AUX_SENSOR_DEMAND_SRC "${CMAKE_CURRENT_LIST_DIR}/app_obd_dsp/aux_sensor_demand.c")
+if (NOT AUX_SENSOR_DEMAND_SRC IN_LIST SOURCES_C)
+    list(APPEND SOURCES_C "${AUX_SENSOR_DEMAND_SRC}")
+endif()
+
 if (CONFIG_OBD_BOARD_WS_175_AMOLED)
     list(REMOVE_ITEM SOURCES_C
         "${CMAKE_CURRENT_LIST_DIR}/bsp_obd_dsp/ads1115_oil_pressure.c"

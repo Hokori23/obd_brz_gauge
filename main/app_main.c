@@ -23,6 +23,7 @@
 #include "esp_lv_adapter.h"
 #endif
 
+#include "app_obd_dsp/aux_sensor_demand.h"
 #include "app_obd_dsp/lvgl_buffer_profile.h"
 #include "app_obd_dsp/obd_data_cache.h"
 #include "app_obd_dsp/vehicle_profiles.h"
@@ -423,6 +424,7 @@ void app_main(void)
     racechrono_ble_diy_start();
 
     rs485_brake_temp_start();
+    aux_sensor_demand_refresh();
 
 #if CONFIG_OBD_BOARD_WS_185
     oil_pressure_start();

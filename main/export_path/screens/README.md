@@ -32,3 +32,8 @@
 
 - [ui_ScreenPageBLEScan.md](ui_ScreenPageBLEScan.md)
 - [ui_ScreenPageSettings.md](ui_ScreenPageSettings.md)
+
+## Current WS175 notes
+
+- Dashboard polish summary for the latest dynamic-home follow-up:
+  - [docs/WS175_DASHBOARD_POLISH_2026-07-02.md](/D:/Program%20Files%20(x86)/Code%20Projects/obd_brz_gauge/docs/WS175_DASHBOARD_POLISH_2026-07-02.md)
