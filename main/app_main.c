@@ -40,19 +40,24 @@ extern void ui_init(void);
 
 SemaphoreHandle_t lvgl_mux = NULL;
 
+#if !CONFIG_OBD_BOARD_WS_175_AMOLED
 static bool s_touch_active = false;
 static int s_touch_last_x = -1;
 static int s_touch_last_y = -1;
 static uint32_t s_touch_press_tick = 0;
 static uint32_t s_flush_request_count = 0;
 static lv_disp_drv_t *s_registered_disp_drv = NULL;
+#endif
 
 #define LVGL_TICK_PERIOD_MS    2
 #define LVGL_TASK_MAX_DELAY_MS 500
 #define LVGL_TASK_MIN_DELAY_MS 2
 #define LVGL_TASK_STACK_SIZE   (4 * 1024)
 #define LVGL_TASK_PRIORITY     2
+#define LVGL_TRACE_TOUCH       0
+#define LVGL_TRACE_FLUSH       0
 
+#if !CONFIG_OBD_BOARD_WS_175_AMOLED
 static lv_color_t *alloc_lvgl_draw_buffer(size_t bytes, const char *label, bool prefer_internal_dma)
 {
     lv_color_t *buffer = NULL;
@@ -99,12 +104,14 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
     esp_err_t err;
 
     s_flush_request_count++;
+#if LVGL_TRACE_FLUSH
     if (s_flush_request_count <= 12 || (s_flush_request_count % 20) == 0 ||
         ((area->x2 - area->x1) > 300 && (area->y2 - area->y1) > 300)) {
-        ESP_LOGI(TAG, "flush req #%" PRIu32 ": area=(%d,%d)-(%d,%d) px=%dx%d panel=%p",
+        ESP_LOGD(TAG, "flush req #%" PRIu32 ": area=(%d,%d)-(%d,%d) px=%dx%d panel=%p",
                  s_flush_request_count, area->x1, area->y1, area->x2, area->y2,
                  area->x2 - area->x1 + 1, area->y2 - area->y1 + 1, (void *)panel);
     }
+#endif
 
     err = esp_lcd_panel_draw_bitmap(panel, area->x1, area->y1,
                                     area->x2 + 1, area->y2 + 1, color_map);
@@ -124,6 +131,7 @@ static void lvgl_rounder_cb(lv_disp_drv_t *disp_drv, lv_area_t *area)
     area->x2 = ((area->x2 >> 1) << 1) + 1;
     area->y2 = ((area->y2 >> 1) << 1) + 1;
 }
+#endif
 
 static void lvgl_rounder_area_cb(lv_area_t *area, void *user_data)
 {
@@ -134,6 +142,7 @@ static void lvgl_rounder_area_cb(lv_area_t *area, void *user_data)
     area->y2 = ((area->y2 >> 1) << 1) + 1;
 }
 
+#if !CONFIG_OBD_BOARD_WS_175_AMOLED
 static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 {
     esp_lcd_touch_handle_t touch = (esp_lcd_touch_handle_t)drv->user_data;
@@ -152,9 +161,13 @@ static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
         if (!s_touch_active) {
             s_touch_active = true;
             s_touch_press_tick = lv_tick_get();
-            ESP_LOGI(TAG, "Touch press: x=%d y=%d", touch_point.x, touch_point.y);
+#if LVGL_TRACE_TOUCH
+            ESP_LOGD(TAG, "Touch press: x=%d y=%d", touch_point.x, touch_point.y);
+#endif
         } else if (s_touch_last_x != touch_point.x || s_touch_last_y != touch_point.y) {
-            ESP_LOGI(TAG, "Touch move: x=%d y=%d", touch_point.x, touch_point.y);
+#if LVGL_TRACE_TOUCH
+            ESP_LOGD(TAG, "Touch move: x=%d y=%d", touch_point.x, touch_point.y);
+#endif
         }
 
         s_touch_last_x = touch_point.x;
@@ -162,9 +175,11 @@ static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
         if (s_touch_active) {
+#if LVGL_TRACE_TOUCH
             uint32_t held_ms = lv_tick_elaps(s_touch_press_tick);
-            ESP_LOGI(TAG, "Touch release: x=%d y=%d held=%" PRIu32 "ms",
+            ESP_LOGD(TAG, "Touch release: x=%d y=%d held=%" PRIu32 "ms",
                      s_touch_last_x, s_touch_last_y, held_ms);
+#endif
             s_touch_active = false;
             s_touch_last_x = -1;
             s_touch_last_y = -1;
@@ -191,6 +206,7 @@ static void lvgl_unlock(void)
     assert(lvgl_mux && "lvgl_mux not created");
     xSemaphoreGive(lvgl_mux);
 }
+#endif
 
 bool app_lvgl_lock(int timeout_ms)
 {
@@ -210,6 +226,7 @@ void app_lvgl_unlock(void)
 #endif
 }
 
+#if !CONFIG_OBD_BOARD_WS_175_AMOLED
 static void lvgl_port_task(void *arg)
 {
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
@@ -232,6 +249,7 @@ static void lvgl_port_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(task_delay_ms));
     }
 }
+#endif
 
 void app_main(void)
 {
@@ -298,12 +316,12 @@ void app_main(void)
                 .rotation = ESP_LV_ADAPTER_ROTATE_0,
                 .hor_res = board_ctx.hor_res,
                 .ver_res = board_ctx.ver_res,
-                .buffer_height = 50,
+                .buffer_height = board_ctx.ver_res,
                 .use_psram = true,
-                .enable_ppa_accel = false,
+                .enable_ppa_accel = true,
                 .require_double_buffer = true,
             },
-            .tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE,
+            .tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_DOUBLE_FULL,
         };
         lv_display_t *disp = NULL;
 
