@@ -448,6 +448,22 @@ static lv_coord_t ui_home_pct(lv_coord_t total, uint8_t percent)
     return (lv_coord_t)((total * percent) / 100);
 }
 
+static lv_coord_t ui_home_circular_safe_left(lv_coord_t panel_x, lv_coord_t panel_y)
+{
+    int32_t r = (int32_t)ui_round_radius();
+    int32_t dy = (int32_t)panel_y - r;
+    int32_t r2_dy2 = r * r - dy * dy;
+    if (r2_dy2 <= 0) {
+        return 0;
+    }
+    lv_coord_t circle_left = (lv_coord_t)(r - (int32_t)sqrtf((float)r2_dy2));
+    lv_coord_t margin = ui_layout_px(3);
+    if (circle_left + margin > panel_x) {
+        return (circle_left + margin) - panel_x;
+    }
+    return 0;
+}
+
 static void ui_home_create_slot_card(lv_obj_t *parent,
                                      lv_coord_t x,
                                      lv_coord_t y,
@@ -461,6 +477,10 @@ static void ui_home_create_slot_card(lv_obj_t *parent,
     bool compact = tiny || (w <= ui_layout_px(170)) || (h <= ui_layout_px(110));
     lv_coord_t label_inset_x = tiny ? ui_layout_px(4) : (compact ? ui_layout_px(6) : ui_layout_px(10));
     lv_coord_t label_inset_y = tiny ? ui_layout_px(2) : (compact ? ui_layout_px(4) : ui_layout_px(8));
+    lv_coord_t circ_extra = ui_home_circular_safe_left(x, y + label_inset_y);
+    if (circ_extra > label_inset_x) {
+        label_inset_x = circ_extra;
+    }
     lv_coord_t unit_inset_x = tiny ? ui_layout_px(4) : (compact ? ui_layout_px(6) : ui_layout_px(10));
     lv_coord_t unit_inset_y = tiny ? ui_layout_px(1) : (compact ? ui_layout_px(2) : ui_layout_px(6));
     lv_coord_t text_width = w - (label_inset_x * 2);
