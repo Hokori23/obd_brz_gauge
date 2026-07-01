@@ -5,6 +5,7 @@
 #include "app_obd_dsp/vehicle_profiles.h"
 #include "esp_log.h"
 #include "export_path/ui.h"
+#include "export_path/ui_runtime_common.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -57,6 +58,65 @@ static void cfg_sanitize(nvs_user_cfg_t *cfg);
 static esp_err_t load_blob(const char *ns, const char *key, void *out, size_t len);
 static esp_err_t save_blob(const char *ns, const char *key, const void *data, size_t len);
 static void stat_flush_task(void *arg);
+
+bool ui_dashboard_item_supported_for_vehicle(uint8_t vehicle_profile_idx, uint8_t item)
+{
+    const vehicle_profile_t *profile = vehicle_profile_get(vehicle_profile_idx);
+    disp_item_t disp_item = (disp_item_t)item;
+
+    if (item >= DISP_ITEM_COUNT || profile == NULL) {
+        return false;
+    }
+
+    switch (disp_item) {
+    case DISP_ITEM_OIL:
+        return profile->oil_temp_strategy.primary != OIL_TEMP_MODE_NONE ||
+               profile->oil_temp_strategy.secondary != OIL_TEMP_MODE_NONE ||
+               profile->oil_temp_strategy.tertiary != OIL_TEMP_MODE_NONE;
+    case DISP_ITEM_BOOST:
+        return profile->has_boost;
+    default:
+        return true;
+    }
+}
+
+bool ui_dashboard_page_slot_is_unsupported(const ui_dashboard_page_cfg_t *page, uint8_t slot_index)
+{
+    if (page == NULL || slot_index >= UI_DASHBOARD_MAX_SLOTS) {
+        return false;
+    }
+
+    return (page->rsv & (uint8_t)(1u << slot_index)) != 0u;
+}
+
+void ui_dashboard_cfg_format_for_vehicle(ui_dashboard_cfg_t *cfg, uint8_t vehicle_profile_idx)
+{
+    static const uint8_t supported_mask = (uint8_t)((1u << UI_DASHBOARD_MAX_SLOTS) - 1u);
+
+    if (cfg == NULL) {
+        return;
+    }
+
+    for (uint8_t i = 0; i < UI_DASHBOARD_MAX_PAGES; ++i) {
+        ui_dashboard_page_cfg_t *page = &cfg->pages[i];
+        uint8_t unsupported_mask = 0u;
+
+        page->rsv &= supported_mask;
+        if (i >= cfg->gauge_page_count) {
+            page->rsv = 0u;
+            continue;
+        }
+
+        for (uint8_t j = 0; j < page->slot_count && j < UI_DASHBOARD_MAX_SLOTS; ++j) {
+            uint8_t item = (uint8_t)(page->slot_items[j] % DISP_ITEM_COUNT);
+            if (!ui_dashboard_item_supported_for_vehicle(vehicle_profile_idx, item)) {
+                unsupported_mask |= (uint8_t)(1u << j);
+            }
+        }
+
+        page->rsv = unsupported_mask;
+    }
+}
 
 esp_err_t nvs_storage_init(void)
 {
@@ -256,6 +316,7 @@ static void dashboard_cfg_sanitize(ui_dashboard_cfg_t *cfg)
                 page->slot_items[j] = 5; /* DISP_ITEM_RPM */
             }
         }
+        page->rsv &= (uint8_t)((1u << UI_DASHBOARD_MAX_SLOTS) - 1u);
     }
 }
 
@@ -338,6 +399,7 @@ static void cfg_sanitize(nvs_user_cfg_t *cfg)
     }
 
     dashboard_cfg_sanitize(&cfg->dashboard_cfg);
+    ui_dashboard_cfg_format_for_vehicle(&cfg->dashboard_cfg, cfg->vehicle_profile_idx);
     dashboard_cfg_sanitize_default_page(cfg);
 }
 

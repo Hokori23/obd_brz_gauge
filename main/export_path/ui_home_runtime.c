@@ -19,8 +19,6 @@
 #include "bsp_obd_dsp/nvs_storage.h"
 #include "esp_log.h"
 
-static const char *TAG = "ui_home";
-
 #define UI_NAV_ANIM_MS 0
 #define UI_HOME_MAX_TILE_COUNT (1u + UI_DASHBOARD_MAX_PAGES + 1u)
 
@@ -91,6 +89,8 @@ static void ui_home_create_divider(lv_obj_t *parent,
                                    lv_coord_t y,
                                    lv_coord_t w,
                                    lv_coord_t h);
+static uint8_t ui_home_collect_visible_items(const ui_dashboard_page_cfg_t *page,
+                                             disp_item_t items[UI_DASHBOARD_MAX_SLOTS]);
 static int16_t ui_home_slot_name_font(uint8_t slot_count);
 static int16_t ui_home_slot_unit_font(uint8_t slot_count);
 static int16_t ui_home_slot_value_font(lv_coord_t text_width,
@@ -102,7 +102,6 @@ static void ui_home_apply_slot_typography(lv_obj_t *name_label,
                                           lv_obj_t *unit_label,
                                           disp_item_t item,
                                           uint8_t slot_count);
-static lv_coord_t ui_home_pct(lv_coord_t total, uint8_t percent);
 static void ui_home_build_gauge_layout(lv_obj_t *parent,
                                        uint8_t slot_count,
                                        ui_home_slot_layout_t layouts[UI_DASHBOARD_MAX_SLOTS]);
@@ -230,22 +229,6 @@ static int8_t ui_home_page_to_gauge_index(uint8_t page_id)
     return s_home_tile_descs[page_id].gauge_index;
 }
 
-static const char *ui_home_gesture_dir_name(lv_dir_t dir)
-{
-    switch (dir) {
-    case LV_DIR_LEFT:
-        return "LEFT";
-    case LV_DIR_RIGHT:
-        return "RIGHT";
-    case LV_DIR_TOP:
-        return "TOP";
-    case LV_DIR_BOTTOM:
-        return "BOTTOM";
-    default:
-        return "NONE";
-    }
-}
-
 static void ui_home_set_active_page(uint8_t page_id, lv_anim_enable_t anim_en)
 {
     if (page_id >= s_home_tile_count) {
@@ -281,6 +264,29 @@ static lv_obj_t *ui_home_create_content_root(lv_obj_t *tile)
     lv_obj_set_style_opa(root, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_transform_zoom(root, 256, LV_PART_MAIN | LV_STATE_DEFAULT);
     return root;
+}
+
+static uint8_t ui_home_collect_visible_items(const ui_dashboard_page_cfg_t *page,
+                                             disp_item_t items[UI_DASHBOARD_MAX_SLOTS])
+{
+    uint8_t count = 0;
+    uint8_t vehicle_profile_idx;
+
+    if (page == NULL || items == NULL) {
+        return 0;
+    }
+
+    vehicle_profile_idx = nvs_cfg_get()->vehicle_profile_idx;
+    for (uint8_t i = 0; i < page->slot_count && i < UI_DASHBOARD_MAX_SLOTS; ++i) {
+        uint8_t item = (uint8_t)(page->slot_items[i] % DISP_ITEM_COUNT);
+        if (ui_dashboard_page_slot_is_unsupported(page, i) ||
+            !ui_dashboard_item_supported_for_vehicle(vehicle_profile_idx, item)) {
+            continue;
+        }
+        items[count++] = (disp_item_t)item;
+    }
+
+    return count;
 }
 
 static void ui_home_menu_open_settings(lv_event_t *e)
@@ -454,11 +460,6 @@ static void ui_home_create_menu_content(uint8_t tile_id, lv_obj_t *parent)
     rt->menu_vehicle_label = vehicle;
     rt->menu_ble_label = ble;
     rt->menu_settings_btn = btn;
-}
-
-static lv_coord_t ui_home_pct(lv_coord_t total, uint8_t percent)
-{
-    return (lv_coord_t)((total * percent) / 100);
 }
 
 static lv_coord_t ui_home_circle_left_at_y(lv_coord_t y)
@@ -862,30 +863,44 @@ static void ui_home_create_gauge_content(uint8_t tile_id, lv_obj_t *parent, uint
     const ui_dashboard_page_cfg_t *page = ui_home_get_gauge_cfg(gauge_index);
     ui_home_tile_runtime_t *rt = &s_home_tile_runtime[tile_id];
     ui_home_slot_layout_t layouts[UI_DASHBOARD_MAX_SLOTS];
+    disp_item_t visible_items[UI_DASHBOARD_MAX_SLOTS];
+    uint8_t visible_count;
 
     if (page == NULL) {
         return;
     }
 
     rt->root = parent;
-    rt->slot_count = page->slot_count;
-    ui_home_build_gauge_layout(parent, page->slot_count, layouts);
+    visible_count = ui_home_collect_visible_items(page, visible_items);
+    rt->slot_count = visible_count;
+    if (visible_count == 0u) {
+        lv_obj_t *placeholder = lv_label_create(parent);
+        lv_label_set_text(placeholder, "NO SUPPORTED ITEM");
+        lv_obj_set_style_text_font(placeholder, ui_font_typoder(20), LV_PART_MAIN);
+        lv_obj_set_style_text_color(placeholder, lv_color_hex(0x7A7A7A), LV_PART_MAIN);
+        lv_obj_set_style_text_align(placeholder, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_set_width(placeholder, ui_layout_px(220));
+        lv_obj_center(placeholder);
+        return;
+    }
 
-    for (uint8_t i = 0; i < page->slot_count; ++i) {
+    ui_home_build_gauge_layout(parent, visible_count, layouts);
+
+    for (uint8_t i = 0; i < visible_count; ++i) {
         ui_home_create_slot_card(parent,
                                  layouts[i].x,
                                  layouts[i].y,
                                  layouts[i].w,
                                  layouts[i].h,
-                                 page->slot_count,
+                                 visible_count,
                                  &rt->name_labels[i],
                                  &rt->value_labels[i],
                                  &rt->unit_labels[i]);
         ui_home_apply_slot_typography(rt->name_labels[i],
                                       rt->value_labels[i],
                                       rt->unit_labels[i],
-                                      (disp_item_t)(page->slot_items[i] % DISP_ITEM_COUNT),
-                                      page->slot_count);
+                                      visible_items[i],
+                                      visible_count);
     }
 }
 
@@ -1291,11 +1306,14 @@ void ui_home_runtime_refresh_active_tile(void)
         case UI_HOME_TILE_GAUGE: {
             const ui_dashboard_page_cfg_t *page =
                 ui_home_get_gauge_cfg((uint8_t)s_home_tile_descs[tile_id].gauge_index);
+            disp_item_t visible_items[UI_DASHBOARD_MAX_SLOTS];
+            uint8_t visible_count;
             if (page == NULL) {
                 break;
             }
-            for (uint8_t i = 0; i < rt->slot_count && i < page->slot_count; ++i) {
-                disp_item_t item = (disp_item_t)(page->slot_items[i] % DISP_ITEM_COUNT);
+            visible_count = ui_home_collect_visible_items(page, visible_items);
+            for (uint8_t i = 0; i < rt->slot_count && i < visible_count; ++i) {
+                disp_item_t item = visible_items[i];
                 int32_t value = 0;
                 bool valid = false;
 
@@ -1451,12 +1469,15 @@ bool ui_home_runtime_active_page_uses_item(disp_item_t item)
 
     const ui_dashboard_page_cfg_t *page =
         ui_home_get_gauge_cfg((uint8_t)s_home_tile_descs[s_home_active_page].gauge_index);
+    disp_item_t visible_items[UI_DASHBOARD_MAX_SLOTS];
+    uint8_t visible_count;
     if (page == NULL) {
         return false;
     }
 
-    for (uint8_t i = 0; i < page->slot_count && i < UI_DASHBOARD_MAX_SLOTS; ++i) {
-        if ((disp_item_t)(page->slot_items[i] % DISP_ITEM_COUNT) == item) {
+    visible_count = ui_home_collect_visible_items(page, visible_items);
+    for (uint8_t i = 0; i < visible_count; ++i) {
+        if (visible_items[i] == item) {
             return true;
         }
     }

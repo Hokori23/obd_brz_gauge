@@ -20,6 +20,48 @@ static lv_obj_t *s_dashboard_cfg_slot_count_roller = NULL;
 static lv_obj_t *s_dashboard_cfg_slot_item_rollers[UI_DASHBOARD_MAX_SLOTS] = {0};
 static lv_obj_t *s_dashboard_cfg_slot_rows[UI_DASHBOARD_MAX_SLOTS] = {0};
 static lv_obj_t *s_dashboard_cfg_body = NULL;
+static uint8_t s_dashboard_cfg_supported_items[DISP_ITEM_COUNT] = {0};
+static uint8_t s_dashboard_cfg_supported_item_count = 0;
+
+static void ui_dashboard_config_rebuild_supported_items(void)
+{
+    uint8_t vehicle_profile_idx = nvs_cfg_get()->vehicle_profile_idx;
+
+    s_dashboard_cfg_supported_item_count = 0;
+    for (uint8_t i = 0; i < DISP_ITEM_COUNT; ++i) {
+        if (!ui_dashboard_item_supported_for_vehicle(vehicle_profile_idx, i)) {
+            continue;
+        }
+        s_dashboard_cfg_supported_items[s_dashboard_cfg_supported_item_count++] = i;
+    }
+
+    if (s_dashboard_cfg_supported_item_count == 0u) {
+        s_dashboard_cfg_supported_items[0] = DISP_ITEM_RPM;
+        s_dashboard_cfg_supported_item_count = 1u;
+    }
+}
+
+static uint8_t ui_dashboard_config_default_supported_item(void)
+{
+    for (uint8_t i = 0; i < s_dashboard_cfg_supported_item_count; ++i) {
+        if (s_dashboard_cfg_supported_items[i] == DISP_ITEM_RPM) {
+            return DISP_ITEM_RPM;
+        }
+    }
+
+    return s_dashboard_cfg_supported_items[0];
+}
+
+static uint16_t ui_dashboard_config_selected_index_for_item(uint8_t item)
+{
+    for (uint16_t i = 0; i < s_dashboard_cfg_supported_item_count; ++i) {
+        if (s_dashboard_cfg_supported_items[i] == item) {
+            return i;
+        }
+    }
+
+    return 0;
+}
 
 static void ui_dashboard_config_screen_change_with_anim(lv_obj_t **target_scr,
                                                         lv_scr_load_anim_t anim,
@@ -146,10 +188,13 @@ static void ui_dashboard_config_slot_count_changed(lv_event_t *e)
     slot_count = (uint8_t)(lv_roller_get_selected(s_dashboard_cfg_slot_count_roller) + 1u);
     current_page = &cfg.dashboard_cfg.pages[s_dashboard_config_gauge_index];
     if (slot_count > current_page->slot_count) {
+        uint8_t default_item = ui_dashboard_config_default_supported_item();
         for (uint8_t i = current_page->slot_count; i < slot_count; ++i) {
-            cfg.dashboard_cfg.pages[s_dashboard_config_gauge_index].slot_items[i] = DISP_ITEM_RPM;
+            cfg.dashboard_cfg.pages[s_dashboard_config_gauge_index].slot_items[i] = default_item;
             if (s_dashboard_cfg_slot_item_rollers[i] != NULL) {
-                lv_roller_set_selected(s_dashboard_cfg_slot_item_rollers[i], DISP_ITEM_RPM, LV_ANIM_OFF);
+                lv_roller_set_selected(s_dashboard_cfg_slot_item_rollers[i],
+                                       ui_dashboard_config_selected_index_for_item(default_item),
+                                       LV_ANIM_OFF);
             }
         }
     }
@@ -179,7 +224,7 @@ static void ui_dashboard_config_slot_item_changed(lv_event_t *e)
     }
 
     cfg.dashboard_cfg.pages[s_dashboard_config_gauge_index].slot_items[slot_index] =
-        (uint8_t)lv_roller_get_selected(s_dashboard_cfg_slot_item_rollers[slot_index]);
+        s_dashboard_cfg_supported_items[lv_roller_get_selected(s_dashboard_cfg_slot_item_rollers[slot_index])];
     nvs_cfg_set(&cfg);
 }
 
@@ -244,11 +289,12 @@ static void ui_dashboard_config_screen_init(void)
         return;
     }
 
-    for (uint8_t i = 0; i < DISP_ITEM_COUNT; ++i) {
+    ui_dashboard_config_rebuild_supported_items();
+    for (uint8_t i = 0; i < s_dashboard_cfg_supported_item_count; ++i) {
         if (i > 0u) {
             strlcat(item_options, "\n", sizeof(item_options));
         }
-        strlcat(item_options, ui_disp_item_name(i), sizeof(item_options));
+        strlcat(item_options, ui_disp_item_name(s_dashboard_cfg_supported_items[i]), sizeof(item_options));
     }
 
     page = ui_dashboard_config_get_page_cfg(s_dashboard_config_gauge_index);
@@ -369,7 +415,13 @@ static void ui_dashboard_config_screen_init(void)
         s_dashboard_cfg_slot_item_rollers[i] = lv_roller_create(row);
         lv_roller_set_options(s_dashboard_cfg_slot_item_rollers[i], item_options, LV_ROLLER_MODE_NORMAL);
         lv_roller_set_visible_row_count(s_dashboard_cfg_slot_item_rollers[i], 1);
-        lv_roller_set_selected(s_dashboard_cfg_slot_item_rollers[i], page->slot_items[i] % DISP_ITEM_COUNT, LV_ANIM_OFF);
+        lv_roller_set_selected(s_dashboard_cfg_slot_item_rollers[i],
+                               ui_dashboard_config_selected_index_for_item(
+                                   ui_dashboard_item_supported_for_vehicle(nvs_cfg_get()->vehicle_profile_idx,
+                                                                           page->slot_items[i] % DISP_ITEM_COUNT)
+                                       ? (uint8_t)(page->slot_items[i] % DISP_ITEM_COUNT)
+                                       : ui_dashboard_config_default_supported_item()),
+                               LV_ANIM_OFF);
         lv_obj_set_size(s_dashboard_cfg_slot_item_rollers[i], item_roller_w, slot_row_h);
         lv_obj_align(s_dashboard_cfg_slot_item_rollers[i], LV_ALIGN_RIGHT_MID, 0, 0);
         lv_obj_clear_flag(s_dashboard_cfg_slot_item_rollers[i], LV_OBJ_FLAG_GESTURE_BUBBLE);
@@ -407,6 +459,7 @@ void ui_dashboard_config_reset(void)
     s_dashboard_config_gauge_index = 0;
     s_dashboard_cfg_body = NULL;
     s_dashboard_cfg_slot_count_roller = NULL;
+    s_dashboard_cfg_supported_item_count = 0;
     memset(s_dashboard_cfg_slot_item_rollers, 0, sizeof(s_dashboard_cfg_slot_item_rollers));
     memset(s_dashboard_cfg_slot_rows, 0, sizeof(s_dashboard_cfg_slot_rows));
 }

@@ -20,7 +20,7 @@ typedef struct {
 typedef struct {
     uint8_t slot_count;
     uint8_t slot_items[UI_DASHBOARD_MAX_SLOTS];
-    uint8_t rsv;
+    uint8_t rsv; /* bitmask: 1 means slot item is unsupported for current vehicle */
 } ui_dashboard_page_cfg_t;
 
 typedef struct {
@@ -64,6 +64,9 @@ esp_err_t nvs_storage_init(void);
 
 const nvs_user_cfg_t *nvs_cfg_get(void);
 esp_err_t nvs_cfg_set(const nvs_user_cfg_t *cfg);
+bool ui_dashboard_item_supported_for_vehicle(uint8_t vehicle_profile_idx, uint8_t item);
+void ui_dashboard_cfg_format_for_vehicle(ui_dashboard_cfg_t *cfg, uint8_t vehicle_profile_idx);
+bool ui_dashboard_page_slot_is_unsupported(const ui_dashboard_page_cfg_t *page, uint8_t slot_index);
 
 const nvs_stat_t *nvs_stat_get(void);
 void nvs_stat_add_odometer(uint32_t delta_m);
