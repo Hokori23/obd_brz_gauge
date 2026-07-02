@@ -55,6 +55,10 @@ $tests = @(
         Output = Join-Path $outputDir "test_aux_sensor_demand_logic.o"
     },
     @{
+        Source = Join-Path $PSScriptRoot "..\tests\dashboard\test_obd_poll_schedule_logic.c"
+        Output = Join-Path $outputDir "test_obd_poll_schedule_logic.o"
+    },
+    @{
         Source = Join-Path $PSScriptRoot "..\tests\dashboard\test_zc6_gforce_monitor_decode.c"
         Output = Join-Path $outputDir "test_zc6_gforce_monitor_decode.o"
     }
@@ -136,6 +140,11 @@ if ($LASTEXITCODE -ne 0) {
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_aux_sensor_demand_obd_contract.ps1")
 if ($LASTEXITCODE -ne 0) {
     throw "aux sensor demand OBD contract checks failed"
+}
+
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_obd_poll_demand_schedule_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "OBD poll demand schedule contract checks failed"
 }
 
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_gforce_obd_monitor_contract.ps1")

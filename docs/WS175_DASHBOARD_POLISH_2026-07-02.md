@@ -39,11 +39,16 @@ This round focused on the dynamic dashboard home and its related drill-in screen
   - stats and diagnostic error logs are snapshotted under lock
   - the actual NVS write happens outside the critical section
   - dirty flags are cleared only if no newer write arrived during the flush window
+- OBD PID polling now skips empty schedule gaps instead of paying one `slot_delay` per skipped slot:
+  - the scheduler jumps straight to the next demanded PID slot
+  - repeated RPM / speed / TPS weighting still stays intact
+  - when no OBD metric is currently demanded, the task falls back to a slower idle delay instead of spinning through the full schedule
 - Added regression contracts for:
   - lazy home metric reads
   - neighbor-tile refresh cadence
   - NVS flush contention
   - persisted error-log background flush flow
+  - demanded OBD poll-slot scheduling
 
 ## Key findings
 
@@ -53,6 +58,7 @@ This round focused on the dynamic dashboard home and its related drill-in screen
 - On this hardware/software stack, the next meaningful UI-performance win is reducing unnecessary LVGL text/layout work, not pushing the WS175 display path toward risky full-frame PSRAM buffering.
 - For storage writes, lock hold time matters more than raw flush frequency; moving NVS I/O out of the mutex is a better ROI optimization than simply stretching the timer further.
 - On the OBD/UI side, page-switch correctness and performance are coupled: if swipe navigation does not immediately refresh demand state, the system wastes bandwidth polling data for no-longer-visible widgets.
+- In the OBD task, merely "skipping send" is not enough. If skipped slots still consume the same delay budget, low-cardinality dashboards can feel much slower than they should.
 
 ## Verification
 
@@ -60,6 +66,9 @@ This round focused on the dynamic dashboard home and its related drill-in screen
 - `idf.py build`
 - The static test bundle now includes the new refresh-cadence and NVS-flush contention contracts, so later refactors have a higher chance of catching silent performance regressions.
 - Demand-driven workflow contracts now also cover swipe-driven active-page changes, not only programmatic page loads.
+- OBD poll scheduling now has both:
+  - a pure host-testable helper
+  - a source-level contract ensuring the runtime jumps to demanded slots instead of linearly burning skipped delays
 
 ## Next time
 

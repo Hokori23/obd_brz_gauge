@@ -12,6 +12,7 @@
 #include "esp_timer.h"
 #include "nvs_flash.h"
 #include "app_obd_dsp/aux_sensor_demand.h"
+#include "app_obd_dsp/obd_poll_schedule_logic.h"
 #include "app_obd_dsp/obd_data_cache.h"
 #include "app_obd_dsp/zc6_gforce_monitor_decode.h"
 #include "app_obd_dsp/vehicle_profiles.h"
@@ -49,6 +50,8 @@ typedef enum {
     OBD_STREAM_MODE_PID_POLL = 0,
     OBD_STREAM_MODE_GFORCE_MONITOR,
 } obd_stream_mode_t;
+
+#define OBD_IDLE_NO_DEMAND_DELAY_MS 200u
 
 static esp_gatt_if_t s_gattc_if = 0;
 static uint16_t s_conn_id = 0xFFFF;
@@ -318,27 +321,6 @@ static void default_on_raw_notify(const uint8_t *data, size_t len) {
 
 // ---- 閸楀繗顔呴懛顏勫З濡偓濞村鍤遍弫?----
 // 鐏忔繆鐦幍鈧張澶婂礂鐠侇噯绱?-11閿涘绱濋柅姘崇箖閸欐垿鈧?01 0C 閿涘牐顕?RPM閿涘娼甸崚銈嗘焽閸楀繗顔呴弰顖氭儊閺堝鏅?
-static uint32_t obd_poll_slot_to_demand_mask(obd_poll_slot_t slot)
-{
-    switch (slot) {
-    case OBD_POLL_SLOT_RPM: return AUX_OBD_DEMAND_RPM;
-    case OBD_POLL_SLOT_IAT: return AUX_OBD_DEMAND_IAT;
-    case OBD_POLL_SLOT_SPEED: return AUX_OBD_DEMAND_SPEED;
-    case OBD_POLL_SLOT_CLT: return AUX_OBD_DEMAND_CLT;
-    case OBD_POLL_SLOT_LOAD: return AUX_OBD_DEMAND_LOAD;
-    case OBD_POLL_SLOT_TPS: return AUX_OBD_DEMAND_TPS;
-    case OBD_POLL_SLOT_OIL: return AUX_OBD_DEMAND_OIL;
-    case OBD_POLL_SLOT_BAT: return AUX_OBD_DEMAND_BAT;
-    case OBD_POLL_SLOT_BOOST: return AUX_OBD_DEMAND_BOOST;
-    default: return 0u;
-    }
-}
-
-static bool elm327_poll_slot_is_needed(obd_poll_slot_t slot, uint32_t demand_mask)
-{
-    return (demand_mask & obd_poll_slot_to_demand_mask(slot)) != 0u;
-}
-
 static void elm327_send_standard_init_sequence(uint8_t protocol_to_use, const char *fixed_header_cmd)
 {
     char atsp_cmd[16];
@@ -666,36 +648,36 @@ static void default_on_parsed_manifold_pressure(uint32_t map_kpa) {
 }
  
 static void obd_poll_task(void *arg) {
-    static const obd_poll_slot_t s_poll_seq_na[] = {
-        OBD_POLL_SLOT_RPM,
-        OBD_POLL_SLOT_SPEED,
-        OBD_POLL_SLOT_TPS,
-        OBD_POLL_SLOT_CLT,
-        OBD_POLL_SLOT_RPM,
-        OBD_POLL_SLOT_SPEED,
-        OBD_POLL_SLOT_LOAD,
-        OBD_POLL_SLOT_TPS,
-        OBD_POLL_SLOT_OIL,
-        OBD_POLL_SLOT_RPM,
-        OBD_POLL_SLOT_SPEED,
-        OBD_POLL_SLOT_IAT,
-        OBD_POLL_SLOT_BAT,
+    static const obd_poll_schedule_entry_t s_poll_seq_na[] = {
+        {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
+        {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
+        {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
+        {OBD_POLL_SLOT_CLT, AUX_OBD_DEMAND_CLT},
+        {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
+        {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
+        {OBD_POLL_SLOT_LOAD, AUX_OBD_DEMAND_LOAD},
+        {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
+        {OBD_POLL_SLOT_OIL, AUX_OBD_DEMAND_OIL},
+        {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
+        {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
+        {OBD_POLL_SLOT_IAT, AUX_OBD_DEMAND_IAT},
+        {OBD_POLL_SLOT_BAT, AUX_OBD_DEMAND_BAT},
     };
-    static const obd_poll_slot_t s_poll_seq_boost[] = {
-        OBD_POLL_SLOT_RPM,
-        OBD_POLL_SLOT_SPEED,
-        OBD_POLL_SLOT_TPS,
-        OBD_POLL_SLOT_BOOST,
-        OBD_POLL_SLOT_CLT,
-        OBD_POLL_SLOT_RPM,
-        OBD_POLL_SLOT_SPEED,
-        OBD_POLL_SLOT_LOAD,
-        OBD_POLL_SLOT_TPS,
-        OBD_POLL_SLOT_OIL,
-        OBD_POLL_SLOT_RPM,
-        OBD_POLL_SLOT_SPEED,
-        OBD_POLL_SLOT_IAT,
-        OBD_POLL_SLOT_BAT,
+    static const obd_poll_schedule_entry_t s_poll_seq_boost[] = {
+        {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
+        {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
+        {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
+        {OBD_POLL_SLOT_BOOST, AUX_OBD_DEMAND_BOOST},
+        {OBD_POLL_SLOT_CLT, AUX_OBD_DEMAND_CLT},
+        {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
+        {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
+        {OBD_POLL_SLOT_LOAD, AUX_OBD_DEMAND_LOAD},
+        {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
+        {OBD_POLL_SLOT_OIL, AUX_OBD_DEMAND_OIL},
+        {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
+        {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
+        {OBD_POLL_SLOT_IAT, AUX_OBD_DEMAND_IAT},
+        {OBD_POLL_SLOT_BAT, AUX_OBD_DEMAND_BAT},
     };
 
     (void)arg;
@@ -741,11 +723,11 @@ static void obd_poll_task(void *arg) {
     while (1) {
         uint16_t slot_delay_ms = nvs_cfg_get_obd_poll_slot_delay_ms(cfg);
         const vehicle_profile_t *vp = vehicle_profile_get_active();
-        const obd_poll_slot_t *poll_seq = (vp && vp->has_boost) ? s_poll_seq_boost : s_poll_seq_na;
+        const obd_poll_schedule_entry_t *poll_seq = (vp && vp->has_boost) ? s_poll_seq_boost : s_poll_seq_na;
         uint32_t poll_seq_len = (uint32_t)((vp && vp->has_boost)
                                                ? (sizeof(s_poll_seq_boost) / sizeof(s_poll_seq_boost[0]))
                                                : (sizeof(s_poll_seq_na) / sizeof(s_poll_seq_na[0])));
-        obd_poll_slot_t poll_slot = poll_seq[tick_count];
+        size_t poll_index = 0u;
         uint32_t demand_mask = aux_sensor_demand_get_obd_mask();
         bool gforce_monitor_needed = aux_sensor_demand_is_gforce_obd_enabled();
 
@@ -769,14 +751,17 @@ static void obd_poll_task(void *arg) {
             stream_mode = OBD_STREAM_MODE_PID_POLL;
         }
 
-        if (!elm327_poll_slot_is_needed(poll_slot, demand_mask)) {
-            tick_count++;
-            if (tick_count >= poll_seq_len) {
-                tick_count = 0;
-            }
-            vTaskDelay(pdMS_TO_TICKS(slot_delay_ms));
+        if (!obd_poll_schedule_find_next_active_index(poll_seq,
+                                                      poll_seq_len,
+                                                      tick_count,
+                                                      demand_mask,
+                                                      &poll_index)) {
+            tick_count = 0u;
+            vTaskDelay(pdMS_TO_TICKS(OBD_IDLE_NO_DEMAND_DELAY_MS));
             continue;
         }
+        tick_count = (uint32_t)poll_index;
+        obd_poll_slot_t poll_slot = (obd_poll_slot_t)poll_seq[poll_index].slot_id;
 
         switch (poll_slot) {
         case OBD_POLL_SLOT_RPM:
