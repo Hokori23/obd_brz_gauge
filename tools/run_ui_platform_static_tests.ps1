@@ -41,6 +41,18 @@ $tests = @(
     @{
         Source = Join-Path $PSScriptRoot "..\tests\ble_scan_buffer_profile\test_ble_scan_buffer_profile.c"
         Output = Join-Path $outputDir "test_ble_scan_buffer_profile.o"
+    },
+    @{
+        Source = Join-Path $PSScriptRoot "..\tests\dashboard\test_zc6_gforce_decode.c"
+        Output = Join-Path $outputDir "test_zc6_gforce_decode.o"
+    },
+    @{
+        Source = Join-Path $PSScriptRoot "..\tests\dashboard\test_aux_sensor_demand_logic.c"
+        Output = Join-Path $outputDir "test_aux_sensor_demand_logic.o"
+    },
+    @{
+        Source = Join-Path $PSScriptRoot "..\tests\dashboard\test_zc6_gforce_monitor_decode.c"
+        Output = Join-Path $outputDir "test_zc6_gforce_monitor_decode.o"
     }
 )
 
@@ -104,6 +116,26 @@ if ($LASTEXITCODE -ne 0) {
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\nvs_storage\test_nvs_storage_stat_contract.ps1")
 if ($LASTEXITCODE -ne 0) {
     throw "nvs storage stat contract checks failed"
+}
+
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_aux_sensor_demand_obd_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "aux sensor demand OBD contract checks failed"
+}
+
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_gforce_obd_monitor_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "G-force OBD monitor contract checks failed"
+}
+
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_gforce_ui_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "G-force UI contract checks failed"
+}
+
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_qmi8658_gforce_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "QMI8658 G-force contract checks failed"
 }
 
 $mainCMake = Get-Content (Join-Path $PSScriptRoot "..\main\CMakeLists.txt") -Raw

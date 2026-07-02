@@ -97,7 +97,7 @@ static void on_device_selected(lv_event_t *e) {
     if (s_spinner) lv_obj_clear_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
 
     elm327_ble_connect_by_name(name);
-    ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_NONE);
+    ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_FADE_ON);
 }
 
 // 删除已保存设备
@@ -137,7 +137,7 @@ static void on_ble_scan_background(lv_event_t *e)
     if (dir == LV_DIR_TOP) {
         elm327_ble_scan_only_stop();
         lv_indev_wait_release(lv_indev_get_act());
-        ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_NONE);
+        ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_FADE_ON);
     }
 }
 

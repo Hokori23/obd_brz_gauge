@@ -59,6 +59,36 @@ static esp_err_t load_blob(const char *ns, const char *key, void *out, size_t le
 static esp_err_t save_blob(const char *ns, const char *key, const void *data, size_t len);
 static void stat_flush_task(void *arg);
 
+#define UI_DASHBOARD_PAGE_UNSUPPORTED_MASK ((uint8_t)((1u << UI_DASHBOARD_MAX_SLOTS) - 1u))
+#define UI_DASHBOARD_PAGE_TYPE_SHIFT       6u
+#define UI_DASHBOARD_PAGE_TYPE_MASK        ((uint8_t)(0x3u << UI_DASHBOARD_PAGE_TYPE_SHIFT))
+
+uint8_t nvs_cfg_get_obd_poll_mode(const nvs_user_cfg_t *cfg)
+{
+    uint8_t mode = NVS_OBD_POLL_MODE_NORMAL;
+
+    if (cfg != NULL) {
+        mode = cfg->rsv[0];
+    }
+
+    if (mode >= NVS_OBD_POLL_MODE_COUNT) {
+        mode = NVS_OBD_POLL_MODE_NORMAL;
+    }
+
+    return mode;
+}
+
+uint16_t nvs_cfg_get_obd_poll_slot_delay_ms(const nvs_user_cfg_t *cfg)
+{
+    switch (nvs_cfg_get_obd_poll_mode(cfg)) {
+    case NVS_OBD_POLL_MODE_FAST:
+        return 60u;
+    case NVS_OBD_POLL_MODE_NORMAL:
+    default:
+        return 100u;
+    }
+}
+
 bool ui_dashboard_item_supported_for_vehicle(uint8_t vehicle_profile_idx, uint8_t item)
 {
     const vehicle_profile_t *profile = vehicle_profile_get(vehicle_profile_idx);
@@ -89,10 +119,38 @@ bool ui_dashboard_page_slot_is_unsupported(const ui_dashboard_page_cfg_t *page, 
     return (page->rsv & (uint8_t)(1u << slot_index)) != 0u;
 }
 
+ui_dashboard_page_type_t ui_dashboard_page_get_type(const ui_dashboard_page_cfg_t *page)
+{
+    uint8_t raw_type;
+
+    if (page == NULL) {
+        return UI_DASHBOARD_PAGE_TYPE_METRIC;
+    }
+
+    raw_type = (uint8_t)((page->rsv & UI_DASHBOARD_PAGE_TYPE_MASK) >> UI_DASHBOARD_PAGE_TYPE_SHIFT);
+    if (raw_type >= (uint8_t)UI_DASHBOARD_PAGE_TYPE_COUNT) {
+        raw_type = (uint8_t)UI_DASHBOARD_PAGE_TYPE_METRIC;
+    }
+
+    return (ui_dashboard_page_type_t)raw_type;
+}
+
+void ui_dashboard_page_set_type(ui_dashboard_page_cfg_t *page, ui_dashboard_page_type_t type)
+{
+    if (page == NULL) {
+        return;
+    }
+
+    if (type >= UI_DASHBOARD_PAGE_TYPE_COUNT) {
+        type = UI_DASHBOARD_PAGE_TYPE_METRIC;
+    }
+
+    page->rsv &= (uint8_t)~UI_DASHBOARD_PAGE_TYPE_MASK;
+    page->rsv |= (uint8_t)((uint8_t)type << UI_DASHBOARD_PAGE_TYPE_SHIFT);
+}
+
 void ui_dashboard_cfg_format_for_vehicle(ui_dashboard_cfg_t *cfg, uint8_t vehicle_profile_idx)
 {
-    static const uint8_t supported_mask = (uint8_t)((1u << UI_DASHBOARD_MAX_SLOTS) - 1u);
-
     if (cfg == NULL) {
         return;
     }
@@ -100,8 +158,9 @@ void ui_dashboard_cfg_format_for_vehicle(ui_dashboard_cfg_t *cfg, uint8_t vehicl
     for (uint8_t i = 0; i < UI_DASHBOARD_MAX_PAGES; ++i) {
         ui_dashboard_page_cfg_t *page = &cfg->pages[i];
         uint8_t unsupported_mask = 0u;
+        ui_dashboard_page_type_t page_type = ui_dashboard_page_get_type(page);
 
-        page->rsv &= supported_mask;
+        page->rsv &= UI_DASHBOARD_PAGE_UNSUPPORTED_MASK;
         if (i >= cfg->gauge_page_count) {
             page->rsv = 0u;
             continue;
@@ -115,6 +174,7 @@ void ui_dashboard_cfg_format_for_vehicle(ui_dashboard_cfg_t *cfg, uint8_t vehicl
         }
 
         page->rsv = unsupported_mask;
+        ui_dashboard_page_set_type(page, page_type);
     }
 }
 
@@ -316,7 +376,8 @@ static void dashboard_cfg_sanitize(ui_dashboard_cfg_t *cfg)
                 page->slot_items[j] = 5; /* DISP_ITEM_RPM */
             }
         }
-        page->rsv &= (uint8_t)((1u << UI_DASHBOARD_MAX_SLOTS) - 1u);
+        page->rsv &= (uint8_t)(UI_DASHBOARD_PAGE_UNSUPPORTED_MASK | UI_DASHBOARD_PAGE_TYPE_MASK);
+        ui_dashboard_page_set_type(page, ui_dashboard_page_get_type(page));
     }
 }
 
@@ -385,6 +446,9 @@ static void cfg_sanitize(nvs_user_cfg_t *cfg)
     }
     if (cfg->oil_pressure_warn_x10 > 100) {
         cfg->oil_pressure_warn_x10 = 80;
+    }
+    if (cfg->rsv[0] >= NVS_OBD_POLL_MODE_COUNT) {
+        cfg->rsv[0] = NVS_OBD_POLL_MODE_NORMAL;
     }
 
     for (int i = 0; i < 3; ++i) {

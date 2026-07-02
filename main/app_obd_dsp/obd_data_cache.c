@@ -21,6 +21,10 @@ static volatile int32_t  s_bat_mv = -1;     // 电压 mV, -1=无效
 static volatile int16_t  s_oil_pressure_x10 = -1; // 油压, 0.1bar, -1=无效
 static volatile int16_t  s_brake_temp_x10 = -1000; // 刹车温度, 0.1°C, -1000=无效
 static volatile int16_t  s_boost_x10 = -32768; // 涡轮表压, 0.1bar(可为负=真空), -32768=无效
+static volatile int16_t  s_lat_accel_x100 = -32768; // 0.01g, -32768=invalid
+static volatile int16_t  s_lon_accel_x100 = -32768; // 0.01g, -32768=invalid
+static volatile int16_t  s_lat_accel_imu_x100 = -32768; // 0.01g, -32768=invalid
+static volatile int16_t  s_lon_accel_imu_x100 = -32768; // 0.01g, -32768=invalid
 static volatile brake_rs485_status_t s_brake_rs485_status = BRAKE_RS485_IDLE;
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -239,6 +243,38 @@ void obd_data_set_brake_temp_x10(int16_t temp_x10)
     portEXIT_CRITICAL(&s_mux);
 }
 
+void obd_data_set_lat_accel_x100(int16_t accel_x100)
+{
+    if (accel_x100 != -32768 && (accel_x100 < -500 || accel_x100 > 500)) return;
+    portENTER_CRITICAL(&s_mux);
+    s_lat_accel_x100 = accel_x100;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+void obd_data_set_lon_accel_x100(int16_t accel_x100)
+{
+    if (accel_x100 != -32768 && (accel_x100 < -500 || accel_x100 > 500)) return;
+    portENTER_CRITICAL(&s_mux);
+    s_lon_accel_x100 = accel_x100;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+void obd_data_set_lat_accel_imu_x100(int16_t accel_x100)
+{
+    if (accel_x100 != -32768 && (accel_x100 < -500 || accel_x100 > 500)) return;
+    portENTER_CRITICAL(&s_mux);
+    s_lat_accel_imu_x100 = accel_x100;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+void obd_data_set_lon_accel_imu_x100(int16_t accel_x100)
+{
+    if (accel_x100 != -32768 && (accel_x100 < -500 || accel_x100 > 500)) return;
+    portENTER_CRITICAL(&s_mux);
+    s_lon_accel_imu_x100 = accel_x100;
+    portEXIT_CRITICAL(&s_mux);
+}
+
 void obd_data_set_brake_rs485_status(brake_rs485_status_t status)
 {
     portENTER_CRITICAL(&s_mux);
@@ -251,6 +287,42 @@ int16_t obd_data_get_brake_temp_x10(void)
     int16_t val;
     portENTER_CRITICAL(&s_mux);
     val = s_brake_temp_x10;
+    portEXIT_CRITICAL(&s_mux);
+    return val;
+}
+
+int16_t obd_data_get_lat_accel_x100(void)
+{
+    int16_t val;
+    portENTER_CRITICAL(&s_mux);
+    val = s_lat_accel_x100;
+    portEXIT_CRITICAL(&s_mux);
+    return val;
+}
+
+int16_t obd_data_get_lon_accel_x100(void)
+{
+    int16_t val;
+    portENTER_CRITICAL(&s_mux);
+    val = s_lon_accel_x100;
+    portEXIT_CRITICAL(&s_mux);
+    return val;
+}
+
+int16_t obd_data_get_lat_accel_imu_x100(void)
+{
+    int16_t val;
+    portENTER_CRITICAL(&s_mux);
+    val = s_lat_accel_imu_x100;
+    portEXIT_CRITICAL(&s_mux);
+    return val;
+}
+
+int16_t obd_data_get_lon_accel_imu_x100(void)
+{
+    int16_t val;
+    portENTER_CRITICAL(&s_mux);
+    val = s_lon_accel_imu_x100;
     portEXIT_CRITICAL(&s_mux);
     return val;
 }

@@ -60,6 +60,19 @@ esp_err_t board_set_brightness(uint8_t percent)
 #endif
 }
 
+esp_err_t board_get_shared_i2c_bus(i2c_master_bus_handle_t *out_bus)
+{
+#if CONFIG_OBD_BOARD_WS_185
+    (void)out_bus;
+    return ESP_ERR_NOT_SUPPORTED;
+#elif CONFIG_OBD_BOARD_WS_175_AMOLED
+    extern esp_err_t board_ws_175_amoled_get_shared_i2c_bus(i2c_master_bus_handle_t *out_bus);
+    return board_ws_175_amoled_get_shared_i2c_bus(out_bus);
+#else
+#error "No board selected"
+#endif
+}
+
 const board_profile_t *board_profile(void)
 {
 #if CONFIG_OBD_BOARD_WS_185

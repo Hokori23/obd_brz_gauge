@@ -16,7 +16,10 @@
 
 static lv_obj_t *s_dashboard_config_screen = NULL;
 static uint8_t s_dashboard_config_gauge_index = 0;
+static lv_obj_t *s_dashboard_cfg_type_roller = NULL;
+static lv_obj_t *s_dashboard_cfg_type_row = NULL;
 static lv_obj_t *s_dashboard_cfg_slot_count_roller = NULL;
+static lv_obj_t *s_dashboard_cfg_slot_count_row = NULL;
 static lv_obj_t *s_dashboard_cfg_slot_item_rollers[UI_DASHBOARD_MAX_SLOTS] = {0};
 static lv_obj_t *s_dashboard_cfg_slot_rows[UI_DASHBOARD_MAX_SLOTS] = {0};
 static lv_obj_t *s_dashboard_cfg_body = NULL;
@@ -153,21 +156,56 @@ static const ui_dashboard_page_cfg_t *ui_dashboard_config_get_page_cfg(uint8_t g
 static void ui_dashboard_config_refresh_rows(void)
 {
     uint8_t slot_count = 1u;
+    ui_dashboard_page_type_t page_type = UI_DASHBOARD_PAGE_TYPE_METRIC;
 
     if (s_dashboard_cfg_slot_count_roller != NULL) {
         slot_count = (uint8_t)(lv_roller_get_selected(s_dashboard_cfg_slot_count_roller) + 1u);
+    }
+    if (s_dashboard_cfg_type_roller != NULL) {
+        page_type = (ui_dashboard_page_type_t)lv_roller_get_selected(s_dashboard_cfg_type_roller);
+        if (page_type >= UI_DASHBOARD_PAGE_TYPE_COUNT) {
+            page_type = UI_DASHBOARD_PAGE_TYPE_METRIC;
+        }
+    }
+
+    if (s_dashboard_cfg_slot_count_row != NULL) {
+        if (page_type == UI_DASHBOARD_PAGE_TYPE_METRIC) {
+            lv_obj_clear_flag(s_dashboard_cfg_slot_count_row, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_dashboard_cfg_slot_count_row, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
     for (uint8_t i = 0; i < UI_DASHBOARD_MAX_SLOTS; ++i) {
         if (s_dashboard_cfg_slot_rows[i] == NULL) {
             continue;
         }
-        if (i < slot_count) {
+        if (page_type == UI_DASHBOARD_PAGE_TYPE_METRIC && i < slot_count) {
             lv_obj_clear_flag(s_dashboard_cfg_slot_rows[i], LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(s_dashboard_cfg_slot_rows[i], LV_OBJ_FLAG_HIDDEN);
         }
     }
+}
+
+static void ui_dashboard_config_type_changed(lv_event_t *e)
+{
+    nvs_user_cfg_t cfg;
+    ui_dashboard_page_type_t page_type;
+
+    if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) {
+        return;
+    }
+
+    cfg = *nvs_cfg_get();
+    if (s_dashboard_config_gauge_index >= cfg.dashboard_cfg.gauge_page_count) {
+        return;
+    }
+
+    page_type = (ui_dashboard_page_type_t)lv_roller_get_selected(s_dashboard_cfg_type_roller);
+    ui_dashboard_page_set_type(&cfg.dashboard_cfg.pages[s_dashboard_config_gauge_index], page_type);
+    nvs_cfg_set(&cfg);
+    ui_dashboard_config_refresh_rows();
 }
 
 static void ui_dashboard_config_slot_count_changed(lv_event_t *e)
@@ -263,27 +301,35 @@ static void ui_dashboard_config_deleted(lv_event_t *e)
 
 static void ui_dashboard_config_screen_init(void)
 {
+    const char *type_options = "METRIC\nGEAR\nG-OBD\nG-ESP32";
     const char *slot_count_options = "1\n2\n3\n4\n5\n6";
-    char item_options[96] = {0};
+    char item_options[128] = {0};
     const ui_dashboard_page_cfg_t *page;
     lv_coord_t safe_margin;
     lv_coord_t top_pad;
     lv_coord_t bottom_pad;
     lv_coord_t title_h;
+    lv_coord_t title_gap;
     lv_coord_t title_y;
-    lv_coord_t hint_h;
-    lv_coord_t hint_y;
     lv_coord_t body_top;
     lv_coord_t body_h;
+    lv_coord_t body_used_h;
     lv_coord_t body_left;
     lv_coord_t body_right;
     lv_coord_t body_w;
     lv_coord_t body_inset;
     lv_coord_t body_row_gap;
+    lv_coord_t row_h;
+    lv_coord_t roller_font;
+    lv_coord_t label_font;
     lv_coord_t count_row_h;
     lv_coord_t slot_row_h;
+    lv_coord_t type_row_h;
     lv_coord_t count_roller_w;
+    lv_coord_t type_roller_w;
     lv_coord_t item_roller_w;
+    lv_coord_t visible_row_radius;
+    uint8_t total_row_count = (uint8_t)(2u + UI_DASHBOARD_MAX_SLOTS);
 
     if (s_dashboard_config_screen != NULL) {
         return;
@@ -319,43 +365,65 @@ static void ui_dashboard_config_screen_init(void)
     }
 
     safe_margin = ui_safe_margin();
-    top_pad = safe_margin + ui_layout_px(4);
-    bottom_pad = safe_margin + ui_layout_px(6);
-    title_h = ui_layout_px(28);
-    hint_h = ui_layout_px(18);
+    top_pad = safe_margin + ui_layout_px(2);
+    bottom_pad = safe_margin + ui_layout_px(4);
+    title_h = ui_layout_px(20);
+    title_gap = ui_layout_px(6);
     title_y = top_pad;
-    hint_y = (lv_coord_t)(ui_screen_height() - bottom_pad - hint_h);
-    body_top = title_y + title_h + ui_layout_px(10);
-    body_h = (lv_coord_t)(hint_y - ui_layout_px(10) - body_top);
+    body_top = title_y + title_h + title_gap;
+    body_h = (lv_coord_t)(ui_screen_height() - bottom_pad - body_top);
     if (body_h < 1) {
         body_h = 1;
     }
 
-    body_inset = safe_margin + ui_layout_px(8);
-    ui_dashboard_config_safe_span_for_band(body_top, body_h, body_inset, &body_left, &body_right);
-    body_w = (lv_coord_t)(body_right - body_left);
-    body_row_gap = ui_layout_px(4);
-    if (body_row_gap < 2) {
-        body_row_gap = 2;
+    body_row_gap = ui_layout_px(2);
+    if (body_row_gap < 1) {
+        body_row_gap = 1;
     }
 
-    count_row_h = (lv_coord_t)((body_h - (UI_DASHBOARD_MAX_SLOTS * body_row_gap)) / (UI_DASHBOARD_MAX_SLOTS + 1u));
-    if (count_row_h < 1) {
-        count_row_h = 1;
+    row_h = (lv_coord_t)((body_h - ((total_row_count - 1u) * body_row_gap)) / total_row_count);
+    if (row_h < ui_layout_px(18)) {
+        row_h = ui_layout_px(18);
     }
-    slot_row_h = count_row_h;
+    body_used_h = (lv_coord_t)(row_h * total_row_count + ((total_row_count - 1u) * body_row_gap));
+    if (body_used_h > body_h) {
+        row_h = (lv_coord_t)((body_h - ((total_row_count - 1u) * body_row_gap)) / total_row_count);
+        if (row_h < 1) {
+            row_h = 1;
+        }
+        body_used_h = (lv_coord_t)(row_h * total_row_count + ((total_row_count - 1u) * body_row_gap));
+    }
+    body_top = (lv_coord_t)(body_top + ((body_h - body_used_h) / 2));
+    body_h = body_used_h;
+
+    body_inset = safe_margin + ui_layout_px(6);
+    ui_dashboard_config_safe_span_for_band(body_top, body_h, body_inset, &body_left, &body_right);
+    body_w = (lv_coord_t)(body_right - body_left);
+    type_row_h = row_h;
+    count_row_h = row_h;
+    slot_row_h = row_h;
     count_roller_w = (lv_coord_t)(body_w * 42 / 100);
+    type_roller_w = (lv_coord_t)(body_w * 52 / 100);
     item_roller_w = (lv_coord_t)(body_w * 52 / 100);
     if (count_roller_w < 1) {
         count_roller_w = 1;
     }
+    if (type_roller_w < 1) {
+        type_roller_w = 1;
+    }
     if (item_roller_w < 1) {
         item_roller_w = 1;
+    }
+    roller_font = (row_h >= ui_layout_px(28)) ? 16 : 14;
+    label_font = (row_h >= ui_layout_px(26)) ? 12 : 10;
+    visible_row_radius = row_h / 2;
+    if (visible_row_radius < ui_layout_px(8)) {
+        visible_row_radius = ui_layout_px(8);
     }
 
     lv_obj_t *title = lv_label_create(s_dashboard_config_screen);
     lv_label_set_text(title, "DASHBOARD");
-    lv_obj_set_style_text_font(title, ui_font_typoder(24), LV_PART_MAIN);
+    lv_obj_set_style_text_font(title, ui_font_typoder(20), LV_PART_MAIN);
     lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, title_y);
 
@@ -371,26 +439,55 @@ static void ui_dashboard_config_screen_init(void)
     lv_obj_set_style_pad_bottom(s_dashboard_cfg_body, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_left(s_dashboard_cfg_body, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_right(s_dashboard_cfg_body, 0, LV_PART_MAIN);
-    lv_obj_clear_flag(s_dashboard_cfg_body, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(s_dashboard_cfg_body, LV_SCROLLBAR_MODE_OFF);
 
-    lv_obj_t *count_row = ui_dashboard_config_create_row(s_dashboard_cfg_body, count_row_h);
-    lv_obj_t *count_label = lv_label_create(count_row);
+    s_dashboard_cfg_type_row = ui_dashboard_config_create_row(s_dashboard_cfg_body, type_row_h);
+    lv_obj_t *type_label = lv_label_create(s_dashboard_cfg_type_row);
+    lv_label_set_text(type_label, "TYPE");
+    lv_obj_set_style_text_font(type_label, ui_font_hint(label_font), LV_PART_MAIN);
+    lv_obj_set_style_text_color(type_label, lv_color_hex(0x7A7A7A), LV_PART_MAIN);
+    lv_obj_align(type_label, LV_ALIGN_LEFT_MID, ui_layout_px(6), 0);
+
+    s_dashboard_cfg_type_roller = lv_roller_create(s_dashboard_cfg_type_row);
+    lv_roller_set_options(s_dashboard_cfg_type_roller, type_options, LV_ROLLER_MODE_NORMAL);
+    lv_roller_set_visible_row_count(s_dashboard_cfg_type_roller, 1);
+    lv_roller_set_selected(s_dashboard_cfg_type_roller, (uint16_t)ui_dashboard_page_get_type(page), LV_ANIM_OFF);
+    lv_obj_set_size(s_dashboard_cfg_type_roller, type_roller_w, type_row_h);
+    lv_obj_align(s_dashboard_cfg_type_roller, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_clear_flag(s_dashboard_cfg_type_roller, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_style_text_font(s_dashboard_cfg_type_roller, ui_font_typoder(roller_font), LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_dashboard_cfg_type_roller, ui_font_typoder(roller_font), LV_PART_SELECTED);
+    ui_round_shell_apply_roller_theme(s_dashboard_cfg_type_roller,
+                                      visible_row_radius,
+                                      lv_color_hex(0x202020),
+                                      lv_color_hex(0x444444),
+                                      lv_color_hex(0xCFCFCF),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0x000000));
+    lv_obj_add_event_cb(s_dashboard_cfg_type_roller,
+                        ui_dashboard_config_type_changed,
+                        LV_EVENT_VALUE_CHANGED,
+                        NULL);
+
+    s_dashboard_cfg_slot_count_row = ui_dashboard_config_create_row(s_dashboard_cfg_body, count_row_h);
+    lv_obj_t *count_label = lv_label_create(s_dashboard_cfg_slot_count_row);
     lv_label_set_text(count_label, "SLOTS");
-    lv_obj_set_style_text_font(count_label, ui_font_hint(12), LV_PART_MAIN);
+    lv_obj_set_style_text_font(count_label, ui_font_hint(label_font), LV_PART_MAIN);
     lv_obj_set_style_text_color(count_label, lv_color_hex(0x7A7A7A), LV_PART_MAIN);
     lv_obj_align(count_label, LV_ALIGN_LEFT_MID, ui_layout_px(6), 0);
 
-    s_dashboard_cfg_slot_count_roller = lv_roller_create(count_row);
+    s_dashboard_cfg_slot_count_roller = lv_roller_create(s_dashboard_cfg_slot_count_row);
     lv_roller_set_options(s_dashboard_cfg_slot_count_roller, slot_count_options, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_dashboard_cfg_slot_count_roller, 1);
     lv_roller_set_selected(s_dashboard_cfg_slot_count_roller, (uint16_t)(page->slot_count - 1u), LV_ANIM_OFF);
     lv_obj_set_size(s_dashboard_cfg_slot_count_roller, count_roller_w, count_row_h);
     lv_obj_align(s_dashboard_cfg_slot_count_roller, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_clear_flag(s_dashboard_cfg_slot_count_roller, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_set_style_text_font(s_dashboard_cfg_slot_count_roller, ui_font_typoder(20), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_dashboard_cfg_slot_count_roller, ui_font_typoder(20), LV_PART_SELECTED);
+    lv_obj_set_style_text_font(s_dashboard_cfg_slot_count_roller, ui_font_typoder(roller_font), LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_dashboard_cfg_slot_count_roller, ui_font_typoder(roller_font), LV_PART_SELECTED);
     ui_round_shell_apply_roller_theme(s_dashboard_cfg_slot_count_roller,
-                                      (lv_coord_t)(count_row_h / 2),
+                                      visible_row_radius,
                                       lv_color_hex(0x202020),
                                       lv_color_hex(0x444444),
                                       lv_color_hex(0xCFCFCF),
@@ -408,7 +505,7 @@ static void ui_dashboard_config_screen_init(void)
 
         lv_obj_t *label = lv_label_create(row);
         lv_label_set_text_fmt(label, "SLOT %u", (unsigned)(i + 1u));
-        lv_obj_set_style_text_font(label, ui_font_hint(12), LV_PART_MAIN);
+        lv_obj_set_style_text_font(label, ui_font_hint(label_font), LV_PART_MAIN);
         lv_obj_set_style_text_color(label, lv_color_hex(0x7A7A7A), LV_PART_MAIN);
         lv_obj_align(label, LV_ALIGN_LEFT_MID, ui_layout_px(6), 0);
 
@@ -425,10 +522,10 @@ static void ui_dashboard_config_screen_init(void)
         lv_obj_set_size(s_dashboard_cfg_slot_item_rollers[i], item_roller_w, slot_row_h);
         lv_obj_align(s_dashboard_cfg_slot_item_rollers[i], LV_ALIGN_RIGHT_MID, 0, 0);
         lv_obj_clear_flag(s_dashboard_cfg_slot_item_rollers[i], LV_OBJ_FLAG_GESTURE_BUBBLE);
-        lv_obj_set_style_text_font(s_dashboard_cfg_slot_item_rollers[i], ui_font_typoder(16), LV_PART_MAIN);
-        lv_obj_set_style_text_font(s_dashboard_cfg_slot_item_rollers[i], ui_font_typoder(16), LV_PART_SELECTED);
+        lv_obj_set_style_text_font(s_dashboard_cfg_slot_item_rollers[i], ui_font_typoder(roller_font), LV_PART_MAIN);
+        lv_obj_set_style_text_font(s_dashboard_cfg_slot_item_rollers[i], ui_font_typoder(roller_font), LV_PART_SELECTED);
         ui_round_shell_apply_roller_theme(s_dashboard_cfg_slot_item_rollers[i],
-                                          (lv_coord_t)(slot_row_h / 2),
+                                          visible_row_radius,
                                           lv_color_hex(0x202020),
                                           lv_color_hex(0x444444),
                                           lv_color_hex(0xCFCFCF),
@@ -458,6 +555,9 @@ void ui_dashboard_config_reset(void)
     s_dashboard_config_screen = NULL;
     s_dashboard_config_gauge_index = 0;
     s_dashboard_cfg_body = NULL;
+    s_dashboard_cfg_type_row = NULL;
+    s_dashboard_cfg_type_roller = NULL;
+    s_dashboard_cfg_slot_count_row = NULL;
     s_dashboard_cfg_slot_count_roller = NULL;
     s_dashboard_cfg_supported_item_count = 0;
     memset(s_dashboard_cfg_slot_item_rollers, 0, sizeof(s_dashboard_cfg_slot_item_rollers));

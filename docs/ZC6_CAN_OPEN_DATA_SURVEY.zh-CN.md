@@ -6,6 +6,13 @@
 
 这轮只做开源资料调研，不改底层采集协议。
 
+先纠正一个口径：如果之前把“ZC6 没有爆震 / AM”说成了绝对结论，那是不准确的。
+
+更准确的说法应该是：
+
+- 如果说的是 `Subaru logger / SSM / 调参链路`，那 `爆震相关`、`Knock Correction`、`IAM / AM` 确实是有 live data 的。
+- 如果说的是 `FT86 主 CAN 上已公开、稳定、适合被动 sniff 的原厂广播 ID`，这轮仍然没有找到足够可靠的公开证据。
+
 当前能高置信度找到、而且适合做被动 CAN 读取的 ZC6 / FT86 Gen1 数据，主要还是基础行车量：
 
 - `RPM`：有公开 CAN ID
@@ -27,6 +34,13 @@
 - `IAM / AM`
 
 这些值更像是 Subaru ECU 的诊断 / logger / tuning 数据，而不是 FT86 主车身 CAN 上长期公开广播的基础频道。
+
+同一轮公开资料里还能确认另一件很重要的事：
+
+- `横向加速度`
+- `纵向加速度`
+
+在 `FT86 Gen1 CAN ID 0x0D0` 上是有公开映射的，因此如果我们要先做 `ZC6` 专属的横纵向加速度仪表，这条链路比爆震 / AM 更适合作为第一优先级。
 
 ## 开源资料里高置信度的 FT86 Gen1 CAN 频道
 
@@ -95,6 +109,19 @@
 
 也就是说，这不是 100% 证明车上绝对没有相关报文，而是目前没有可靠公开证据支持“直接被动 sniff 就能稳定拿到”。
 
+## 重新澄清：你记得“爆震是有的”这件事，方向是对的
+
+这次补充搜索后，比较合理的统一口径如下：
+
+1. `爆震 / Knock Correction / IAM / AM` 在 Subaru 的 logger / 调参生态里是存在的。
+2. 它们不是这轮已经被公开坐实的 `FT86 主 CAN 常驻广播量`。
+3. 所以“有”与“能不能直接做被动 CAN 仪表”是两件事，不能混为一谈。
+
+对本项目而言，这个区分非常关键：
+
+- 如果目标是 `现有 ELM327 + 被动监听风格` 的轻量实时仪表，那么优先级更高的是 `RPM / SPD / OIL / CLT / G-force` 这类已公开频道。
+- 如果目标是 `后续补上爆震 / IAM / FBKC / FLKC`，技术路径应转向 `SSM / logger / 扩展诊断请求`，而不是默认继续在公开 FT86 主 CAN 广播里找。
+
 ## 爆震 / AM 更像诊断与调参数据
 
 EcuTek 的 Subaru ignition timing 资料明确把下面这些作为日志参数讨论：
@@ -125,6 +152,13 @@ BRZ 的 EcuTek 资料也明确提到：
 这些值在调参生态里是存在的，而且能被读到；
 但它更像 ECU 内部日志 / 诊断参数，不等同于“原厂公开 CAN ID 已经被社区稳定枚举”。
 
+RomRaider 的 logger 定义也能进一步说明这一点。公开定义里明确存在：
+
+- `Advance Multiplier`
+- `Knock Correction`
+
+而且 `Advance Multiplier` 的说明直接把它描述为反映发动机爆震倾向、并参与 `Knock Correction` 点火修正的量。这进一步支持了“这些量确实存在且可读”，但读取语境更接近 `Subaru logger / 诊断参数`，而不是“FT86 主 CAN 被动广播表里的常规字段”。
+
 ## 对当前仓库的直接影响
 
 这轮调研后，仓库里的产品决策可以更明确：
@@ -140,6 +174,7 @@ BRZ 的 EcuTek 资料也明确提到：
    - Subaru SSM / logger 参数
    - ELM327 可否通过扩展 PID 或厂商诊断请求稳定读取
    - 采样率是否够做仪表实时显示
+4. 如果后续优先扩展一个 `ZC6` 专属新仪表页类型，建议优先做 `横纵向加速度表`，因为它已经有公开 CAN 映射，工程风险明显低于爆震 / IAM。
 
 ## 这轮给出的工程判断
 
@@ -167,6 +202,8 @@ BRZ 的 EcuTek 资料也明确提到：
   https://github.com/timurrrr/ft86/blob/main/can_bus/gen1.md
 - RaceChrono DIY BLE 设备的 FT86 CAN 数据库  
   https://github.com/timurrrr/RaceChronoDiyBleDevice/blob/master/can_db/ft86.md
+- RomRaider logger definitions  
+  https://github.com/RomRaider/original.flat/blob/master/trunk/docs/logger/log_defs.xml
 - EcuTek: Subaru Ignition Timing Parameters (CAN Vehicles)  
   https://ecutek.atlassian.net/wiki/spaces/SUPPORT/pages/77856769
 - EcuTek: Subaru BRZ/Scion FR-S/Toyota GT86 fact sheet  

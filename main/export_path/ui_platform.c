@@ -116,12 +116,15 @@ void ui_settings_layout_get(ui_settings_layout_t *layout)
     layout->label_vehicle_y = ui_layout_px(-30);
     layout->roller_vehicle_y = ui_layout_px(-2);
     layout->divider2_y = ui_layout_px(26);
-    layout->label_brightness_y = ui_layout_px(40);
+    layout->label_poll_y = ui_layout_px(40);
+    layout->roller_poll_y = ui_layout_px(68);
+    layout->divider3_y = ui_layout_px(94);
+    layout->label_brightness_y = ui_layout_px(106);
     layout->slider_width = (uint16_t)ui_layout_px(180);
     layout->slider_height = (uint16_t)ui_layout_px(10);
-    layout->slider_y = ui_layout_px(64);
+    layout->slider_y = ui_layout_px(130);
     layout->slider_knob_pad = (uint16_t)ui_layout_px(5);
-    layout->brightness_value_y = ui_layout_px(86);
+    layout->brightness_value_y = ui_layout_px(152);
     layout->hint_y = ui_layout_px(124);
 }
 

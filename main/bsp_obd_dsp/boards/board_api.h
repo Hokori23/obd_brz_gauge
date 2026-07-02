@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "driver/i2c_master.h"
 #include "esp_err.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
@@ -39,6 +40,7 @@ esp_err_t board_init(void);
 esp_err_t board_register_display_flush_ready_callback(board_display_flush_ready_cb_t cb, void *user_ctx);
 esp_err_t board_display_init(board_display_context_t *ctx);
 esp_err_t board_set_brightness(uint8_t percent);
+esp_err_t board_get_shared_i2c_bus(i2c_master_bus_handle_t *out_bus);
 const board_profile_t *board_profile(void);
 const char *board_name(void);
 bool board_has_touch(void);

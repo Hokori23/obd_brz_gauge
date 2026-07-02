@@ -36,6 +36,10 @@ void obd_data_set_bat_mv(int32_t mv);        // 电池电压 mV (e.g. 12000 = 12
 void obd_data_set_oil_pressure_x10(int16_t pressure_x10); // 油压, 0.1bar, -1=无效
 void obd_data_set_boost_x10(int16_t boost_x10); // 涡轮表压, 0.1bar(可为负), -32768=无效
 void obd_data_set_brake_temp_x10(int16_t temp_x10); // 刹车温度, 0.1°C
+void obd_data_set_lat_accel_x100(int16_t accel_x100);
+void obd_data_set_lon_accel_x100(int16_t accel_x100);
+void obd_data_set_lat_accel_imu_x100(int16_t accel_x100);
+void obd_data_set_lon_accel_imu_x100(int16_t accel_x100);
 void obd_data_set_brake_rs485_status(brake_rs485_status_t status);
 uint16_t obd_data_get_rpm(void);
 uint8_t  obd_data_get_speed(void);
@@ -48,6 +52,10 @@ int32_t  obd_data_get_bat_mv(void);         // -1 = 无效
 int16_t  obd_data_get_oil_pressure_x10(void); // -1 = 无效
 int16_t  obd_data_get_boost_x10(void); // -32768 = 无效
 int16_t  obd_data_get_brake_temp_x10(void); // -1000 = 无效
+int16_t  obd_data_get_lat_accel_x100(void);
+int16_t  obd_data_get_lon_accel_x100(void);
+int16_t  obd_data_get_lat_accel_imu_x100(void);
+int16_t  obd_data_get_lon_accel_imu_x100(void);
 brake_rs485_status_t obd_data_get_brake_rs485_status(void);
 enGear calculate_gear(float rpm, float speed);
 void vMileageDataStatisticTask(void);

@@ -14,7 +14,9 @@ typedef struct _lv_font_t lv_font_t;
     ((scaled_px) <= 34) ? 32 : \
     ((scaled_px) <= 40) ? 36 : \
     ((scaled_px) <= 50) ? 44 : \
-    56)
+    ((scaled_px) <= 78) ? 56 : \
+    ((scaled_px) <= 120) ? 100 : \
+    140)
 
 #define UI_FONT_TYPODER_SIZE(width, height, base_px) \
     UI_FONT_TYPODER_SELECT_SIZE(UI_PLATFORM_SCALE_PX((width), (height), (base_px)))
@@ -34,5 +36,6 @@ typedef struct _lv_font_t lv_font_t;
 
 const lv_font_t *ui_font_typoder(int16_t base_px);
 const lv_font_t *ui_font_hint(int16_t base_px);
+const lv_font_t *ui_font_baby(int16_t base_px);
 const lv_font_t *ui_font_brake_temp_value(int16_t value_x10);
 void ui_font_profile_init(void);

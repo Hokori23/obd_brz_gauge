@@ -17,6 +17,14 @@ typedef struct {
 #define UI_DASHBOARD_MAX_PAGES   8u
 #define UI_DASHBOARD_MAX_SLOTS   6u
 
+typedef enum {
+    UI_DASHBOARD_PAGE_TYPE_METRIC = 0u,
+    UI_DASHBOARD_PAGE_TYPE_GEAR = 1u,
+    UI_DASHBOARD_PAGE_TYPE_G_FORCE_OBD = 2u,
+    UI_DASHBOARD_PAGE_TYPE_G_FORCE_ESP32 = 3u,
+    UI_DASHBOARD_PAGE_TYPE_COUNT
+} ui_dashboard_page_type_t;
+
 typedef struct {
     uint8_t slot_count;
     uint8_t slot_items[UI_DASHBOARD_MAX_SLOTS];
@@ -33,6 +41,10 @@ typedef struct {
 #define NVS_DEFAULT_PAGE_MENU          DEFAULT_PAGE_MENU
 #define NVS_DEFAULT_PAGE_GAUGE_1       DEFAULT_PAGE_GAUGE_1
 #define NVS_DEFAULT_PAGE_COUNT         DEFAULT_PAGE_COUNT
+
+#define NVS_OBD_POLL_MODE_NORMAL 0u
+#define NVS_OBD_POLL_MODE_FAST   1u
+#define NVS_OBD_POLL_MODE_COUNT  2u
 
 typedef struct {
     uint8_t protocol;
@@ -64,9 +76,13 @@ esp_err_t nvs_storage_init(void);
 
 const nvs_user_cfg_t *nvs_cfg_get(void);
 esp_err_t nvs_cfg_set(const nvs_user_cfg_t *cfg);
+uint8_t nvs_cfg_get_obd_poll_mode(const nvs_user_cfg_t *cfg);
+uint16_t nvs_cfg_get_obd_poll_slot_delay_ms(const nvs_user_cfg_t *cfg);
 bool ui_dashboard_item_supported_for_vehicle(uint8_t vehicle_profile_idx, uint8_t item);
 void ui_dashboard_cfg_format_for_vehicle(ui_dashboard_cfg_t *cfg, uint8_t vehicle_profile_idx);
 bool ui_dashboard_page_slot_is_unsupported(const ui_dashboard_page_cfg_t *page, uint8_t slot_index);
+ui_dashboard_page_type_t ui_dashboard_page_get_type(const ui_dashboard_page_cfg_t *page);
+void ui_dashboard_page_set_type(ui_dashboard_page_cfg_t *page, ui_dashboard_page_type_t type);
 
 const nvs_stat_t *nvs_stat_get(void);
 void nvs_stat_add_odometer(uint32_t delta_m);

@@ -15,6 +15,7 @@
 // Local references for settings widgets
 static lv_obj_t *s_roller_page = NULL;
 static lv_obj_t *s_roller_vehicle = NULL;
+static lv_obj_t *s_roller_obd_poll = NULL;
 static lv_obj_t *s_slider_bright = NULL;
 static lv_obj_t *s_label_bright_val = NULL;
 
@@ -23,6 +24,7 @@ static void ui_settings_screen_reset_state(void)
     ui_ScreenPageSettings = NULL;
     s_roller_page = NULL;
     s_roller_vehicle = NULL;
+    s_roller_obd_poll = NULL;
     s_slider_bright = NULL;
     s_label_bright_val = NULL;
 }
@@ -53,6 +55,14 @@ static void on_bright_slider_change(lv_event_t *e)
     board_set_brightness((uint8_t)val);
 }
 
+static void on_obd_poll_roller_change(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    nvs_user_cfg_t cfg = *nvs_cfg_get();
+    cfg.rsv[0] = (uint8_t)lv_roller_get_selected(s_roller_obd_poll);
+    nvs_cfg_set(&cfg);
+}
+
 static void on_vehicle_roller_change(lv_event_t *e)
 {
     uint8_t selected = (uint8_t)lv_roller_get_selected(s_roller_vehicle);
@@ -75,7 +85,7 @@ static void on_settings_background(lv_event_t *e)
     lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
     if (dir == LV_DIR_TOP) {
         lv_indev_wait_release(lv_indev_get_act());
-        ui_home_runtime_rebuild_and_load(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_NONE);
+        ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_MOVE_LEFT);
     }
 }
 
@@ -202,7 +212,42 @@ void ui_ScreenPageSettings_screen_init(void)
     lv_obj_set_style_bg_opa(div2, 40, LV_PART_MAIN);
     lv_obj_clear_flag(div2, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
-    // ====== Row 3: Brightness ======
+    // ====== Row 3: OBD Poll ======
+    lv_obj_t *label_poll = lv_label_create(ui_ScreenPageSettings);
+    lv_label_set_text(label_poll, "OBD POLL");
+    lv_obj_set_style_text_font(label_poll, ui_font_hint(12), LV_PART_MAIN);
+    lv_obj_set_style_text_color(label_poll, lv_color_hex(0x888888), LV_PART_MAIN);
+    lv_obj_align(label_poll, LV_ALIGN_CENTER, 0, layout.label_poll_y);
+
+    s_roller_obd_poll = lv_roller_create(ui_ScreenPageSettings);
+    lv_obj_clear_flag(s_roller_obd_poll, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_roller_set_options(s_roller_obd_poll, "NORMAL\nFAST", LV_ROLLER_MODE_NORMAL);
+    lv_roller_set_visible_row_count(s_roller_obd_poll, 1);
+    lv_roller_set_selected(s_roller_obd_poll, nvs_cfg_get_obd_poll_mode(cfg), LV_ANIM_OFF);
+    lv_obj_set_width(s_roller_obd_poll, layout.roller_width);
+    lv_obj_set_style_text_font(s_roller_obd_poll, ui_font_typoder(20), LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_roller_obd_poll, ui_font_typoder(20), LV_PART_SELECTED);
+    ui_round_shell_apply_roller_theme(s_roller_obd_poll,
+                                      layout.roller_radius,
+                                      lv_color_hex(0x222222),
+                                      lv_color_hex(0x444444),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0xFFFFFF),
+                                      lv_color_hex(0xCFCFCF),
+                                      lv_color_hex(0x000000));
+    lv_obj_align(s_roller_obd_poll, LV_ALIGN_CENTER, 0, layout.roller_poll_y);
+    lv_obj_add_event_cb(s_roller_obd_poll, on_obd_poll_roller_change, LV_EVENT_VALUE_CHANGED, NULL);
+
+    // ====== Divider ======
+    lv_obj_t *div3 = lv_obj_create(ui_ScreenPageSettings);
+    lv_obj_remove_style_all(div3);
+    lv_obj_set_size(div3, layout.divider_width, 1);
+    lv_obj_align(div3, LV_ALIGN_CENTER, 0, layout.divider3_y);
+    lv_obj_set_style_bg_color(div3, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(div3, 40, LV_PART_MAIN);
+    lv_obj_clear_flag(div3, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+    // ====== Row 4: Brightness ======
     lv_obj_t *label_bright = lv_label_create(ui_ScreenPageSettings);
     lv_label_set_text(label_bright, "BRIGHTNESS");
     lv_obj_set_style_text_font(label_bright, ui_font_hint(12), LV_PART_MAIN);

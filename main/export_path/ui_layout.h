@@ -47,12 +47,15 @@
 #define UI_LAYOUT_SETTINGS_LABEL_VEHICLE_Y(width, height) UI_LAYOUT_PX((width), (height), -30)
 #define UI_LAYOUT_SETTINGS_ROLLER_VEHICLE_Y(width, height) UI_LAYOUT_PX((width), (height), -2)
 #define UI_LAYOUT_SETTINGS_DIV2_Y(width, height) UI_LAYOUT_PX((width), (height), 26)
-#define UI_LAYOUT_SETTINGS_LABEL_BRIGHT_Y(width, height) UI_LAYOUT_PX((width), (height), 40)
+#define UI_LAYOUT_SETTINGS_LABEL_POLL_Y(width, height) UI_LAYOUT_PX((width), (height), 40)
+#define UI_LAYOUT_SETTINGS_ROLLER_POLL_Y(width, height) UI_LAYOUT_PX((width), (height), 68)
+#define UI_LAYOUT_SETTINGS_DIV3_Y(width, height) UI_LAYOUT_PX((width), (height), 94)
+#define UI_LAYOUT_SETTINGS_LABEL_BRIGHT_Y(width, height) UI_LAYOUT_PX((width), (height), 106)
 #define UI_LAYOUT_SETTINGS_SLIDER_WIDTH(width, height) UI_LAYOUT_PX((width), (height), 180)
 #define UI_LAYOUT_SETTINGS_SLIDER_HEIGHT(width, height) UI_LAYOUT_PX((width), (height), 10)
-#define UI_LAYOUT_SETTINGS_SLIDER_Y(width, height) UI_LAYOUT_PX((width), (height), 64)
+#define UI_LAYOUT_SETTINGS_SLIDER_Y(width, height) UI_LAYOUT_PX((width), (height), 130)
 #define UI_LAYOUT_SETTINGS_SLIDER_KNOB_PAD(width, height) UI_LAYOUT_PX((width), (height), 5)
-#define UI_LAYOUT_SETTINGS_BRIGHT_VALUE_Y(width, height) UI_LAYOUT_PX((width), (height), 86)
+#define UI_LAYOUT_SETTINGS_BRIGHT_VALUE_Y(width, height) UI_LAYOUT_PX((width), (height), 152)
 #define UI_LAYOUT_SETTINGS_HINT_Y(width, height) UI_LAYOUT_PX((width), (height), 124)
 
 #define UI_LAYOUT_BRAKE_TEMP_TITLE_Y(width, height) UI_LAYOUT_PX((width), (height), -122)
@@ -240,6 +243,9 @@ typedef struct {
     int16_t label_vehicle_y;
     int16_t roller_vehicle_y;
     int16_t divider2_y;
+    int16_t label_poll_y;
+    int16_t roller_poll_y;
+    int16_t divider3_y;
     int16_t label_brightness_y;
     uint16_t slider_width;
     uint16_t slider_height;

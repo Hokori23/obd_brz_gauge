@@ -8,6 +8,7 @@ extern "C" {
 #include <stdint.h>
 #include "lvgl.h"
 #include "ui_runtime_common.h"
+#include "bsp_obd_dsp/nvs_storage.h"
 
 #define UI_HOME_PAGE_MENU_ID 0u
 
@@ -20,6 +21,7 @@ void ui_home_runtime_refresh_active_tile(void);
 uint8_t ui_home_runtime_page_from_default(uint8_t default_page);
 void ui_home_runtime_rebuild_and_load(uint8_t page_id, lv_scr_load_anim_t anim);
 bool ui_home_runtime_active_page_uses_item(disp_item_t item);
+bool ui_home_runtime_active_page_uses_type(ui_dashboard_page_type_t page_type);
 
 #ifdef __cplusplus
 } /* extern "C" */

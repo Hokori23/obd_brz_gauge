@@ -10,6 +10,8 @@ static lv_font_t s_typoder_32;
 static lv_font_t s_typoder_36;
 static lv_font_t s_typoder_44;
 static lv_font_t s_typoder_56;
+static lv_font_t s_typoder_100;
+static lv_font_t s_typoder_140;
 static lv_font_t s_taikong_32;
 static lv_font_t s_taikong_40;
 static lv_font_t s_taikong_48;
@@ -47,6 +49,8 @@ void ui_font_profile_init(void)
     ui_font_set_fallback(&s_typoder_36, &ui_font_FontTypoderSize36, &lv_font_montserrat_32);
     ui_font_set_fallback(&s_typoder_44, &ui_font_FontTypoderSize44, &lv_font_montserrat_48);
     ui_font_set_fallback(&s_typoder_56, &ui_font_FontTypoderSize56, &lv_font_montserrat_48);
+    ui_font_set_fallback(&s_typoder_100, &ui_font_FontTypoderSize100, &lv_font_montserrat_48);
+    ui_font_set_fallback(&s_typoder_140, &ui_font_FontTypoderSize140, &lv_font_montserrat_48);
 
     ui_font_set_fallback(&s_taikong_32, &ui_font_FontTaikongSize32, &lv_font_montserrat_32);
     ui_font_set_fallback(&s_taikong_40, &ui_font_FontTaikongSize40, &lv_font_montserrat_48);
@@ -93,8 +97,12 @@ const lv_font_t *ui_font_typoder(int16_t base_px)
     case 44:
         return &s_typoder_44;
     case 56:
-    default:
         return &s_typoder_56;
+    case 100:
+        return &s_typoder_100;
+    case 140:
+    default:
+        return &s_typoder_140;
     }
 }
 
@@ -109,6 +117,25 @@ const lv_font_t *ui_font_hint(int16_t base_px)
     default:
         return &lv_font_montserrat_16;
     }
+}
+
+const lv_font_t *ui_font_baby(int16_t base_px)
+{
+    int16_t scaled_px = ui_layout_px(base_px);
+
+    if (scaled_px <= 64) {
+        return &s_baby_56;
+    }
+    if (scaled_px <= 132) {
+        return &s_baby_108;
+    }
+    if (scaled_px <= 168) {
+        return &s_baby_156;
+    }
+    if (scaled_px <= 190) {
+        return &s_baby_180;
+    }
+    return &s_baby_200;
 }
 
 const lv_font_t *ui_font_brake_temp_value(int16_t value_x10)

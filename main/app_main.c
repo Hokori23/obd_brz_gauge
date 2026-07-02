@@ -31,6 +31,7 @@
 #include "bsp_obd_dsp/boards/board_api.h"
 #include "bsp_obd_dsp/elm327_ble_client.h"
 #include "bsp_obd_dsp/nvs_storage.h"
+#include "bsp_obd_dsp/qmi8658_gforce.h"
 #include "bsp_obd_dsp/racechrono_ble_diy.h"
 #include "bsp_obd_dsp/rs485_brake_temp.h"
 #include "export_path/ui_platform.h"
@@ -424,6 +425,7 @@ void app_main(void)
     racechrono_ble_diy_start();
 
     rs485_brake_temp_start();
+    qmi8658_gforce_start();
     aux_sensor_demand_refresh();
 
 #if CONFIG_OBD_BOARD_WS_185

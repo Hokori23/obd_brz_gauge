@@ -63,7 +63,9 @@ static const co5300_lcd_init_cmd_t s_lcd_init_cmds[] = {
     {0x3A, (uint8_t[]){0x55}, 1, 0},
     {0x35, (uint8_t[]){0x00}, 1, 0},
     {0x53, (uint8_t[]){0x20}, 1, 0},
-    {0x51, (uint8_t[]){0xFF}, 1, 0},
+    // Keep the AMOLED dark until LVGL has already rendered the first frame.
+    // The runtime startup timer will restore the user's configured brightness.
+    {0x51, (uint8_t[]){0x00}, 1, 0},
     {0x63, (uint8_t[]){0xFF}, 1, 0},
     {0x2A, (uint8_t[]){
         (uint8_t)(BOARD_WS_175_AMOLED_LCD_CASET_X0 >> 8),
@@ -254,4 +256,12 @@ const char *board_ws_175_amoled_name(void)
 bool board_ws_175_amoled_has_touch(void)
 {
     return s_board_profile.has_touch;
+}
+
+esp_err_t board_ws_175_amoled_get_shared_i2c_bus(i2c_master_bus_handle_t *out_bus)
+{
+    ESP_RETURN_ON_FALSE(out_bus != NULL, ESP_ERR_INVALID_ARG, TAG, "out_bus is null");
+    ESP_RETURN_ON_ERROR(board_ws_175_amoled_i2c_init(), TAG, "i2c prepare failed");
+    *out_bus = s_i2c_handle;
+    return ESP_OK;
 }
