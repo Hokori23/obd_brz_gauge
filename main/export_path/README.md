@@ -44,8 +44,8 @@ export_path/
 - 首页只实时刷新当前激活 tile
 - 翻页后立即刷新新激活页，避免展示旧值
 - 非当前展示页不应继续触发不必要的数据读取
-- 设置页采用 `DISPLAY / DASHBOARD / VEHICLE` 两级结构
-- `BLE Scan` 和 `OBD Protocol` 仍然与 `Settings` 平级，不并入设置页
+- 设置页采用 `DISPLAY / DASHBOARD / VEHICLE / OBD` 横向同级分页
+- `OBD Protocol` 已并入 `Settings -> OBD`，不再保留独立页面
 
 ## 阅读建议
 

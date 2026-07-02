@@ -1,55 +1,60 @@
 # `ui_ScreenPageSettings.c` 阅读说明
 
-这是当前设置页实现说明。它已经不是“把所有设置项挤在一页里”的旧结构，而是一个两级设置页。
+这是当前统一设置页的实现说明。它已经不再是旧的“根分类页 + 二级详情页”结构，而是一个横向同级分页的圆屏运行时页面。
 
 ## 当前结构
 
-一级页只负责分类导航：
+设置页内部固定为四个同级分类页：
 
 - `DISPLAY`
 - `DASHBOARD`
 - `VEHICLE`
+- `OBD`
 
-二级页才展示具体配置控件：
+每个分类页都在一屏内完成操作，不依赖页面级纵向滚动。
 
-- `DISPLAY`
-  - 亮度
-  - 旋转（WS175）
-- `DASHBOARD`
-  - `BOOT PAGE`
-  - `OBD POLL`
-- `VEHICLE`
-  - 车型选择
+### `DISPLAY`
+
+- 亮度
+- 旋转（仅 `WS175`）
+
+### `DASHBOARD`
+
+- `BOOT PAGE`
+- `OBD POLL`
+- `RACECHRONO BLE`
+- `OIL PRESSURE`
+
+### `VEHICLE`
+
+- `VEHICLE PROFILE`
+
+### `OBD`
+
+- `PROTOCOL`
 
 ## 为什么这样改
 
-主要是为了解决三个问题：
+主要是为了解决四个问题：
 
-1. 单页密度太高，圆屏上操作拥挤
-2. 后续还会继续加配置项，单页继续堆会很难维护
-3. 两级结构更容易做圆屏安全区布局，不容易溢出
+1. 旧设置页在圆屏上信息密度过高，选择器和触控区不够友好
+2. 页面级纵向滚动会和 `上滑返回` 抢手势
+3. 独立 `OBD Protocol` 页让交互模型出现例外，用户需要额外记忆
+4. 不同页面自己写一套圆屏安全区逻辑，代码维护成本高
 
 ## 关键交互
 
-### 一级页进入二级页
+### 页面切换
 
-分类卡片点击后，会切换当前 section，并重建内容区。
-
-相关逻辑：
-
-- `ui_settings_open_section()`
-- `ui_settings_show_section()`
-
-### 返回逻辑
-
-- 在二级页点击 `BACK`：返回一级分类页
-- 在二级页上滑：也先返回一级分类页
-- 在一级分类页上滑：退出设置页并返回首页
+- 从首页下滑进入 `Settings`
+- 在 `Settings` 内左右滑切换 `DISPLAY / DASHBOARD / VEHICLE / OBD`
+- 在任一分类页上滑直接返回首页
+- `HOME` 按钮和上滑返回语义一致
 
 相关逻辑：
 
-- `ui_settings_back_click()`
-- `on_settings_background()`
+- `ui_settings_tileview_value_changed()`
+- `ui_settings_gesture_event()`
 - `ui_settings_close_to_home()`
 
 ### 亮度
@@ -60,7 +65,7 @@
 - `nvs_cfg_set()`
 - `board_set_brightness()`
 
-这是“持久化 + 立即生效”的典型例子。
+这是“持久化 + 立即生效”的典型设置项。
 
 ### 启动页
 
@@ -83,20 +88,26 @@
 - `vehicle_profile_set_active()`
 - 标记 `s_settings_requires_home_rebuild = true`
 
-这意味着车型切换不仅是 UI 设置，还会影响首页仪表支持项和后续运行时逻辑。
+这意味着车型切换不仅是 UI 配置，还会影响首页仪表支持项和后续运行时逻辑。
+
+### OBD 协议
+
+`on_protocol_roller_released()`
+
+- 仅在候选协议和当前持久化协议不一致时弹确认框
+- 确认后写入 `cfg.protocol` 并 `esp_restart()`
+- 取消后把 `roller` 恢复到当前持久化值
+
+这里已经不再使用旧的“长按保存协议”模型。
 
 ## 布局实现重点
 
-这个页面现在不再依赖旧的绝对行表，而是：
+这个页面现在优先依赖统一的圆屏运行时 helper，而不是各自写一套几何逻辑：
 
-1. 先根据圆屏计算安全内容带
-2. 在内容带里放分类卡片或详情 panel
-3. 用 flex column 做纵向排布
+1. `ui_round_shell_safe_span_for_band()`
+2. `ui_round_shell_create_header_button()`
+3. `ui_round_shell_create_title_block()`
+4. `ui_round_shell_apply_dark_roller_preset()`
+5. `ui_round_shell_apply_modal_theme()`
 
-所以如果后面再继续扩展这页，优先沿用：
-
-- `ui_settings_safe_span_for_band()`
-- `ui_settings_create_content_panel()`
-- `ui_settings_create_category_card()`
-
-不要重新回到“写死 y 坐标堆控件”的方式。
+所以如果后面继续扩展这页，优先沿用这些共享 helper，不要重新回到“写死 y 坐标堆控件”或“再加一层二级设置页”的方式。

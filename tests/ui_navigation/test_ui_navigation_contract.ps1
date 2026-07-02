@@ -3,7 +3,6 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $uiPath = Join-Path $repoRoot "main\export_path\ui.c"
 $dashboardConfigPath = Join-Path $repoRoot "main\export_path\ui_dashboard_config.c"
 $homeRuntimePath = Join-Path $repoRoot "main\export_path\ui_home_runtime.c"
-$obdPath = Join-Path $repoRoot "main\export_path\screens\ui_ScreenPageODBProtocal.c"
 $helperPath = Join-Path $repoRoot "main\export_path\ui_helpers.c"
 $bleScanPath = Join-Path $repoRoot "main\export_path\screens\ui_ScreenPageBLEScan.c"
 $settingsPath = Join-Path $repoRoot "main\export_path\screens\ui_ScreenPageSettings.c"
@@ -13,19 +12,16 @@ $dashboardConfigHeaderPath = Join-Path $repoRoot "main\export_path\ui_dashboard_
 $uiSource = Get-Content $uiPath -Raw
 $dashboardConfigSource = Get-Content $dashboardConfigPath -Raw
 $homeRuntimeSource = Get-Content $homeRuntimePath -Raw
-$obdSource = Get-Content $obdPath -Raw
 $helperSource = Get-Content $helperPath -Raw
 $bleScanSource = Get-Content $bleScanPath -Raw
 $settingsSource = Get-Content $settingsPath -Raw
 $homeRuntimeHeader = Get-Content $homeRuntimeHeaderPath -Raw
 $dashboardConfigHeader = Get-Content $dashboardConfigHeaderPath -Raw
 
-if ($uiSource -notmatch 'if\(ui_ScreenPageODBProtocal == NULL\) ui_ScreenPageODBProtocal_screen_init\(\);') {
-    throw "ui.c must still lazily initialize the OBD protocol page before loading it"
-}
-
-if ($uiSource -notmatch 'click_cnt') {
-    throw "ui.c must retain the double-click counter for original logo navigation semantics"
+if ($uiSource -match 'ui_ScreenPageODBProtocal' -or
+    $uiSource -match 'ui_event_obd_prot_background' -or
+    $uiSource -match 'click_cnt') {
+    throw "ui.c should no longer keep the legacy standalone OBD protocol screen or its logo double-click path"
 }
 
 if ($uiSource -match 'void ui_show_home_page\(uint8_t page_id, lv_scr_load_anim_t anim\)') {
@@ -60,13 +56,21 @@ if ($homeRuntimeSource -notmatch 'Delete this dashboard page\?') {
     throw "ui_home_runtime.c must keep a delete confirmation prompt for editable dashboard pages"
 }
 
-if ($homeRuntimeSource -notmatch 'lv_obj_set_size\(zone, LV_PCT\(50\), LV_PCT\(100\)\)') {
-    throw "ui_home_runtime.c must keep the half-screen edit overlay hit zones for dashboard edit mode"
+if ($homeRuntimeSource -notmatch 'lv_obj_set_size\(zone_edit, LV_PCT\(50\), LV_PCT\(50\)\)' -or
+    $homeRuntimeSource -notmatch 'lv_obj_align\(zone_edit, LV_ALIGN_TOP_LEFT, 0, 0\)' -or
+    $homeRuntimeSource -notmatch 'lv_obj_set_size\(zone_del, LV_PCT\(50\), LV_PCT\(50\)\)' -or
+    $homeRuntimeSource -notmatch 'lv_obj_align\(zone_del, LV_ALIGN_TOP_RIGHT, 0, 0\)' -or
+    $homeRuntimeSource -notmatch 'lv_obj_set_size\(zone_back, LV_PCT\(100\), LV_PCT\(50\)\)' -or
+    $homeRuntimeSource -notmatch 'lv_obj_align\(zone_back, LV_ALIGN_BOTTOM_MID, 0, 0\)') {
+    throw "ui_home_runtime.c must keep the top-left EDIT, top-right DELETE, bottom BACK semicircle overlay geometry for dashboard edit mode"
 }
 
-if ($homeRuntimeSource -notmatch 'lv_label_set_text\(label, "BACK"\)' -or
-    $homeRuntimeSource -notmatch 'lv_label_set_text\(label, "DELETE"\)' -or
-    $homeRuntimeSource -notmatch 'lv_label_set_text\(label, "EDIT"\)') {
+if ((($homeRuntimeSource -notmatch 'lv_label_set_text\(label, "BACK"\)') -and
+     ($homeRuntimeSource -notmatch '"BACK"')) -or
+    ((($homeRuntimeSource -notmatch 'lv_label_set_text\(label, "DELETE"\)') -and
+      ($homeRuntimeSource -notmatch '"DELETE"'))) -or
+    ((($homeRuntimeSource -notmatch 'lv_label_set_text\(label, "EDIT"\)') -and
+      ($homeRuntimeSource -notmatch '"EDIT"')))) {
     throw "ui_home_runtime.c must keep BACK/DELETE/EDIT affordances in dashboard edit mode"
 }
 
@@ -82,7 +86,8 @@ if ($homeRuntimeSource -notmatch 'lv_timer_create\(ui_home_refresh_timer_cb,\s*u
     throw "ui_home_runtime.c must own its periodic tile refresh timer and seed it from the active page profile"
 }
 
-if ($dashboardConfigSource -notmatch 'lv_label_set_text\(title, "DASHBOARD"\)') {
+if ($dashboardConfigSource -notmatch 'ui_round_shell_create_title_block\(s_dashboard_config_screen,\s*"DASHBOARD"' -and
+    $dashboardConfigSource -notmatch 'lv_label_set_text\(title, "DASHBOARD"\)') {
     throw "ui_dashboard_config.c must own the dedicated dashboard configuration screen"
 }
 
@@ -130,7 +135,24 @@ if ($settingsSource -notmatch 'LV_EVENT_SCREEN_UNLOADED') {
     throw "ui_ScreenPageSettings.c must delete and reset its screen on unload so repeated opens rebuild fresh UI state"
 }
 
-if ($settingsSource -notmatch 'ui_home_runtime_show_page\(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_MOVE_LEFT\);') {
+if ($settingsSource -notmatch 'lv_tileview_create\(ui_ScreenPageSettings\)') {
+    throw "ui_ScreenPageSettings.c must use a horizontal tileview container for unified settings navigation"
+}
+
+if ($settingsSource -notmatch 'UI_SETTINGS_PAGE_OBD' -or
+    $settingsSource -notmatch 'PROTOCOL') {
+    throw "ui_ScreenPageSettings.c must integrate the OBD protocol editor into the unified settings pages"
+}
+
+if ($settingsSource -match 'LV_DIR_VER' -and $settingsSource -match 's_settings_content') {
+    throw "ui_ScreenPageSettings.c must not keep the old vertical-scroll settings container"
+}
+
+if ($settingsSource -notmatch 'esp_restart\(\)') {
+    throw "ui_ScreenPageSettings.c must still apply protocol changes through a reboot path"
+}
+
+if ($settingsSource -notmatch 'ui_home_runtime_show_page\(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_NONE\);') {
     throw "ui_ScreenPageSettings.c must return through the home runtime entrypoint"
 }
 
@@ -138,7 +160,7 @@ if ($settingsSource -notmatch 'strlcpy\(page_names, "MENU"') {
     throw "ui_ScreenPageSettings.c must build boot-page options from the dynamic home model"
 }
 
-if ($settingsSource -notmatch '"\\nGAUGE %u"') {
+if ($settingsSource -notmatch '"\\nG%u"') {
     throw "ui_ScreenPageSettings.c must expose gauge boot-page options beyond MENU"
 }
 
@@ -179,16 +201,8 @@ if ((Test-Path (Join-Path $repoRoot "main\export_path\screens\ui_ScreenPageTemp.
     throw "removed legacy fixed-home screen files should no longer remain in main/export_path/screens"
 }
 
-if ($obdSource -notmatch 'lv_obj_add_flag\(ui_RollerODBProtocalChoose, LV_OBJ_FLAG_GESTURE_BUBBLE\)') {
-    throw "ui_ScreenPageODBProtocal.c must keep gesture bubbling enabled on the protocol roller"
-}
-
-if ($obdSource -match 'lv_obj_clear_flag\(ui_RollerODBProtocalChoose, LV_OBJ_FLAG_GESTURE_BUBBLE\)') {
-    throw "ui_ScreenPageODBProtocal.c must not disable gesture bubbling on the protocol roller"
-}
-
-if ($obdSource -notmatch 'LV_EVENT_SCREEN_UNLOADED') {
-    throw "ui_ScreenPageODBProtocal.c must delete and reset its screen on unload so repeated opens rebuild fresh UI state"
+if (Test-Path (Join-Path $repoRoot "main\export_path\screens\ui_ScreenPageODBProtocal.c")) {
+    throw "standalone OBD protocol screen file should be removed after integrating OBD into Settings"
 }
 
 if ($helperSource -match 'screen_change:') {

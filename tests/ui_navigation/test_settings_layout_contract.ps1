@@ -10,34 +10,51 @@ if ($settings -notmatch 'ui_home_runtime_rebuild_and_load\(UI_HOME_PAGE_MENU_ID,
     throw "Settings must rebuild the home runtime when a vehicle/profile-sensitive change requires it"
 }
 
-if ($settings -notmatch 'cfg\.rsv\[1\] = \(uint8_t\)lv_roller_get_selected\(s_roller_rotation\);') {
-    throw "Settings must persist the display rotation selection into NVS"
+if ($settings -notmatch 'cfg\.rsv\[1\] = s_settings_pending_reboot_value;' -or
+    $settings -notmatch 'UI_SETTINGS_REBOOT_ROTATION') {
+    throw "Settings must persist the display rotation selection through the reboot-confirm flow"
 }
 
-if ($settings -notmatch 'DEFAULT\\nNORMAL\\nROTATE 180') {
-    throw "Settings must expose the WS175 display rotation choices in the roller options"
+if ($settings -notmatch 'ui_settings_rotation_options\(' -or
+    $settings -notmatch 'NORMAL\\nROTATE 180' -or
+    $settings -notmatch 'ui_settings_rotation_roller_index_from_mode') {
+    throw "Settings must expose explicit NORMAL and ROTATE 180 outcomes so the selector matches the actual reboot result"
 }
 
-if ($settings -notmatch 'static void ui_settings_safe_span_for_band\(' -or
-    $settings -notmatch 'ui_settings_safe_span_for_band\(content_top,\s*content_h,') {
-    throw "Settings must compute a round-screen-safe content span instead of relying on overflowing absolute rows"
+if (($settings -notmatch 'ui_round_shell_safe_span_for_band\(panel_sample_y,\s*panel_sample_h,' -and
+     $settings -notmatch 'ui_round_shell_safe_span_for_band\(content_top,\s*content_h,' -and
+     $settings -notmatch 'ui_settings_safe_span_for_band\(content_top,\s*content_h,')) {
+    throw "Settings must compute a round-screen-safe content span, preferably from the actual middle interaction band instead of the whole page worst case"
 }
 
-if ($settings -notmatch 'ui_settings_create_category_card\(s_settings_content,\s*"DISPLAY"' -or
-    $settings -notmatch 'ui_settings_create_category_card\(s_settings_content,\s*"DASHBOARD"' -or
-    $settings -notmatch 'ui_settings_create_category_card\(s_settings_content,\s*"VEHICLE"') {
-    throw "Settings root must expose DISPLAY, DASHBOARD, and VEHICLE category cards"
+if ($settings -notmatch 'UI_SETTINGS_PAGE_DISPLAY' -or
+    $settings -notmatch 'UI_SETTINGS_PAGE_DASHBOARD' -or
+    $settings -notmatch 'UI_SETTINGS_PAGE_VEHICLE' -or
+    $settings -notmatch 'UI_SETTINGS_PAGE_OBD') {
+    throw "Settings must define DISPLAY, DASHBOARD, VEHICLE, and OBD as unified horizontal pages"
 }
 
-if ($settings -notmatch 'ui_settings_set_header\("DISPLAY",\s*"Screen behavior",\s*true\);' -or
-    $settings -notmatch 'ui_settings_set_header\("DASHBOARD",\s*"Startup and polling",\s*true\);' -or
-    $settings -notmatch 'ui_settings_set_header\("VEHICLE",\s*"Profile-aware dashboard support",\s*true\);') {
-    throw "Settings detail pages must update their header title/subtitle and expose a back action"
+if ($settings -notmatch 'lv_tileview_create\(ui_ScreenPageSettings\)' -or
+    $settings -notmatch 'lv_tileview_add_tile\(s_settings_tileview,\s*i,\s*0,\s*dir\)') {
+    throw "Settings must use a horizontal tileview to unify page switching with the home interaction model"
 }
 
-if ($settings -notmatch 'lv_obj_add_flag\(s_settings_back_btn,\s*LV_OBJ_FLAG_HIDDEN\);' -or
-    $settings -notmatch 'ui_settings_back_click') {
-    throw "Settings must keep a dedicated back button for second-level pages"
+if ($settings -notmatch 's_settings_page_dots' -or
+    $settings -notmatch 'ui_settings_update_page_dots') {
+    throw "Settings must expose page-position feedback for horizontal category switching"
+}
+
+if ($settings -notmatch 'BOOT PAGE' -or
+    $settings -notmatch 'RACECHRONO' -or
+    $settings -notmatch 'OIL PRESS' -or
+    $settings -notmatch 'PROFILE' -or
+    $settings -notmatch 'PROTOCOL') {
+    throw "Settings must keep compact inline selectors for dashboard, vehicle, and protocol configuration"
+}
+
+if ($settings -match 'ui_round_shell_create_header_button\(ui_ScreenPageSettings,\s*"HOME"' -or
+    $settings -match 'ui_settings_home_click') {
+    throw "Settings should rely on the unified swipe-back interaction instead of rendering a HOME button"
 }
 
 Write-Output "settings layout contract checks passed"

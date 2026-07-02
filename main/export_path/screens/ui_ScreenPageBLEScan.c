@@ -1,5 +1,5 @@
 // BLE Scan & Select Page
-// Shows saved device (with delete) + a list of discovered BLE devices
+// Shows saved device and nearby scan results on a round-screen-safe layout.
 
 #include "../ui.h"
 #include "../ui_font_profile.h"
@@ -15,16 +15,14 @@
 
 static const char *TAG_BLE_UI = "ble_scan_ui";
 
-// UI elements (local)
-static lv_obj_t *s_list = NULL;             // 扫描设备列表
-static lv_obj_t *s_label_status = NULL;     // 状态标签
-static lv_obj_t *s_spinner = NULL;          // 扫描 spinner
-static lv_obj_t *s_saved_panel = NULL;      // 已保存设备面板
-static lv_obj_t *s_label_saved_hdr = NULL;  // "SAVED" 小标题
-static lv_obj_t *s_saved_name_lbl = NULL;   // 已保存设备名称标签
+static lv_obj_t *s_list = NULL;
+static lv_obj_t *s_label_nearby = NULL;
+static lv_obj_t *s_spinner = NULL;
+static lv_obj_t *s_saved_panel = NULL;
+static lv_obj_t *s_label_saved_hdr = NULL;
+static lv_obj_t *s_saved_name_lbl = NULL;
 static bool s_scanning = false;
 
-// 前向声明
 static void start_scan(void);
 static void on_device_selected(lv_event_t *e);
 static void on_saved_device_delete(lv_event_t *e);
@@ -32,50 +30,67 @@ static void on_ble_scan_background(lv_event_t *e);
 static void ui_ble_scan_screen_reset_state(void);
 static void ui_ble_scan_screen_deleted(lv_event_t *e);
 
-// LVGL locking bridge (implemented in app_main.c)
 extern bool app_lvgl_lock(int timeout_ms);
 extern void app_lvgl_unlock(void);
-static inline bool lvgl_lock_ui(int timeout_ms) {
+
+static inline bool lvgl_lock_ui(int timeout_ms)
+{
     return app_lvgl_lock(timeout_ms);
 }
-static inline void lvgl_unlock_ui(void) {
+
+static inline void lvgl_unlock_ui(void)
+{
     app_lvgl_unlock();
 }
 
-// BLE 扫描回调（在 BT 线程中调用，需要线程安全地更新 LVGL）
-static void scan_result_cb(const ble_scan_result_t *dev, int total_count) {
-    if (!s_list) return;
+static void ui_ble_scan_update_nearby_count(int total_count)
+{
+    if (s_label_nearby == NULL) {
+        return;
+    }
 
-    if (lvgl_lock_ui(100)) {
-        // 检查列表中是否已有同名设备
-        uint32_t child_cnt = lv_obj_get_child_cnt(s_list);
-        for (uint32_t i = 0; i < child_cnt; i++) {
-            lv_obj_t *btn = lv_obj_get_child(s_list, i);
-            lv_obj_t *lbl = lv_obj_get_child(btn, 0);
-            if (lbl && strcmp(lv_label_get_text(lbl), dev->name) == 0) {
-                lvgl_unlock_ui();
-                return; // 已存在
-            }
-        }
-
-        // 添加新设备按钮
-        lv_obj_t *btn = lv_list_add_btn(s_list, NULL, dev->name);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(0x222222), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(btn, 255, LV_PART_MAIN);
-        lv_obj_set_style_text_color(btn, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-        lv_obj_set_style_text_font(btn, ui_font_typoder(20), LV_PART_MAIN);
-        lv_obj_add_event_cb(btn, on_device_selected, LV_EVENT_CLICKED, NULL);
-
-        lv_label_set_text_fmt(s_label_status, "Found %d devices", total_count);
-        lvgl_unlock_ui();
+    if (total_count > 0) {
+        lv_label_set_text_fmt(s_label_nearby, "NEARBY (%d)", total_count);
+    } else {
+        lv_label_set_text(s_label_nearby, "NEARBY");
     }
 }
 
-// 设备被点击选中
-static void on_device_selected(lv_event_t *e) {
+static void scan_result_cb(const ble_scan_result_t *dev, int total_count)
+{
+    if (s_list == NULL) {
+        return;
+    }
+
+    if (!lvgl_lock_ui(100)) {
+        return;
+    }
+
+    uint32_t child_cnt = lv_obj_get_child_cnt(s_list);
+    for (uint32_t i = 0; i < child_cnt; ++i) {
+        lv_obj_t *btn = lv_obj_get_child(s_list, i);
+        lv_obj_t *lbl = lv_obj_get_child(btn, 0);
+        if (lbl != NULL && strcmp(lv_label_get_text(lbl), dev->name) == 0) {
+            lvgl_unlock_ui();
+            return;
+        }
+    }
+
+    lv_obj_t *btn = lv_list_add_btn(s_list, NULL, dev->name);
+    ui_round_shell_apply_list_button_theme(btn, 20);
+    lv_obj_add_event_cb(btn, on_device_selected, LV_EVENT_CLICKED, NULL);
+
+    ui_ble_scan_update_nearby_count(total_count);
+    lvgl_unlock_ui();
+}
+
+static void on_device_selected(lv_event_t *e)
+{
     lv_obj_t *btn = lv_event_get_target(e);
     lv_obj_t *lbl = lv_obj_get_child(btn, 0);
-    if (!lbl) return;
+    if (lbl == NULL) {
+        return;
+    }
 
     const char *name = lv_label_get_text(lbl);
     ESP_LOGI(TAG_BLE_UI, "Selected BLE device: %s", name);
@@ -84,45 +99,64 @@ static void on_device_selected(lv_event_t *e) {
     s_scanning = false;
 
     nvs_user_cfg_t cfg = *nvs_cfg_get();
-    strncpy(cfg.ble_device_name, name, sizeof(cfg.ble_device_name) - 1);
-    cfg.ble_device_name[sizeof(cfg.ble_device_name) - 1] = '\0';
+    strncpy(cfg.ble_device_name, name, sizeof(cfg.ble_device_name) - 1u);
+    cfg.ble_device_name[sizeof(cfg.ble_device_name) - 1u] = '\0';
     nvs_cfg_set(&cfg);
 
-    // 立即刷新已保存设备面板
-    if (s_saved_name_lbl) lv_label_set_text(s_saved_name_lbl, name);
-    if (s_saved_panel)    lv_obj_clear_flag(s_saved_panel,    LV_OBJ_FLAG_HIDDEN);
-    if (s_label_saved_hdr) lv_obj_clear_flag(s_label_saved_hdr, LV_OBJ_FLAG_HIDDEN);
+    if (s_saved_name_lbl != NULL) {
+        lv_label_set_text(s_saved_name_lbl, name);
+    }
+    if (s_saved_panel != NULL) {
+        lv_obj_clear_flag(s_saved_panel, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_label_saved_hdr != NULL) {
+        lv_obj_clear_flag(s_label_saved_hdr, LV_OBJ_FLAG_HIDDEN);
+    }
 
-    lv_label_set_text_fmt(s_label_status, "Connecting: %s", name);
-    if (s_spinner) lv_obj_clear_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
+    if (s_spinner != NULL) {
+        lv_obj_clear_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
+    }
 
     elm327_ble_connect_by_name(name);
     ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_FADE_ON);
 }
 
-// 删除已保存设备
-static void on_saved_device_delete(lv_event_t *e) {
-    // 若当前已连接，先断开BLE
+static void on_saved_device_delete(lv_event_t *e)
+{
+    LV_UNUSED(e);
+
     if (elm327_ble_is_connected()) {
         elm327_ble_disconnect();
     }
+
     nvs_user_cfg_t cfg = *nvs_cfg_get();
     cfg.ble_device_name[0] = '\0';
     nvs_cfg_set(&cfg);
     ESP_LOGI(TAG_BLE_UI, "Saved BLE device cleared");
 
-    if (s_saved_panel)    lv_obj_add_flag(s_saved_panel,    LV_OBJ_FLAG_HIDDEN);
-    if (s_label_saved_hdr) lv_obj_add_flag(s_label_saved_hdr, LV_OBJ_FLAG_HIDDEN);
-    if (s_label_status)   lv_label_set_text(s_label_status, "Saved device removed");
+    if (s_saved_panel != NULL) {
+        lv_obj_add_flag(s_saved_panel, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_label_saved_hdr != NULL) {
+        lv_obj_add_flag(s_label_saved_hdr, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
-static void start_scan(void) {
-    if (s_scanning) return;
+static void start_scan(void)
+{
+    if (s_scanning) {
+        return;
+    }
+
     s_scanning = true;
 
-    if (s_list) lv_obj_clean(s_list);
-    if (s_label_status) lv_label_set_text(s_label_status, "Scanning...");
-    if (s_spinner) lv_obj_clear_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
+    if (s_list != NULL) {
+        lv_obj_clean(s_list);
+    }
+    ui_ble_scan_update_nearby_count(0);
+    if (s_spinner != NULL) {
+        lv_obj_clear_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
+    }
 
     elm327_ble_scan_only_start(15, scan_result_cb);
 }
@@ -134,18 +168,20 @@ static void on_ble_scan_background(lv_event_t *e)
     }
 
     lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-    if (dir == LV_DIR_TOP) {
-        elm327_ble_scan_only_stop();
-        lv_indev_wait_release(lv_indev_get_act());
-        ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_FADE_ON);
+    if (dir != LV_DIR_TOP) {
+        return;
     }
+
+    elm327_ble_scan_only_stop();
+    lv_indev_wait_release(lv_indev_get_act());
+    ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_FADE_ON);
 }
 
 static void ui_ble_scan_screen_reset_state(void)
 {
     ui_ScreenPageBLEScan = NULL;
     s_list = NULL;
-    s_label_status = NULL;
+    s_label_nearby = NULL;
     s_spinner = NULL;
     s_saved_panel = NULL;
     s_label_saved_hdr = NULL;
@@ -156,6 +192,7 @@ static void ui_ble_scan_screen_reset_state(void)
 static void ui_ble_scan_screen_deleted(lv_event_t *e)
 {
     LV_UNUSED(e);
+
     if (s_scanning) {
         elm327_ble_scan_only_stop();
     }
@@ -176,30 +213,24 @@ void ui_ScreenPageBLEScan_screen_init(void)
                         &ui_ScreenPageBLEScan);
     lv_obj_add_event_cb(ui_ScreenPageBLEScan, ui_ble_scan_screen_deleted, LV_EVENT_DELETE, NULL);
 
-    // Title
-    lv_obj_t *label_title = lv_label_create(ui_ScreenPageBLEScan);
-    lv_label_set_text(label_title, "BLE SCAN");
-    lv_obj_set_style_text_font(label_title, ui_font_typoder(24), LV_PART_MAIN);
-    lv_obj_set_style_text_color(label_title, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_align(label_title, LV_ALIGN_TOP_MID, 0, layout.title_y);
+    ui_round_shell_create_title_block(ui_ScreenPageBLEScan,
+                                      "BLE SCAN",
+                                      NULL,
+                                      ui_safe_margin() + ui_layout_px(12),
+                                      20,
+                                      ui_layout_px(4),
+                                      11,
+                                      NULL,
+                                      NULL);
 
-    // Scanning spinner (animated)
     s_spinner = lv_spinner_create(ui_ScreenPageBLEScan, 1000, 60);
-    lv_obj_set_size(s_spinner, layout.spinner_size, layout.spinner_size);
-    lv_obj_align(s_spinner, LV_ALIGN_TOP_MID, layout.spinner_x, layout.spinner_y);
+    lv_obj_set_size(s_spinner, ui_layout_px(18), ui_layout_px(18));
+    lv_obj_align(s_spinner, LV_ALIGN_TOP_RIGHT, -(ui_safe_margin() + ui_layout_px(38)), layout.nearby_y - ui_layout_px(118));
     lv_obj_set_style_arc_color(s_spinner, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(s_spinner, layout.spinner_arc_width, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(s_spinner, ui_layout_px(2), LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(s_spinner, lv_color_hex(0x333333), LV_PART_MAIN);
-    lv_obj_set_style_arc_width(s_spinner, layout.spinner_arc_width, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(s_spinner, ui_layout_px(2), LV_PART_MAIN);
 
-    // Status label
-    s_label_status = lv_label_create(ui_ScreenPageBLEScan);
-    lv_label_set_text(s_label_status, "Scanning...");
-    lv_obj_set_style_text_font(s_label_status, ui_font_hint(12), LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_label_status, lv_color_hex(0xAAAAAA), LV_PART_MAIN);
-    lv_obj_align(s_label_status, LV_ALIGN_TOP_MID, 0, layout.status_y);
-
-    // ==== SAVED DEVICE SECTION ====
     const nvs_user_cfg_t *saved_cfg = nvs_cfg_get();
     bool has_saved = (saved_cfg->ble_device_name[0] != '\0');
 
@@ -208,76 +239,65 @@ void ui_ScreenPageBLEScan_screen_init(void)
     lv_obj_set_style_text_font(s_label_saved_hdr, ui_font_hint(12), LV_PART_MAIN);
     lv_obj_set_style_text_color(s_label_saved_hdr, lv_color_hex(0x888888), LV_PART_MAIN);
     lv_obj_align(s_label_saved_hdr, LV_ALIGN_TOP_MID, 0, layout.saved_header_y);
-    if (!has_saved) lv_obj_add_flag(s_label_saved_hdr, LV_OBJ_FLAG_HIDDEN);
+    if (!has_saved) {
+        lv_obj_add_flag(s_label_saved_hdr, LV_OBJ_FLAG_HIDDEN);
+    }
 
-    // Saved device row: name + delete button
     s_saved_panel = lv_obj_create(ui_ScreenPageBLEScan);
     lv_obj_remove_style_all(s_saved_panel);
     lv_obj_set_size(s_saved_panel, layout.saved_panel_width, layout.saved_panel_height);
     lv_obj_align(s_saved_panel, LV_ALIGN_TOP_MID, 0, layout.saved_panel_y);
-    lv_obj_set_style_bg_color(s_saved_panel, lv_color_hex(0x222222), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(s_saved_panel, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(s_saved_panel, layout.saved_panel_radius, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_all(s_saved_panel, layout.saved_panel_pad, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_clip_corner(s_saved_panel, true, LV_PART_MAIN | LV_STATE_DEFAULT);
+    ui_round_shell_apply_dark_card_theme(s_saved_panel, layout.saved_panel_radius, layout.saved_panel_pad);
     lv_obj_clear_flag(s_saved_panel, LV_OBJ_FLAG_SCROLLABLE);
-    if (!has_saved) lv_obj_add_flag(s_saved_panel, LV_OBJ_FLAG_HIDDEN);
+    if (!has_saved) {
+        lv_obj_add_flag(s_saved_panel, LV_OBJ_FLAG_HIDDEN);
+    }
 
-    // Device name inside panel
     s_saved_name_lbl = lv_label_create(s_saved_panel);
     lv_label_set_text(s_saved_name_lbl, has_saved ? saved_cfg->ble_device_name : "");
-    lv_obj_set_style_text_font(s_saved_name_lbl, ui_font_typoder(20), LV_PART_MAIN);
+    lv_label_set_long_mode(s_saved_name_lbl, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(s_saved_name_lbl, layout.saved_panel_width - layout.delete_button_width - ui_layout_px(28));
+    lv_obj_set_style_text_font(s_saved_name_lbl, ui_font_typoder(18), LV_PART_MAIN);
     lv_obj_set_style_text_color(s_saved_name_lbl, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_align(s_saved_name_lbl, LV_ALIGN_LEFT_MID, layout.saved_name_x, 0);
 
-    // Delete button inside panel
     lv_obj_t *del_btn = lv_btn_create(s_saved_panel);
     lv_obj_set_size(del_btn, layout.delete_button_width, layout.delete_button_height);
     lv_obj_align(del_btn, LV_ALIGN_RIGHT_MID, layout.delete_button_x, 0);
-    lv_obj_set_style_bg_color(del_btn, lv_color_hex(0xBB2222), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(del_btn, 255, LV_PART_MAIN);
-    lv_obj_set_style_radius(del_btn, layout.delete_button_radius, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(del_btn, layout.delete_button_pad, LV_PART_MAIN);
+    ui_round_shell_apply_danger_button_theme(del_btn, layout.delete_button_radius, layout.delete_button_pad);
     lv_obj_t *del_lbl = lv_label_create(del_btn);
     lv_label_set_text(del_lbl, LV_SYMBOL_CLOSE);
     lv_obj_set_style_text_color(del_lbl, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_center(del_lbl);
     lv_obj_add_event_cb(del_btn, on_saved_device_delete, LV_EVENT_CLICKED, NULL);
 
-    // Thin divider
     lv_obj_t *divider = lv_obj_create(ui_ScreenPageBLEScan);
     lv_obj_remove_style_all(divider);
     lv_obj_set_size(divider, layout.divider_width, 1);
     lv_obj_align(divider, LV_ALIGN_TOP_MID, 0, layout.divider_y);
     lv_obj_set_style_bg_color(divider, lv_color_hex(0x444444), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(divider, 255, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(divider, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_clear_flag(divider, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
-    // ==== NEARBY SCAN SECTION ====
-    lv_obj_t *label_nearby = lv_label_create(ui_ScreenPageBLEScan);
-    lv_label_set_text(label_nearby, "NEARBY");
-    lv_obj_set_style_text_font(label_nearby, ui_font_hint(12), LV_PART_MAIN);
-    lv_obj_set_style_text_color(label_nearby, lv_color_hex(0x888888), LV_PART_MAIN);
-    lv_obj_align(label_nearby, LV_ALIGN_TOP_MID, 0, layout.nearby_y);
+    s_label_nearby = lv_label_create(ui_ScreenPageBLEScan);
+    lv_label_set_text(s_label_nearby, "NEARBY");
+    lv_obj_set_style_text_font(s_label_nearby, ui_font_hint(12), LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_nearby, lv_color_hex(0x888888), LV_PART_MAIN);
+    lv_obj_align(s_label_nearby, LV_ALIGN_TOP_MID, 0, layout.nearby_y);
 
-    // Device list (scan results)
     s_list = lv_list_create(ui_ScreenPageBLEScan);
     lv_obj_set_size(s_list, layout.list_width, layout.list_height);
     lv_obj_align(s_list, LV_ALIGN_TOP_MID, 0, layout.list_y);
     lv_obj_add_flag(s_list, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_set_style_bg_color(s_list, lv_color_hex(0x111111), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_list, 255, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_list, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_list, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(s_list, lv_color_hex(0x444444), LV_PART_MAIN);
     lv_obj_set_style_pad_all(s_list, layout.list_pad, LV_PART_MAIN);
     lv_obj_set_style_radius(s_list, layout.list_radius, LV_PART_MAIN);
     lv_obj_set_style_clip_corner(s_list, true, LV_PART_MAIN);
 
-    // Gesture event for navigation
     lv_obj_add_event_cb(ui_ScreenPageBLEScan, on_ble_scan_background, LV_EVENT_GESTURE, NULL);
     aux_sensor_demand_refresh();
-
-    // Start scanning
     start_scan();
 }
-

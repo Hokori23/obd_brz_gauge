@@ -23,28 +23,6 @@ static const char *TAG = "ui";
 static bool s_logo_transition_started = false;
 
 #define UI_NAV_ANIM_MS 0
-#define UI_NAV_ANIM_LOGO_MS 0
-
-static const char *gesture_dir_name(lv_dir_t dir)
-{
-    switch (dir) {
-    case LV_DIR_LEFT:
-        return "LEFT";
-    case LV_DIR_RIGHT:
-        return "RIGHT";
-    case LV_DIR_TOP:
-        return "TOP";
-    case LV_DIR_BOTTOM:
-        return "BOTTOM";
-    default:
-        return "NONE";
-    }
-}
-
-static void log_gesture_event(const char *screen_name, lv_dir_t dir)
-{
-    ESP_LOGI(TAG, "%s gesture=%s", screen_name, gesture_dir_name(dir));
-}
 
 static void ui_logo_unloaded_cb(lv_event_t *e)
 {
@@ -91,24 +69,11 @@ lv_obj_t *ui_ScreenPageBLEScan;
 void ui_ScreenPageSettings_screen_init(void);
 lv_obj_t *ui_ScreenPageSettings;
 
-// SCREEN: ui_ScreenPageODBProtocal
-void ui_ScreenPageODBProtocal_screen_init(void);
-lv_obj_t *ui_ScreenPageODBProtocal;
-lv_obj_t *ui_SpinnerODBProtocalEgg;
-lv_obj_t *ui_ArcPageODBProtocalBack;
-lv_obj_t *ui_RollerODBProtocalChoose;
-lv_obj_t *ui_ImageODBProtocalBlackEar;
-lv_obj_t *ui_LabelOBDIIText;
-lv_obj_t *ui_LabelSureTipText;
-
 // EVENTS
 lv_obj_t *ui____initial_actions0;
 
-static uint16_t usSaveProtTimeCnt = 0;
-
 // IMAGES AND IMAGE SETS
 #define CLEAR_TRIP_TIME 2000
-#define SAVE_PROTOCOL_TIME 2000
 
 void my_timerMain(lv_timer_t *timer)
 {
@@ -161,26 +126,7 @@ void my_timerMain(lv_timer_t *timer)
 
 void ui_event_logo_background(lv_event_t *e)
 {
-    lv_event_code_t event_code = lv_event_get_code(e);
-
-    if (event_code == LV_EVENT_CLICKED) {
-        static uint32_t last_click_tick = 0;
-        static uint8_t click_cnt = 0;
-        uint32_t now = lv_tick_get();
-
-        if (now - last_click_tick < 400) {
-            click_cnt++;
-        } else {
-            click_cnt = 1;
-        }
-        last_click_tick = now;
-
-        if (click_cnt >= 2) {
-            click_cnt = 0;
-            if(ui_ScreenPageODBProtocal == NULL) ui_ScreenPageODBProtocal_screen_init();
-            ui_logo_transition_to(&ui_ScreenPageODBProtocal, ui_ScreenPageODBProtocal_screen_init, "double_click");
-        }
-    }
+    LV_UNUSED(e);
 }
 
 void ui_label_set_text_if_changed(lv_obj_t *label, const char *text)
@@ -231,44 +177,9 @@ void ui_init(void)
     lv_disp_set_theme(dispp, theme);
     ui_ScreenPageLogo_screen_init();
     ui_home_runtime_reset(ui_home_runtime_page_from_default(nvs_cfg_get()->default_page));
-    ui_ScreenPageODBProtocal = NULL;
     ui____initial_actions0 = lv_obj_create(NULL);
     s_logo_transition_started = false;
     lv_disp_load_scr(ui_ScreenPageLogo);
 
     lv_timer_create(my_timerMain, 200, NULL);
-}
-
-void ui_event_obd_prot_background(lv_event_t *e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-
-    if (code == LV_EVENT_GESTURE) {
-        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-
-        log_gesture_event("OBDProtocal", dir);
-        if (dir == LV_DIR_TOP) {
-            ESP_LOGI(TAG,
-                     "OBDProtocal gesture: return to home active_before=%p",
-                     (void *)lv_scr_act());
-            lv_indev_wait_release(lv_indev_get_act());
-            ui_home_runtime_show_page(ui_home_runtime_page_from_default(nvs_cfg_get()->default_page),
-                                      LV_SCR_LOAD_ANIM_NONE);
-            ESP_LOGI(TAG, "OBDProtocal gesture: switch requested active_after=%p", (void *)lv_scr_act());
-        }
-    } else if (code == LV_EVENT_LONG_PRESSED) {
-        usSaveProtTimeCnt = 0;
-    } else if (code == LV_EVENT_LONG_PRESSED_REPEAT) {
-        usSaveProtTimeCnt += 100;
-        if (usSaveProtTimeCnt >= SAVE_PROTOCOL_TIME / 100) {
-            nvs_user_cfg_t cfg = *nvs_cfg_get();
-
-            usSaveProtTimeCnt = 0;
-            cfg.protocol = lv_roller_get_selected(ui_RollerODBProtocalChoose);
-            nvs_cfg_set(&cfg);
-            esp_restart();
-        }
-    } else if (code == LV_EVENT_RELEASED) {
-        usSaveProtTimeCnt = 0;
-    }
 }

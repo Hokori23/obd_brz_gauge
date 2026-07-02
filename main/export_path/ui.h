@@ -31,16 +31,6 @@ void ui_ScreenPageLogo_screen_init(void);
 extern lv_obj_t * ui_ScreenPageLogo;
 extern lv_obj_t * imageLogo;
 
-// SCREEN: ui_ScreenPageODBProtocal
-void ui_ScreenPageODBProtocal_screen_init(void);
-extern lv_obj_t * ui_ScreenPageODBProtocal;
-extern lv_obj_t * ui_SpinnerODBProtocalEgg;
-extern lv_obj_t * ui_ArcPageODBProtocalBack;
-extern lv_obj_t * ui_RollerODBProtocalChoose;
-extern lv_obj_t * ui_ImageODBProtocalBlackEar;
-extern lv_obj_t * ui_LabelOBDIIText;
-extern lv_obj_t * ui_LabelSureTipText;
-
 // SCREEN: ui_ScreenPageBLEScan
 void ui_ScreenPageBLEScan_screen_init(void);
 extern lv_obj_t * ui_ScreenPageBLEScan;
@@ -95,7 +85,6 @@ LV_FONT_DECLARE(ui_font_FontTypoderSize140);
 // UI INIT
 void ui_init(void);
 void ui_event_logo_background(lv_event_t * e);
-void ui_event_obd_prot_background(lv_event_t * e);
 #ifdef __cplusplus
 } /*extern "C"*/
 #endif

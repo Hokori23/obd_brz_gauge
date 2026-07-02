@@ -22,6 +22,7 @@ uint8_t ui_home_runtime_page_from_default(uint8_t default_page);
 void ui_home_runtime_rebuild_and_load(uint8_t page_id, lv_scr_load_anim_t anim);
 bool ui_home_runtime_active_page_uses_item(disp_item_t item);
 bool ui_home_runtime_active_page_uses_type(ui_dashboard_page_type_t page_type);
+bool ui_home_runtime_active_page_gear_rpm_ring_enabled(void);
 
 #ifdef __cplusplus
 } /* extern "C" */

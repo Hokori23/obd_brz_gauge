@@ -24,12 +24,17 @@ if ($bleScan -notmatch '(?s)static void ui_ble_scan_screen_deleted\(lv_event_t \
     throw "BLE scan workflow must stop scanning when the screen is deleted"
 }
 
-if ($settings -notmatch '(?s)static void on_settings_background\(lv_event_t \*e\).*if \(s_settings_section == UI_SETTINGS_SECTION_ROOT\) \{\s*ui_settings_close_to_home\(\);\s*\} else \{\s*ui_settings_show_section\(UI_SETTINGS_SECTION_ROOT\);\s*\}') {
-    throw "Settings workflow must use top-swipe to leave the root page and to step back from second-level pages"
+if ($settings -notmatch 'lv_tileview_create\(ui_ScreenPageSettings\)' -or
+    $settings -notmatch '(?s)static void ui_settings_gesture_event\(lv_event_t \*e\).*dir != LV_DIR_TOP.*ui_settings_close_to_home\(\);') {
+    throw "Settings workflow must use unified horizontal pages and top-swipe home return"
 }
 
-if ($settings -notmatch '(?s)static void ui_settings_close_to_home\(void\).*ui_home_runtime_show_page\(UI_HOME_PAGE_MENU_ID,\s*LV_SCR_LOAD_ANIM_MOVE_LEFT\);') {
+if ($settings -notmatch '(?s)static void ui_settings_close_to_home\(void\).*ui_home_runtime_show_page\(UI_HOME_PAGE_MENU_ID,\s*LV_SCR_LOAD_ANIM_NONE\);') {
     throw "Settings workflow must still return through the home runtime when closing settings"
+}
+
+if ($settings -match 'ui_round_shell_create_header_button\(ui_ScreenPageSettings,\s*"HOME"') {
+    throw "Settings workflow should not render a separate HOME button once swipe-back is the unified return model"
 }
 
 Write-Output "home navigation workflow integration checks passed"
