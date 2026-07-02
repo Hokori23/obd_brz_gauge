@@ -21,8 +21,8 @@ if ($homeRuntimeHeader -notmatch 'bool ui_home_runtime_active_page_uses_item\(di
     throw "Demand-driven workflow must expose active home page usage queries to sibling modules"
 }
 
-if ($auxDemand -notmatch '(?s)void aux_sensor_demand_refresh\(void\).*ui_home_runtime_active_page_uses_item\(DISP_ITEM_BKT\).*racechrono_ble_diy_is_pid_enabled\(RC_PID_BRAKE_X10\).*qmi8658_gforce_set_enabled\(imu_needed\);') {
-    throw "aux_sensor_demand_refresh() must merge home-page demand, RaceChrono demand, RS485 brake demand, and IMU demand"
+if ($auxDemand -notmatch '(?s)void aux_sensor_demand_refresh\(void\).*ui_home_runtime_active_page_uses_item\(DISP_ITEM_BKT\).*racechrono_ble_diy_is_pid_enabled\(RC_PID_BRAKE_X10\).*qmi8658_gforce_set_enabled\(imu_needed\);.*oil_pressure_set_enabled\(oil_pressure_needed\);') {
+    throw "aux_sensor_demand_refresh() must merge home-page demand, RaceChrono demand, RS485 brake demand, IMU demand, and oil-pressure demand"
 }
 
 if ($homeRuntime -notmatch '(?s)void ui_home_runtime_rebuild_and_load\(uint8_t page_id,\s*lv_scr_load_anim_t anim\).*aux_sensor_demand_refresh\(\);') {

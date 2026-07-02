@@ -26,6 +26,8 @@ static volatile int16_t  s_lon_accel_x100 = -32768; // 0.01g, -32768=invalid
 static volatile int16_t  s_lat_accel_imu_x100 = -32768; // 0.01g, -32768=invalid
 static volatile int16_t  s_lon_accel_imu_x100 = -32768; // 0.01g, -32768=invalid
 static volatile brake_rs485_status_t s_brake_rs485_status = BRAKE_RS485_IDLE;
+static volatile enGear s_actual_gear = GEAR_NEUTRAL;
+static volatile bool s_actual_gear_valid = false;
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
 void obd_data_set_rpm(uint16_t rpm)
@@ -282,6 +284,22 @@ void obd_data_set_brake_rs485_status(brake_rs485_status_t status)
     portEXIT_CRITICAL(&s_mux);
 }
 
+void obd_data_set_actual_gear(enGear gear)
+{
+    portENTER_CRITICAL(&s_mux);
+    s_actual_gear = gear;
+    s_actual_gear_valid = true;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+void obd_data_clear_actual_gear(void)
+{
+    portENTER_CRITICAL(&s_mux);
+    s_actual_gear = GEAR_NEUTRAL;
+    s_actual_gear_valid = false;
+    portEXIT_CRITICAL(&s_mux);
+}
+
 int16_t obd_data_get_brake_temp_x10(void)
 {
     int16_t val;
@@ -334,6 +352,20 @@ brake_rs485_status_t obd_data_get_brake_rs485_status(void)
     val = s_brake_rs485_status;
     portEXIT_CRITICAL(&s_mux);
     return val;
+}
+
+bool obd_data_get_actual_gear(enGear *gear_out)
+{
+    bool valid;
+
+    portENTER_CRITICAL(&s_mux);
+    valid = s_actual_gear_valid;
+    if (gear_out != NULL) {
+        *gear_out = s_actual_gear;
+    }
+    portEXIT_CRITICAL(&s_mux);
+
+    return valid;
 }
 
 /**

@@ -14,6 +14,7 @@
 #include "app_obd_dsp/aux_sensor_demand.h"
 #include "app_obd_dsp/obd_poll_schedule_logic.h"
 #include "app_obd_dsp/obd_data_cache.h"
+#include "app_obd_dsp/zc6_gear_monitor_decode.h"
 #include "app_obd_dsp/zc6_gforce_monitor_decode.h"
 #include "app_obd_dsp/vehicle_profiles.h"
 #include "app_obd_dsp/zc6_gforce_decode.h"
@@ -49,6 +50,7 @@ typedef enum {
 typedef enum {
     OBD_STREAM_MODE_PID_POLL = 0,
     OBD_STREAM_MODE_GFORCE_MONITOR,
+    OBD_STREAM_MODE_ZC6_GEAR_MONITOR,
 } obd_stream_mode_t;
 
 #define OBD_IDLE_NO_DEMAND_DELAY_MS 200u
@@ -114,12 +116,18 @@ static int8_t s_oil_temp_offset = 0;  // 閻劍鍩涢弽鈥冲櫙閸嬪繒些
 static volatile bool s_elm_ready = true; // 閸掓繂顫愰崗浣筋啅閸欐垿鈧線顩婚弶?ATZ
 static volatile bool s_expect_mode21 = false; // true=娑撳﹥娼崨鎴掓姢閺?21 01閿涘瞼鐡戝?61 01 閸濆秴绨?
 static volatile bool s_gforce_monitor_active = false;
+static volatile bool s_zc6_gear_monitor_active = false;
 bool elm327_ble_send_ascii_blocking(const char *ascii_cmd);
 
 #define GFORCE_MONITOR_BUF_SIZE 160
 static char s_gforce_monitor_buf[GFORCE_MONITOR_BUF_SIZE];
 static size_t s_gforce_monitor_len = 0;
 static int64_t s_gforce_monitor_last_log_us = 0;
+
+#define ZC6_GEAR_MONITOR_BUF_SIZE 160
+static char s_zc6_gear_monitor_buf[ZC6_GEAR_MONITOR_BUF_SIZE];
+static size_t s_zc6_gear_monitor_len = 0;
+static int64_t s_zc6_gear_monitor_last_log_us = 0;
 
 static ble_scan_result_t *ble_scan_buffer_alloc(void)
 {
@@ -342,11 +350,15 @@ static void elm327_send_standard_init_sequence(uint8_t protocol_to_use, const ch
 
     s_elm_ready = true;
     s_gforce_monitor_active = false;
+    s_zc6_gear_monitor_active = false;
     s_gforce_monitor_len = 0u;
     s_gforce_monitor_last_log_us = 0;
+    s_zc6_gear_monitor_len = 0u;
+    s_zc6_gear_monitor_last_log_us = 0;
     s_accum_len = 0u;
     s_accum_buf[0] = '\0';
     s_expect_mode21 = false;
+    obd_data_clear_actual_gear();
 
     for (size_t i = 0; i < sizeof(init_cmds) / sizeof(init_cmds[0]); ++i) {
         elm327_ble_send_ascii_blocking(init_cmds[i]);
@@ -370,6 +382,7 @@ static void elm327_enter_gforce_monitor_mode(void)
     };
 
     s_gforce_monitor_active = false;
+    s_zc6_gear_monitor_active = false;
     s_gforce_monitor_len = 0u;
     s_accum_len = 0u;
     s_accum_buf[0] = '\0';
@@ -391,6 +404,43 @@ static void elm327_exit_gforce_monitor_mode(uint8_t protocol_to_use, const char 
     vTaskDelay(pdMS_TO_TICKS(80));
     elm327_send_standard_init_sequence(protocol_to_use, fixed_header_cmd);
     ESP_LOGI(TAG, "Exited G-force OBD monitor mode");
+}
+
+static void elm327_enter_zc6_gear_monitor_mode(void)
+{
+    const char *monitor_cmds[] = {
+        "ATE0\r",
+        "ATL0\r",
+        "ATS0\r",
+        "ATH1\r",
+        "ATCRA141\r",
+        "ATMA\r",
+    };
+
+    s_gforce_monitor_active = false;
+    s_zc6_gear_monitor_active = false;
+    s_zc6_gear_monitor_len = 0u;
+    s_accum_len = 0u;
+    s_accum_buf[0] = '\0';
+    s_expect_mode21 = false;
+    obd_data_clear_actual_gear();
+
+    for (size_t i = 0; i < sizeof(monitor_cmds) / sizeof(monitor_cmds[0]); ++i) {
+        elm327_ble_send_ascii_blocking(monitor_cmds[i]);
+        vTaskDelay(pdMS_TO_TICKS((i + 1u == sizeof(monitor_cmds) / sizeof(monitor_cmds[0])) ? 80u : 30u));
+    }
+
+    s_zc6_gear_monitor_active = true;
+    ESP_LOGI(TAG, "Entered ZC6 gear OBD monitor mode for CAN 0x141");
+}
+
+static void elm327_exit_zc6_gear_monitor_mode(uint8_t protocol_to_use, const char *fixed_header_cmd)
+{
+    s_elm_ready = true;
+    elm327_ble_send_ascii_blocking("\r");
+    vTaskDelay(pdMS_TO_TICKS(80));
+    elm327_send_standard_init_sequence(protocol_to_use, fixed_header_cmd);
+    ESP_LOGI(TAG, "Exited ZC6 gear OBD monitor mode");
 }
 
 static void elm327_log_gforce_monitor_sample(const char *line, int16_t lat_x100, int16_t lon_x100)
@@ -461,6 +511,67 @@ static void elm327_feed_gforce_monitor_bytes(const uint8_t *data, size_t len)
             s_gforce_monitor_len = 0u;
         }
         s_gforce_monitor_buf[s_gforce_monitor_len++] = ch;
+    }
+}
+
+static void elm327_log_zc6_gear_monitor_sample(const char *line, enGear gear)
+{
+    int64_t now_us;
+
+    if (line == NULL) {
+        return;
+    }
+
+    now_us = esp_timer_get_time();
+    if ((now_us - s_zc6_gear_monitor_last_log_us) < 1000000LL) {
+        return;
+    }
+
+    s_zc6_gear_monitor_last_log_us = now_us;
+    ESP_LOGI(TAG, "ZC6 gear OBD sample gear=%d line=%.32s", (int)gear, line);
+}
+
+static bool elm327_parse_zc6_gear_monitor_line(const char *line)
+{
+    enGear gear = GEAR_NEUTRAL;
+
+    if (!zc6_gear_decode_monitor_line(line, &gear)) {
+        return false;
+    }
+
+    obd_data_set_actual_gear(gear);
+    elm327_log_zc6_gear_monitor_sample(line, gear);
+    return true;
+}
+
+static void elm327_feed_zc6_gear_monitor_bytes(const uint8_t *data, size_t len)
+{
+    if (data == NULL || len == 0u) {
+        return;
+    }
+
+    for (size_t i = 0u; i < len; ++i) {
+        char ch = (char)data[i];
+
+        if (ch == '>') {
+            s_elm_ready = true;
+            continue;
+        }
+        if (ch == '\r' || ch == '\n') {
+            if (s_zc6_gear_monitor_len > 0u) {
+                s_zc6_gear_monitor_buf[s_zc6_gear_monitor_len] = '\0';
+                elm327_parse_zc6_gear_monitor_line(s_zc6_gear_monitor_buf);
+                s_zc6_gear_monitor_len = 0u;
+            }
+            continue;
+        }
+        if ((unsigned char)ch < 0x20u || (unsigned char)ch > 0x7Eu) {
+            continue;
+        }
+        if (s_zc6_gear_monitor_len + 1u >= ZC6_GEAR_MONITOR_BUF_SIZE) {
+            s_zc6_gear_monitor_len = 0u;
+        }
+        s_zc6_gear_monitor_buf[s_zc6_gear_monitor_len++] = ch;
     }
 }
 
@@ -652,32 +763,38 @@ static void obd_poll_task(void *arg) {
         {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
         {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
         {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
-        {OBD_POLL_SLOT_CLT, AUX_OBD_DEMAND_CLT},
         {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
         {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
         {OBD_POLL_SLOT_LOAD, AUX_OBD_DEMAND_LOAD},
         {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
-        {OBD_POLL_SLOT_OIL, AUX_OBD_DEMAND_OIL},
         {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
         {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
+        {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
+        {OBD_POLL_SLOT_CLT, AUX_OBD_DEMAND_CLT},
+        {OBD_POLL_SLOT_OIL, AUX_OBD_DEMAND_OIL},
         {OBD_POLL_SLOT_IAT, AUX_OBD_DEMAND_IAT},
         {OBD_POLL_SLOT_BAT, AUX_OBD_DEMAND_BAT},
+        {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
+        {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
     };
     static const obd_poll_schedule_entry_t s_poll_seq_boost[] = {
         {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
         {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
         {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
         {OBD_POLL_SLOT_BOOST, AUX_OBD_DEMAND_BOOST},
-        {OBD_POLL_SLOT_CLT, AUX_OBD_DEMAND_CLT},
         {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
         {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
         {OBD_POLL_SLOT_LOAD, AUX_OBD_DEMAND_LOAD},
         {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
-        {OBD_POLL_SLOT_OIL, AUX_OBD_DEMAND_OIL},
         {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
         {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
+        {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
+        {OBD_POLL_SLOT_CLT, AUX_OBD_DEMAND_CLT},
+        {OBD_POLL_SLOT_OIL, AUX_OBD_DEMAND_OIL},
         {OBD_POLL_SLOT_IAT, AUX_OBD_DEMAND_IAT},
         {OBD_POLL_SLOT_BAT, AUX_OBD_DEMAND_BAT},
+        {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
+        {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
     };
 
     (void)arg;
@@ -730,6 +847,7 @@ static void obd_poll_task(void *arg) {
         size_t poll_index = 0u;
         uint32_t demand_mask = aux_sensor_demand_get_obd_mask();
         bool gforce_monitor_needed = aux_sensor_demand_is_gforce_obd_enabled();
+        bool zc6_gear_monitor_needed = aux_sensor_demand_is_zc6_gear_obd_enabled();
 
         if (!s_connected) {
             stream_mode = OBD_STREAM_MODE_PID_POLL;
@@ -746,8 +864,21 @@ static void obd_poll_task(void *arg) {
             continue;
         }
 
+        if (zc6_gear_monitor_needed) {
+            if (stream_mode != OBD_STREAM_MODE_ZC6_GEAR_MONITOR) {
+                elm327_enter_zc6_gear_monitor_mode();
+                stream_mode = OBD_STREAM_MODE_ZC6_GEAR_MONITOR;
+            }
+            vTaskDelay(pdMS_TO_TICKS(120));
+            continue;
+        }
+
         if (stream_mode == OBD_STREAM_MODE_GFORCE_MONITOR) {
             elm327_exit_gforce_monitor_mode(protocol_to_use, fixed_header_cmd);
+            stream_mode = OBD_STREAM_MODE_PID_POLL;
+        }
+        if (stream_mode == OBD_STREAM_MODE_ZC6_GEAR_MONITOR) {
+            elm327_exit_zc6_gear_monitor_mode(protocol_to_use, fixed_header_cmd);
             stream_mode = OBD_STREAM_MODE_PID_POLL;
         }
 
@@ -1407,6 +1538,10 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
         int n = param->notify.value_len;
         if (s_gforce_monitor_active) {
             elm327_feed_gforce_monitor_bytes(v, (size_t)n);
+            break;
+        }
+        if (s_zc6_gear_monitor_active) {
+            elm327_feed_zc6_gear_monitor_bytes(v, (size_t)n);
             break;
         }
 

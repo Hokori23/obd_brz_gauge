@@ -147,3 +147,8 @@ const oil_temp_strategy_t *vehicle_profile_get_oil_temp_strategy(void)
     if (!p) return NULL;
     return &p->oil_temp_strategy;
 }
+
+bool vehicle_profile_is_active_zc6(void)
+{
+    return s_active_idx == 0u;
+}

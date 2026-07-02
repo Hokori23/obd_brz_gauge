@@ -20,6 +20,7 @@
 #define ADS1115_REG_CONFIG      0x01
 
 #define OIL_PRESS_POLL_MS       100
+#define OIL_PRESS_IDLE_MS       250
 
 // 标定参数：3.3V 供电传感器，输出 0.5~2.5V 对应 0.0~10.0 bar
 // ADS1115 使用 AIN0 通道（传感器信号线接 AIN0，GND 接 GND）
@@ -29,6 +30,7 @@
 #define OIL_PRESS_MAX_BAR_X10   100
 
 static bool s_started = false;
+static volatile bool s_enabled = true;
 
 // 触发单次转换并读取 AIN0 电压（单位 mV）
 static esp_err_t ads1115_read_ain0_mv(int32_t *out_mv)
@@ -105,6 +107,11 @@ static void oil_pressure_task(void *arg)
     uint32_t log_count = 0;
 
     while (1) {
+        if (!s_enabled) {
+            vTaskDelay(pdMS_TO_TICKS(OIL_PRESS_IDLE_MS));
+            continue;
+        }
+
         int32_t mv = 0;
         esp_err_t err = ads1115_read_ain0_mv(&mv);
         if (err == ESP_OK) {
@@ -140,6 +147,11 @@ void oil_pressure_start(void)
     ESP_LOGI(TAG, "Pressure Range: 0.0 ~ 10.0 bar");
     ESP_LOGI(TAG, "Poll Interval: %dms", OIL_PRESS_POLL_MS);
     ESP_LOGI(TAG, "Task started. Check [OIL] logs for readings.");
+}
+
+void oil_pressure_set_enabled(bool enabled)
+{
+    s_enabled = enabled;
 }
 
 void ads1115_oil_pressure_start(void)

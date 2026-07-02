@@ -69,6 +69,7 @@ const gear_ratio_range_t *vehicle_profile_get_gear_ranges(uint8_t *count);
 
 // 获取当前激活车型的油温查询策略
 const oil_temp_strategy_t *vehicle_profile_get_oil_temp_strategy(void);
+bool vehicle_profile_is_active_zc6(void);
 
 #ifdef __cplusplus
 }
