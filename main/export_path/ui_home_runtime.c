@@ -90,9 +90,15 @@ typedef struct {
     float gforce_display_lon_g;
     lv_coord_t gforce_plot_size;
     lv_coord_t gforce_plot_radius;
-    lv_obj_t *gear_ring_segments[UI_HOME_GEAR_RING_MAX_SEGMENTS];
+    lv_obj_t *gear_ring_draw_obj;
     lv_coord_t gear_ring_diameter;
     lv_coord_t gear_ring_width;
+    uint16_t gear_ring_rpm;
+    uint16_t gear_ring_redline_rpm;
+    uint16_t gear_ring_max_rpm;
+    uint16_t gear_ring_segment_rpm;
+    bool gear_ring_enabled;
+    bool gear_ring_blink_red;
     int64_t gear_status_wait_start_us;
     uint8_t item_cache[UI_DASHBOARD_MAX_SLOTS];
     uint8_t slot_count;
@@ -185,6 +191,7 @@ static bool ui_home_read_disp_item_value(disp_item_t item, int32_t *out);
 static void ui_home_refresh_menu_tile(ui_home_tile_runtime_t *rt,
                                       const char *vehicle_name,
                                       const char *ble_short);
+static void ui_home_gear_ring_draw_event(lv_event_t *e);
 static void ui_home_update_gear_ring(ui_home_tile_runtime_t *rt,
                                      uint16_t rpm,
                                      uint16_t redline_rpm,
@@ -777,43 +784,27 @@ static void ui_home_format_ble_name(char *buf, size_t buf_size, const char *name
 static void ui_home_create_menu_content(uint8_t tile_id, lv_obj_t *parent)
 {
     ui_home_tile_runtime_t *rt = &s_home_tile_runtime[tile_id];
-    lv_obj_t *vehicle_hint;
     lv_obj_t *vehicle;
     lv_obj_t *ble_btn;
     lv_obj_t *ble;
     lv_obj_t *btn;
     lv_obj_t *btn_label;
-
-    ui_round_shell_create_title_block(parent,
-                                      "MENU",
-                                      NULL,
-                                      ui_layout_px(22),
-                                      24,
-                                      ui_layout_px(6),
-                                      11,
-                                      NULL,
-                                      NULL);
-
-    vehicle_hint = lv_label_create(parent);
-    lv_label_set_text(vehicle_hint, "ACTIVE VEHICLE");
-    lv_obj_set_style_text_font(vehicle_hint, ui_font_hint(12), LV_PART_MAIN);
-    lv_obj_set_style_text_color(vehicle_hint, lv_color_hex(0x9EA4AE), LV_PART_MAIN);
-    lv_obj_set_width(vehicle_hint, ui_layout_px(220));
-    lv_obj_set_style_text_align(vehicle_hint, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_align(vehicle_hint, LV_ALIGN_CENTER, 0, ui_layout_px(-44));
+    lv_coord_t vehicle_y = ui_layout_px(-78);
+    lv_coord_t ble_y = ui_layout_px(0);
+    lv_coord_t settings_y = ui_layout_px(66);
 
     vehicle = lv_label_create(parent);
     lv_label_set_text(vehicle, "--");
-    lv_obj_set_style_text_font(vehicle, ui_font_typoder(30), LV_PART_MAIN);
+    lv_obj_set_style_text_font(vehicle, ui_font_typoder(36), LV_PART_MAIN);
     lv_obj_set_style_text_color(vehicle, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_label_set_long_mode(vehicle, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(vehicle, ui_layout_px(228));
+    lv_obj_set_width(vehicle, ui_layout_px(236));
     lv_obj_set_style_text_align(vehicle, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_align(vehicle, LV_ALIGN_CENTER, 0, ui_layout_px(-10));
+    lv_obj_align(vehicle, LV_ALIGN_CENTER, 0, vehicle_y);
 
     ble_btn = lv_btn_create(parent);
     lv_obj_set_size(ble_btn, ui_layout_px(236), ui_layout_px(52));
-    lv_obj_align(ble_btn, LV_ALIGN_CENTER, 0, ui_layout_px(42));
+    lv_obj_align(ble_btn, LV_ALIGN_CENTER, 0, ble_y);
     ui_round_shell_apply_action_button_theme(ble_btn, lv_color_hex(0x2F80ED), false, ui_layout_px(22), 18);
     lv_obj_add_flag(ble_btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(ble_btn, ui_home_menu_open_ble_scan, LV_EVENT_CLICKED, NULL);
@@ -825,8 +816,8 @@ static void ui_home_create_menu_content(uint8_t tile_id, lv_obj_t *parent)
     lv_obj_center(ble);
 
     btn = lv_btn_create(parent);
-    lv_obj_set_size(btn, ui_layout_px(196), ui_layout_px(50));
-    lv_obj_align(btn, LV_ALIGN_CENTER, 0, ui_layout_px(108));
+    lv_obj_set_size(btn, ui_layout_px(236), ui_layout_px(50));
+    lv_obj_align(btn, LV_ALIGN_CENTER, 0, settings_y);
     ui_round_shell_apply_action_button_theme(btn, lv_color_hex(0x2F80ED), true, ui_layout_px(20), 19);
     lv_obj_add_flag(btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(btn, ui_home_menu_open_settings, LV_EVENT_CLICKED, NULL);
@@ -1074,39 +1065,22 @@ static void ui_home_create_gear_content(uint8_t tile_id, lv_obj_t *parent)
     lv_coord_t top_pad = ui_safe_margin() + ui_layout_px(12);
     lv_coord_t side_pad = ui_safe_margin() + ui_layout_px(14);
     lv_coord_t bottom_pad = ui_safe_margin() + ui_layout_px(52);
-    lv_coord_t w;
-    lv_coord_t h;
-
     rt->root = parent;
     rt->slot_count = 0u;
     rt->custom_title_label = NULL;
 
-    lv_obj_update_layout(parent);
-    w = lv_obj_get_width(parent);
-    h = lv_obj_get_height(parent);
     LV_UNUSED(top_pad);
     LV_UNUSED(bottom_pad);
-    rt->gear_ring_diameter = LV_MIN(w, h) - ui_layout_px(4);
+    rt->gear_ring_diameter = LV_MIN((lv_coord_t)ui_screen_width(), (lv_coord_t)ui_screen_height());
     rt->gear_ring_diameter = LV_MAX(rt->gear_ring_diameter, ui_layout_px(220));
-    rt->gear_ring_width = LV_MAX(ui_layout_px(10), rt->gear_ring_diameter / 16);
-
-    for (uint8_t i = 0; i < UI_HOME_GEAR_RING_MAX_SEGMENTS; ++i) {
-        rt->gear_ring_segments[i] = lv_arc_create(parent);
-        lv_obj_set_size(rt->gear_ring_segments[i], rt->gear_ring_diameter, rt->gear_ring_diameter);
-        lv_obj_align(rt->gear_ring_segments[i], LV_ALIGN_CENTER, 0, 0);
-        ui_home_make_passive_obj(rt->gear_ring_segments[i]);
-        lv_obj_set_style_bg_opa(rt->gear_ring_segments[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_border_width(rt->gear_ring_segments[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_outline_width(rt->gear_ring_segments[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(rt->gear_ring_segments[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_arc_width(rt->gear_ring_segments[i], rt->gear_ring_width, LV_PART_INDICATOR);
-        lv_obj_set_style_arc_rounded(rt->gear_ring_segments[i], false, LV_PART_INDICATOR);
-        lv_obj_set_style_arc_opa(rt->gear_ring_segments[i], LV_OPA_TRANSP, LV_PART_MAIN);
-        lv_obj_set_style_arc_opa(rt->gear_ring_segments[i], LV_OPA_TRANSP, LV_PART_INDICATOR);
-        lv_obj_set_style_bg_opa(rt->gear_ring_segments[i], LV_OPA_TRANSP, LV_PART_KNOB);
-        lv_arc_set_bg_angles(rt->gear_ring_segments[i], 0, 0);
-        lv_arc_set_angles(rt->gear_ring_segments[i], 90, 90);
-    }
+    rt->gear_ring_width = LV_MAX(ui_layout_px(10),
+                                 (lv_coord_t)((rt->gear_ring_diameter - ui_layout_px(4)) / 16));
+    rt->gear_ring_draw_obj = lv_obj_create(parent);
+    lv_obj_remove_style_all(rt->gear_ring_draw_obj);
+    lv_obj_set_size(rt->gear_ring_draw_obj, rt->gear_ring_diameter, rt->gear_ring_diameter);
+    lv_obj_align(rt->gear_ring_draw_obj, LV_ALIGN_CENTER, 0, 0);
+    ui_home_make_passive_obj(rt->gear_ring_draw_obj);
+    lv_obj_add_event_cb(rt->gear_ring_draw_obj, ui_home_gear_ring_draw_event, LV_EVENT_DRAW_MAIN, rt);
 
     rt->custom_value_label = lv_label_create(parent);
     lv_label_set_text(rt->custom_value_label, "N");
@@ -1395,7 +1369,7 @@ static void ui_home_create_add_content(uint8_t tile_id, lv_obj_t *parent)
     lv_obj_t *btn = lv_btn_create(parent);
     btn_size = ui_layout_px(240);
     lv_obj_set_size(btn, btn_size, btn_size);
-    lv_obj_align(btn, LV_ALIGN_CENTER, 0, ui_layout_px(24));
+    lv_obj_center(btn);
     ui_home_runtime_widgets_apply_add_button_theme(btn, btn_size);
     lv_obj_add_flag(btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(btn, ui_home_add_page_click, LV_EVENT_CLICKED, NULL);
@@ -1530,7 +1504,7 @@ static void ui_home_enter_edit_mode(uint8_t page_id)
     lv_obj_remove_style_all(zone_edit);
     lv_obj_set_size(zone_edit, LV_PCT(50), LV_PCT(50));
     lv_obj_align(zone_edit, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(zone_edit, lv_color_hex(0x68A9FF), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(zone_edit, lv_color_hex(0x0078D4), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(zone_edit, 148, LV_PART_MAIN);
     lv_obj_clear_flag(zone_edit, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(zone_edit, LV_OBJ_FLAG_CLICKABLE);
@@ -1546,7 +1520,7 @@ static void ui_home_enter_edit_mode(uint8_t page_id)
     lv_obj_remove_style_all(zone_del);
     lv_obj_set_size(zone_del, LV_PCT(50), LV_PCT(50));
     lv_obj_align(zone_del, LV_ALIGN_TOP_RIGHT, 0, 0);
-    lv_obj_set_style_bg_color(zone_del, lv_color_hex(0xFF7F8D), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(zone_del, lv_color_hex(0xFF5252), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(zone_del, 148, LV_PART_MAIN);
     lv_obj_clear_flag(zone_del, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(zone_del, LV_OBJ_FLAG_CLICKABLE);
@@ -1562,7 +1536,7 @@ static void ui_home_enter_edit_mode(uint8_t page_id)
     lv_obj_remove_style_all(zone_back);
     lv_obj_set_size(zone_back, LV_PCT(100), LV_PCT(50));
     lv_obj_align(zone_back, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_bg_color(zone_back, lv_color_hex(0x5FD58A), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(zone_back, lv_color_hex(0x0DBC79), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(zone_back, 148, LV_PART_MAIN);
     lv_obj_clear_flag(zone_back, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(zone_back, LV_OBJ_FLAG_CLICKABLE);
@@ -1726,32 +1700,34 @@ static void ui_home_refresh_menu_tile(ui_home_tile_runtime_t *rt,
     ui_label_set_text_fmt_if_changed(rt->menu_ble_label, "BLE: %s", ble_short);
 }
 
-static void ui_home_update_gear_ring(ui_home_tile_runtime_t *rt,
-                                     uint16_t rpm,
-                                     uint16_t redline_rpm,
-                                     uint16_t max_rpm,
-                                     uint16_t segment_rpm,
-                                     bool enabled,
-                                     bool blink_red)
+static void ui_home_gear_ring_draw_event(lv_event_t *e)
 {
+    ui_home_tile_runtime_t *rt = (ui_home_tile_runtime_t *)lv_event_get_user_data(e);
+    lv_obj_t *obj = lv_event_get_target(e);
+    lv_draw_ctx_t *draw_ctx = lv_event_get_draw_ctx(e);
+    lv_area_t coords;
+    lv_point_t center;
+    lv_draw_arc_dsc_t arc_dsc;
     float usable_deg;
     float accum_deg = 0.0f;
+    uint16_t rpm;
+    uint16_t redline_rpm;
+    uint16_t max_rpm;
+    uint16_t segment_rpm;
     uint16_t segment_count;
+    lv_coord_t radius;
 
-    if (rt == NULL) {
+    if (lv_event_get_code(e) != LV_EVENT_DRAW_MAIN || rt == NULL || obj == NULL || draw_ctx == NULL) {
+        return;
+    }
+    if (!rt->gear_ring_enabled || rt->gear_ring_rpm == 0u || rt->gear_ring_max_rpm == 0u) {
         return;
     }
 
-    if (!enabled || rpm == 0u || max_rpm == 0u) {
-        for (uint8_t i = 0; i < UI_HOME_GEAR_RING_MAX_SEGMENTS; ++i) {
-            if (rt->gear_ring_segments[i] != NULL) {
-                lv_obj_set_style_arc_opa(rt->gear_ring_segments[i],
-                                         LV_OPA_TRANSP,
-                                         LV_PART_INDICATOR);
-            }
-        }
-        return;
-    }
+    rpm = rt->gear_ring_rpm;
+    redline_rpm = rt->gear_ring_redline_rpm;
+    max_rpm = rt->gear_ring_max_rpm;
+    segment_rpm = rt->gear_ring_segment_rpm;
 
     if (rpm > max_rpm) {
         rpm = max_rpm;
@@ -1776,10 +1752,22 @@ static void ui_home_update_gear_ring(ui_home_tile_runtime_t *rt,
         usable_deg = 1.0f;
     }
 
-    for (uint8_t i = 0; i < UI_HOME_GEAR_RING_MAX_SEGMENTS; ++i) {
-        lv_obj_t *arc = rt->gear_ring_segments[i];
-        uint16_t seg_start_rpm;
-        uint16_t seg_end_rpm;
+    coords = obj->coords;
+    center.x = (lv_coord_t)((coords.x1 + coords.x2) / 2);
+    center.y = (lv_coord_t)((coords.y1 + coords.y2) / 2);
+    radius = (lv_coord_t)(LV_MIN(lv_area_get_width(&coords), lv_area_get_height(&coords)) / 2);
+    if (radius <= 0) {
+        return;
+    }
+
+    lv_draw_arc_dsc_init(&arc_dsc);
+    arc_dsc.width = rt->gear_ring_width;
+    arc_dsc.rounded = 0;
+    arc_dsc.opa = LV_OPA_COVER;
+
+    for (uint16_t i = 0; i < segment_count; ++i) {
+        uint16_t seg_start_rpm = (uint16_t)(i * segment_rpm);
+        uint16_t seg_end_rpm = (uint16_t)(seg_start_rpm + segment_rpm);
         uint16_t seg_span_rpm;
         float seg_deg_full;
         float seg_deg_fill;
@@ -1787,23 +1775,11 @@ static void ui_home_update_gear_ring(ui_home_tile_runtime_t *rt,
         uint16_t start_angle;
         uint16_t end_angle;
 
-        if (arc == NULL) {
-            continue;
-        }
-
-        if (i >= segment_count) {
-            lv_obj_set_style_arc_opa(arc, LV_OPA_TRANSP, LV_PART_INDICATOR);
-            continue;
-        }
-
-        seg_start_rpm = (uint16_t)(i * segment_rpm);
-        seg_end_rpm = seg_start_rpm + segment_rpm;
         if (seg_end_rpm > max_rpm) {
             seg_end_rpm = max_rpm;
         }
         seg_span_rpm = (uint16_t)(seg_end_rpm - seg_start_rpm);
         if (seg_span_rpm == 0u) {
-            lv_obj_set_style_arc_opa(arc, LV_OPA_TRANSP, LV_PART_INDICATOR);
             continue;
         }
 
@@ -1812,32 +1788,49 @@ static void ui_home_update_gear_ring(ui_home_tile_runtime_t *rt,
                                     0.0f,
                                     1.0f);
         seg_deg_fill = seg_deg_full * fill_ratio;
-
         if (seg_deg_fill <= 0.1f) {
-            lv_obj_set_style_arc_opa(arc, LV_OPA_TRANSP, LV_PART_INDICATOR);
             accum_deg += seg_deg_full + UI_HOME_GEAR_RING_GAP_DEG;
             continue;
         }
 
         start_angle = (uint16_t)(((int32_t)(90.0f + accum_deg)) % 360);
         end_angle = (uint16_t)(((int32_t)(90.0f + accum_deg + seg_deg_fill)) % 360);
-        lv_arc_set_angles(arc, start_angle, end_angle);
-        lv_obj_set_style_arc_color(arc,
-                                   (seg_end_rpm > redline_rpm)
-                                       ? (blink_red ? lv_color_hex(0xFF3B30)
-                                                    : lv_color_hex(0xF5F5F5))
-                                       : lv_color_hex(0xF5F5F5),
-                                   LV_PART_INDICATOR);
-        lv_obj_set_style_arc_opa(arc, LV_OPA_COVER, LV_PART_INDICATOR);
+        arc_dsc.color = (seg_end_rpm > redline_rpm)
+                            ? (rt->gear_ring_blink_red ? lv_color_hex(0xFF3B30)
+                                                       : lv_color_hex(0xF5F5F5))
+                            : lv_color_hex(0xF5F5F5);
+        lv_draw_arc(draw_ctx, &arc_dsc, &center, (uint16_t)radius, start_angle, end_angle);
         accum_deg += seg_deg_full + UI_HOME_GEAR_RING_GAP_DEG;
+    }
+}
+
+static void ui_home_update_gear_ring(ui_home_tile_runtime_t *rt,
+                                     uint16_t rpm,
+                                     uint16_t redline_rpm,
+                                     uint16_t max_rpm,
+                                     uint16_t segment_rpm,
+                                     bool enabled,
+                                     bool blink_red)
+{
+    if (rt == NULL) {
+        return;
+    }
+    rt->gear_ring_rpm = rpm;
+    rt->gear_ring_redline_rpm = redline_rpm;
+    rt->gear_ring_max_rpm = max_rpm;
+    rt->gear_ring_segment_rpm = segment_rpm;
+    rt->gear_ring_enabled = enabled;
+    rt->gear_ring_blink_red = blink_red;
+    if (rt->gear_ring_draw_obj != NULL) {
+        lv_obj_invalidate(rt->gear_ring_draw_obj);
     }
 }
 
 static void ui_home_refresh_gear_tile(ui_home_tile_runtime_t *rt)
 {
-    // Debug mock: force gear page RPM to 9000 for ring/blink validation.
-    // uint16_t rpm = obd_data_get_rpm();
-    uint16_t rpm = 9000u;
+    uint16_t rpm = obd_data_get_rpm();
+    // Debug mock: force gear page RPM to 9000 for ring performance validation.
+    // uint16_t rpm = 9000u;
     uint16_t speed = obd_data_get_speed();
     const ui_dashboard_page_cfg_t *page_cfg = NULL;
     uint16_t redline_rpm = UI_DASHBOARD_GEAR_REDLINE_RPM_DEFAULT;
@@ -1956,45 +1949,6 @@ static void ui_home_refresh_gforce_tile(ui_home_tile_runtime_t *rt,
                                (lon_x100 > -32768) ? ((float)lon_x100 / 100.0f) : 0.0f);
 }
 
-static bool ui_home_debug_metric_max_value(disp_item_t item, int32_t *value_out)
-{
-    if (value_out == NULL) {
-        return false;
-    }
-
-    switch (item) {
-    case DISP_ITEM_CLT:
-    case DISP_ITEM_IAT:
-    case DISP_ITEM_OIL:
-        *value_out = 120;
-        return true;
-    case DISP_ITEM_LOAD:
-    case DISP_ITEM_TPS:
-        *value_out = 100;
-        return true;
-    case DISP_ITEM_RPM:
-        *value_out = 9000;
-        return true;
-    case DISP_ITEM_SPEED:
-        *value_out = 200;
-        return true;
-    case DISP_ITEM_BAT:
-        *value_out = 14800;
-        return true;
-    case DISP_ITEM_OILP:
-        *value_out = 1000;
-        return true;
-    case DISP_ITEM_BKT:
-        *value_out = 6000;
-        return true;
-    case DISP_ITEM_BOOST:
-        *value_out = 200;
-        return true;
-    default:
-        return false;
-    }
-}
-
 static void ui_home_refresh_metric_tile(ui_home_tile_runtime_t *rt,
                                         const ui_dashboard_page_cfg_t *page,
                                         float sweep_ratio,
@@ -2015,15 +1969,12 @@ static void ui_home_refresh_metric_tile(ui_home_tile_runtime_t *rt,
                                                       item,
                                                       rt->slot_count);
         disp_item_sync_meta(rt->name_labels[i], rt->unit_labels[i], &rt->item_cache[i], item);
-        valid = ui_home_debug_metric_max_value(item, &value);
-        /*
         if (sweep_ratio >= 0.0f) {
             value = disp_item_sweep_value(item, sweep_ratio);
             valid = true;
         } else {
             valid = ui_home_read_disp_item_value(item, &value);
         }
-        */
         disp_item_set_text(rt->value_labels[i], item, value, valid);
         disp_item_set_value_color(rt->value_labels[i], item, value, valid,
                                   brake_warn_x10, oil_warn_x10);
