@@ -13,6 +13,8 @@
 #include "bsp_obd_dsp/boards/board_api.h"
 #include "bsp_obd_dsp/boards/board_runtime_touch.h"
 #include "bsp_obd_dsp/boards/board_ws_175_amoled_spec.h"
+#include "bsp_obd_dsp/nvs_storage.h"
+#include "esp_log.h"
 
 static const char *TAG = "board_ws_175";
 
@@ -42,7 +44,7 @@ static void *s_flush_ready_user_ctx;
 static bool s_i2c_ready;
 static bool s_spi_ready;
 
-static const board_profile_t s_board_profile = {
+static board_profile_t s_board_profile = {
     .name = BOARD_WS_175_AMOLED_NAME,
     .hor_res = BOARD_WS_175_AMOLED_H_RES,
     .ver_res = BOARD_WS_175_AMOLED_V_RES,
@@ -53,6 +55,18 @@ static const board_profile_t s_board_profile = {
     .touch_mirror_x = BOARD_WS_175_AMOLED_TOUCH_MIRROR_X,
     .touch_mirror_y = BOARD_WS_175_AMOLED_TOUCH_MIRROR_Y,
 };
+
+static uint16_t board_ws_175_amoled_rotation_degrees(void)
+{
+    return nvs_cfg_get_display_rotation_degrees(nvs_cfg_get(), BOARD_WS_175_AMOLED_DISPLAY_ROTATION);
+}
+
+static void board_ws_175_amoled_refresh_touch_profile(void)
+{
+    s_board_profile.touch_swap_xy = false;
+    s_board_profile.touch_mirror_x = BOARD_WS_175_AMOLED_TOUCH_MIRROR_X;
+    s_board_profile.touch_mirror_y = BOARD_WS_175_AMOLED_TOUCH_MIRROR_Y;
+}
 
 static const co5300_lcd_init_cmd_t s_lcd_init_cmds[] = {
     {0xFE, (uint8_t[]){0x20}, 1, 0},
@@ -82,6 +96,19 @@ static const co5300_lcd_init_cmd_t s_lcd_init_cmds[] = {
     {0x11, NULL, 0, 600},
     {0x29, NULL, 0, 0},
 };
+
+static esp_err_t board_ws_175_amoled_register_panel_io_callbacks(void)
+{
+    if (s_panel_io_handle == NULL || s_flush_ready_cb == NULL) {
+        return ESP_OK;
+    }
+
+    const esp_lcd_panel_io_callbacks_t cbs = {
+        .on_color_trans_done = s_flush_ready_cb,
+    };
+
+    return esp_lcd_panel_io_register_event_callbacks(s_panel_io_handle, &cbs, s_flush_ready_user_ctx);
+}
 
 static esp_err_t board_ws_175_amoled_i2c_init(void)
 {
@@ -142,6 +169,8 @@ static esp_err_t board_ws_175_amoled_panel_init(void)
         esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)BOARD_WS_175_AMOLED_SPI_HOST, &io_config,
                                  &s_panel_io_handle),
         TAG, "panel io init failed");
+    ESP_RETURN_ON_ERROR(board_ws_175_amoled_register_panel_io_callbacks(),
+                        TAG, "panel io callback registration failed");
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_co5300(s_panel_io_handle, &panel_config, &s_panel_handle),
                         TAG, "panel init failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_set_gap(s_panel_handle,
@@ -151,6 +180,8 @@ static esp_err_t board_ws_175_amoled_panel_init(void)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(s_panel_handle), TAG, "panel reset failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_init(s_panel_handle), TAG, "panel controller init failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(s_panel_handle, true), TAG, "panel enable failed");
+    ESP_LOGI(TAG, "panel rotation=%u uses software-rotated flush on PANEL_IF_OTHER",
+             (unsigned)board_ws_175_amoled_rotation_degrees());
     return ESP_OK;
 }
 
@@ -176,7 +207,7 @@ static esp_err_t board_ws_175_amoled_touch_init(void)
             .interrupt = 0,
         },
         .flags = {
-            .swap_xy = BOARD_WS_175_AMOLED_TOUCH_SWAP_XY,
+            .swap_xy = false,
             .mirror_x = BOARD_WS_175_AMOLED_TOUCH_MIRROR_X,
             .mirror_y = BOARD_WS_175_AMOLED_TOUCH_MIRROR_Y,
         },
@@ -186,6 +217,10 @@ static esp_err_t board_ws_175_amoled_touch_init(void)
                         TAG, "touch io init failed");
     ESP_RETURN_ON_ERROR(esp_lcd_touch_new_i2c_cst9217(touch_io_handle, &touch_config, &s_touch_handle),
                         TAG, "touch init failed");
+    ESP_LOGI(TAG, "touch board transform mirror_x=%d mirror_y=%d, logical rotation=%u handled by LVGL",
+             BOARD_WS_175_AMOLED_TOUCH_MIRROR_X,
+             BOARD_WS_175_AMOLED_TOUCH_MIRROR_Y,
+             (unsigned)board_ws_175_amoled_rotation_degrees());
     return ESP_OK;
 }
 
@@ -198,6 +233,8 @@ esp_err_t board_ws_175_amoled_register_display_flush_ready_callback(board_displa
 {
     s_flush_ready_cb = cb;
     s_flush_ready_user_ctx = user_ctx;
+    ESP_RETURN_ON_ERROR(board_ws_175_amoled_register_panel_io_callbacks(),
+                        TAG, "panel io callback registration failed");
     return ESP_OK;
 }
 
@@ -208,6 +245,7 @@ esp_err_t board_ws_175_amoled_display_init(board_display_context_t *ctx)
     ESP_RETURN_ON_FALSE(ctx != NULL, ESP_ERR_INVALID_ARG, TAG, "display context is null");
 
     memset(ctx, 0, sizeof(*ctx));
+    board_ws_175_amoled_refresh_touch_profile();
     ESP_RETURN_ON_ERROR(board_ws_175_amoled_panel_init(), TAG, "display init failed");
     touch_err = board_ws_175_amoled_touch_init();
     if (touch_err != ESP_OK) {
@@ -256,6 +294,21 @@ const char *board_ws_175_amoled_name(void)
 bool board_ws_175_amoled_has_touch(void)
 {
     return s_board_profile.has_touch;
+}
+
+void oil_pressure_start(void)
+{
+    ESP_LOGI(TAG, "oil pressure sampling is not available on WS175 AMOLED board");
+}
+
+void oil_pressure_set_enabled(bool enabled)
+{
+    (void)enabled;
+}
+
+void ads1115_oil_pressure_start(void)
+{
+    oil_pressure_start();
 }
 
 esp_err_t board_ws_175_amoled_get_shared_i2c_bus(i2c_master_bus_handle_t *out_bus)

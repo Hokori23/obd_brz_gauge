@@ -11,14 +11,6 @@ if ($homeRuntime -notmatch 'gforce_axis_h' -or $homeRuntime -notmatch 'gforce_ax
     throw "ui_home_runtime.c must keep the cross-axis layout for the G-force plot"
 }
 
-if ($homeRuntime -notmatch 'gforce_history_fill') {
-    throw "ui_home_runtime.c must keep a dedicated filled historical G envelope layer"
-}
-
-if ($homeRuntime -notmatch 'lv_draw_polygon') {
-    throw "ui_home_runtime.c must draw the historical G envelope as a polygon fill"
-}
-
 if ($homeRuntime -notmatch 'gforce_dot') {
     throw "ui_home_runtime.c must keep the single red current-G marker"
 }
@@ -31,16 +23,16 @@ if ($homeRuntime -notmatch 'delta_mag' -or $homeRuntime -notmatch 'follow = 0\.1
     throw "ui_home_runtime.c must keep the inertia-based smoothing path for the red dot"
 }
 
-if ($homeRuntime -notmatch 'history_decay =') {
-    throw "ui_home_runtime.c must keep the historical G envelope decay logic"
+if ($homeRuntime -match 'ACC\\nLEFT' -or $homeRuntime -match 'BRAKE\\nRIGHT') {
+    throw "ui_home_runtime.c must not keep the old quadrant helper labels on the simplified G-force page"
 }
 
-if ($homeRuntime -notmatch 'quadrant_radius' -or $homeRuntime -notmatch 'quadrant_center_x') {
-    throw "ui_home_runtime.c must keep quadrant labels positioned from the circular plot geometry"
+if ($homeRuntime -match 'lv_draw_polygon') {
+    throw "ui_home_runtime.c must not keep the old polygon history fill on the simplified G-force page"
 }
 
-if ($homeRuntime -notmatch 'ACC\\nLEFT' -or $homeRuntime -notmatch 'BRAKE\\nRIGHT') {
-    throw "ui_home_runtime.c must keep the four G-force quadrants labeled by accel/brake and left/right semantics"
+if ($homeRuntime -notmatch 'lv_obj_set_style_bg_opa\(rt->gforce_plot,\s*LV_OPA_TRANSP') {
+    throw "ui_home_runtime.c must keep the G-force plot background transparent after the visual simplification"
 }
 
 Write-Output "G-force UI contract checks passed"

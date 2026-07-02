@@ -5,12 +5,28 @@ if ($content -notmatch 'sdkconfig\.defaults;sdkconfig\.defaults\.esp32s3;sdkconf
     throw "flash_ws175.ps1 must keep WS175 sdkconfig defaults chain"
 }
 
-if ($content -notmatch 'idf5\.5_py3\.11_env') {
-    throw "flash_ws175.ps1 must use the ESP-IDF 5.5 Python environment"
+if ($content -notmatch '\$requiredIdfVersion = "5\.5\.4"') {
+    throw "flash_ws175.ps1 must declare the repository ESP-IDF version expectation"
 }
 
-if ($content -notmatch 'D:\\esp\\v5\.5\.4-clean\\tools\\activate\.py') {
-    throw "flash_ws175.ps1 must activate the clean ESP-IDF 5.5.4 tree"
+if ($content -notmatch 'function Import-Ws175LocalEnvOverride') {
+    throw "flash_ws175.ps1 must support local non-committed ESP-IDF overrides"
+}
+
+if ($content -notmatch 'tools\\idf-env\.local\.ps1') {
+    throw "flash_ws175.ps1 must document the local override file path"
+}
+
+if ($content -notmatch '\$env:WS175_IDF_PATH' -or $content -notmatch '\$env:IDF_PATH') {
+    throw "flash_ws175.ps1 must resolve ESP-IDF from environment variables instead of a hard-coded path"
+}
+
+if ($content -notmatch '\$env:IDF_PYTHON_ENV_PATH' -and $content -notmatch '\$env:WS175_IDF_PYTHON_SCRIPTS') {
+    throw "flash_ws175.ps1 must support environment-driven ESP-IDF Python setup"
+}
+
+if ($content -match 'D:\\esp\\v5\.5\.4-clean\\tools\\activate\.py') {
+    throw "flash_ws175.ps1 must no longer hard-code a personal ESP-IDF checkout path"
 }
 
 if ($content -match 'SDKCONFIG=sdkconfig\.ws175') {
@@ -79,6 +95,24 @@ if ($content -notmatch 'Hold BOOT') {
 
 if ($content -notmatch 'Serial port \$SerialPortName is not ready after \$attempt attempts across \$TimeoutSec seconds') {
     throw "flash_ws175.ps1 must report bounded serial wait failures clearly"
+}
+
+if ($content -notmatch 'if \(\$BuildOnly\)') {
+    throw "flash_ws175.ps1 must keep a build-only mode"
+}
+
+$examplePath = Join-Path $PSScriptRoot "..\..\tools\idf-env.example.ps1"
+if (-not (Test-Path $examplePath)) {
+    throw "tools/idf-env.example.ps1 must exist as a user-local setup template"
+}
+
+$exampleContent = Get-Content $examplePath -Raw
+if ($exampleContent -notmatch 'WS175_IDF_PATH') {
+    throw "idf-env.example.ps1 must show how to configure WS175_IDF_PATH"
+}
+
+if ($exampleContent -notmatch 'IDF_PYTHON_ENV_PATH') {
+    throw "idf-env.example.ps1 must show how to configure IDF_PYTHON_ENV_PATH"
 }
 
 Write-Output "flash_ws175 script test passed"

@@ -28,6 +28,33 @@
 - `powershell -ExecutionPolicy Bypass -File .\tools\flash_ws175.ps1 -ProbeOnly -Port COM12 -ProbeTimeoutSec 45`
 - `powershell -ExecutionPolicy Bypass -File .\tools\flash_ws175.ps1 -Port COM12 -NoMonitor`
 
+## ESP-IDF 本机配置
+
+- 仓库只约束版本：`ESP-IDF v5.5.4`
+- 本机路径请不要写回通用仓库；优先使用以下任一方式：
+  - VS Code ESP-IDF 插件选择你的本地 `IDF_PATH`
+  - 设置环境变量 `IDF_PATH`
+  - 设置环境变量 `WS175_IDF_PATH`
+  - 复制 `tools/idf-env.example.ps1` 为 `tools/idf-env.local.ps1`
+- `flash_ws175.ps1` 会优先读取 `WS175_IDF_PATH` / `IDF_PATH`
+- Python 环境会优先读取 `WS175_IDF_PYTHON_SCRIPTS`，其次读取 `IDF_PYTHON_ENV_PATH`
+- 如果你是在普通 `powershell` 中运行脚本，而不是 ESP-IDF 插件终端，请确认这些环境已可用；否则 `idf.py build` 可能会失败，但这不代表仓库代码本身有问题
+
+### 该选哪种方式
+
+1. `VS Code ESP-IDF 插件终端`
+   最适合日常开发和手动 `idf.py build`。
+2. `环境变量`
+   最适合希望让普通 `powershell`、外部脚本和 agent 共享同一套 ESP-IDF 路径的人。
+3. `tools/idf-env.local.ps1`
+   最适合只想在当前仓库做个人覆盖，不想改系统环境变量的人。
+
+### 最小建议
+
+- 如果你主要在 VS Code 里开发：优先用插件终端
+- 如果你经常让脚本或 agent 跑构建：补上 `IDF_PATH`，必要时再补 `IDF_PYTHON_ENV_PATH`
+- 如果你只想做仓库级个人配置：创建 `tools/idf-env.local.ps1`
+
 ## WS175 调试与备用链路
 
 - `check_ws175_debug.ps1` 会同时报告：

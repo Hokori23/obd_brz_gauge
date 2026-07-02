@@ -11,6 +11,10 @@
 
 #include "app_obd_dsp/obd_data_cache.h"
 #include "bsp_obd_dsp/boards/board_api.h"
+#include "bsp_obd_dsp/nvs_storage.h"
+#if CONFIG_OBD_BOARD_WS_175_AMOLED
+#include "bsp_obd_dsp/boards/board_ws_175_amoled_spec.h"
+#endif
 
 static const char *TAG = "qmi8658_g";
 
@@ -43,6 +47,7 @@ typedef struct {
     bool bias_ready;
     float bias_x;
     float bias_y;
+    float bias_z;
     float filtered_x;
     float filtered_y;
 } qmi8658_state_t;
@@ -123,17 +128,20 @@ static esp_err_t qmi8658_prepare(qmi8658_state_t *state)
     return ESP_OK;
 }
 
-static esp_err_t qmi8658_read_xy_g(qmi8658_state_t *state, float *x_g, float *y_g)
+static esp_err_t qmi8658_read_xyz_g(qmi8658_state_t *state, float *x_g, float *y_g, float *z_g)
 {
     uint8_t raw[6] = {0};
     int16_t x_raw;
     int16_t y_raw;
+    int16_t z_raw;
 
     ESP_RETURN_ON_ERROR(qmi8658_read_reg(state->dev, QMI8658_REG_AX_L, raw, sizeof(raw)), TAG, "read failed");
     x_raw = (int16_t)(((uint16_t)raw[1] << 8) | raw[0]);
     y_raw = (int16_t)(((uint16_t)raw[3] << 8) | raw[2]);
+    z_raw = (int16_t)(((uint16_t)raw[5] << 8) | raw[4]);
     *x_g = (float)x_raw * QMI8658_ACCEL_SCALE_G;
     *y_g = (float)y_raw * QMI8658_ACCEL_SCALE_G;
+    *z_g = (float)z_raw * QMI8658_ACCEL_SCALE_G;
     return ESP_OK;
 }
 
@@ -141,14 +149,17 @@ static void qmi8658_capture_bias(qmi8658_state_t *state)
 {
     float sum_x = 0.0f;
     float sum_y = 0.0f;
+    float sum_z = 0.0f;
     int samples = 0;
 
     for (int i = 0; i < 32; ++i) {
         float x_g = 0.0f;
         float y_g = 0.0f;
-        if (qmi8658_read_xy_g(state, &x_g, &y_g) == ESP_OK) {
+        float z_g = 0.0f;
+        if (qmi8658_read_xyz_g(state, &x_g, &y_g, &z_g) == ESP_OK) {
             sum_x += x_g;
             sum_y += y_g;
+            sum_z += z_g;
             ++samples;
         }
         vTaskDelay(pdMS_TO_TICKS(8));
@@ -157,10 +168,12 @@ static void qmi8658_capture_bias(qmi8658_state_t *state)
     if (samples > 0) {
         state->bias_x = sum_x / (float)samples;
         state->bias_y = sum_y / (float)samples;
+        state->bias_z = sum_z / (float)samples;
         state->bias_ready = true;
         state->filtered_x = 0.0f;
         state->filtered_y = 0.0f;
-        ESP_LOGI(TAG, "QMI8658 bias x=%.4fg y=%.4fg", state->bias_x, state->bias_y);
+        ESP_LOGI(TAG, "QMI8658 bias x=%.4fg y=%.4fg z=%.4fg",
+                 state->bias_x, state->bias_y, state->bias_z);
     }
 }
 
@@ -177,9 +190,53 @@ static int16_t qmi8658_to_x100(float axis_g)
     return (int16_t)lrintf(axis_g * 100.0f);
 }
 
+static bool qmi8658_display_rotation_flips_plot(void)
+{
+#if CONFIG_OBD_BOARD_WS_175_AMOLED
+    return nvs_cfg_get_display_rotation_degrees(nvs_cfg_get(),
+                                                BOARD_WS_175_AMOLED_DISPLAY_ROTATION) == 180u;
+#else
+    return false;
+#endif
+}
+
+static void qmi8658_map_vehicle_axes(float raw_x_g,
+                                     float raw_y_g,
+                                     float raw_z_g,
+                                     float bias_x_g,
+                                     float bias_y_g,
+                                     float bias_z_g,
+                                     float *lat_g,
+                                     float *lon_g)
+{
+    float corrected_x_g = raw_x_g - bias_x_g;
+    float corrected_y_g = raw_y_g - bias_y_g;
+    float corrected_z_g = raw_z_g - bias_z_g;
+
+    if (lat_g == NULL || lon_g == NULL) {
+        return;
+    }
+
+    /* The Waveshare demo uses X/Y for a flat-on-desk interaction. Our gauge is
+     * viewed like a real car instrument, so the display is mounted roughly
+     * perpendicular to the ground. In that posture the lateral component still
+     * lives on the in-plane Y axis, while the longitudinal component comes from
+     * the board-normal Z axis rather than the demo's X axis.
+     */
+    *lat_g = -corrected_y_g;
+    (void)corrected_x_g;
+    *lon_g = corrected_z_g;
+
+    if (qmi8658_display_rotation_flips_plot()) {
+        *lat_g = -*lat_g;
+        *lon_g = -*lon_g;
+    }
+}
+
 static void qmi8658_log_sample(const qmi8658_state_t *state,
                                float raw_x_g,
                                float raw_y_g,
+                               float raw_z_g,
                                float lat_g,
                                float lon_g)
 {
@@ -196,15 +253,17 @@ static void qmi8658_log_sample(const qmi8658_state_t *state,
 
     s_qmi8658_last_log_us = now_us;
     ESP_LOGI(TAG,
-             "GFORCE IMU raw=(%d,%d)x100g bias=(%d,%d)x100g filt=(%d,%d)x100g",
+             "GFORCE IMU raw=(%d,%d,%d)x100g bias=(%d,%d,%d)x100g mapped=(%d,%d)x100g filt=(%d,%d)x100g",
              (int)lrintf(raw_x_g * 100.0f),
              (int)lrintf(raw_y_g * 100.0f),
+             (int)lrintf(raw_z_g * 100.0f),
              (int)lrintf(state->bias_x * 100.0f),
              (int)lrintf(state->bias_y * 100.0f),
+             (int)lrintf(state->bias_z * 100.0f),
+             (int)lrintf(lat_g * 100.0f),
+             (int)lrintf(lon_g * 100.0f),
              (int)lrintf(state->filtered_x * 100.0f),
              (int)lrintf(state->filtered_y * 100.0f));
-    (void)lat_g;
-    (void)lon_g;
 }
 
 static void qmi8658_gforce_task(void *arg)
@@ -234,16 +293,21 @@ static void qmi8658_gforce_task(void *arg)
 
         float x_g = 0.0f;
         float y_g = 0.0f;
-        if (qmi8658_read_xy_g(state, &x_g, &y_g) == ESP_OK) {
-            float lat_g = x_g - state->bias_x;
-            float lon_g = y_g - state->bias_y;
+        float z_g = 0.0f;
+        if (qmi8658_read_xyz_g(state, &x_g, &y_g, &z_g) == ESP_OK) {
+            float lat_g = 0.0f;
+            float lon_g = 0.0f;
+
+            qmi8658_map_vehicle_axes(x_g, y_g, z_g,
+                                     state->bias_x, state->bias_y, state->bias_z,
+                                     &lat_g, &lon_g);
 
             state->filtered_x += QMI8658_AXIS_ALPHA * (lat_g - state->filtered_x);
             state->filtered_y += QMI8658_AXIS_ALPHA * (lon_g - state->filtered_y);
 
             obd_data_set_lat_accel_imu_x100(qmi8658_to_x100(state->filtered_x));
             obd_data_set_lon_accel_imu_x100(qmi8658_to_x100(state->filtered_y));
-            qmi8658_log_sample(state, x_g, y_g, lat_g, lon_g);
+            qmi8658_log_sample(state, x_g, y_g, z_g, lat_g, lon_g);
         }
 
         vTaskDelay(pdMS_TO_TICKS(QMI8658_SAMPLE_PERIOD_MS));

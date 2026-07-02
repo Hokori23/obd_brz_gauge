@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "driver/gpio.h"
 #include "esp_err.h"
@@ -20,11 +21,11 @@
 #include "lvgl.h"
 
 #if CONFIG_OBD_BOARD_WS_175_AMOLED
-#include "esp_lv_adapter.h"
 #include "bsp_obd_dsp/boards/board_ws_175_amoled_spec.h"
 #endif
 
 #include "app_obd_dsp/aux_sensor_demand.h"
+#include "app_obd_dsp/lvgl_perf_trace.h"
 #include "app_obd_dsp/lvgl_buffer_profile.h"
 #include "app_obd_dsp/obd_data_cache.h"
 #include "app_obd_dsp/vehicle_profiles.h"
@@ -43,47 +44,74 @@ extern void ui_init(void);
 
 SemaphoreHandle_t lvgl_mux = NULL;
 
-#if !CONFIG_OBD_BOARD_WS_175_AMOLED
 static bool s_touch_active = false;
 static int s_touch_last_x = -1;
 static int s_touch_last_y = -1;
 static uint32_t s_touch_press_tick = 0;
 static uint32_t s_flush_request_count = 0;
 static lv_disp_drv_t *s_registered_disp_drv = NULL;
-#endif
+static uint32_t s_flush_window_count = 0;
+static uint32_t s_flush_window_pixels = 0;
+static uint32_t s_flush_window_max_pixels = 0;
+static uint32_t s_flush_window_max_width = 0;
+static uint32_t s_flush_window_max_height = 0;
+static uint32_t s_flush_window_done_count = 0;
+static int64_t s_flush_window_submit_us = 0;
+static int64_t s_flush_window_done_us = 0;
+static int64_t s_flush_window_max_submit_us = 0;
+static int64_t s_flush_window_max_done_us = 0;
+static int64_t s_flush_pending_start_us = 0;
+static portMUX_TYPE s_lvgl_perf_trace_mux = portMUX_INITIALIZER_UNLOCKED;
+
+typedef struct {
+    bool active;
+    char reason[16];
+    uint8_t from_page;
+    uint8_t to_page;
+    int64_t start_us;
+    uint32_t flush_count;
+    uint32_t pixel_count;
+    uint32_t max_pixels;
+    uint32_t max_width;
+    uint32_t max_height;
+    uint32_t full_width_flushes;
+    uint32_t line_band_flushes;
+    uint32_t tail_band_flushes;
+    uint32_t rounds_started;
+    uint32_t done_count;
+    int64_t submit_us_total;
+    int64_t done_us_total;
+    int64_t submit_us_max;
+    int64_t done_us_max;
+} lvgl_perf_trace_state_t;
+
+static lvgl_perf_trace_state_t s_lvgl_perf_trace = {0};
 
 #define LVGL_TICK_PERIOD_MS    2
 #define LVGL_TASK_MAX_DELAY_MS 500
 #define LVGL_TASK_MIN_DELAY_MS 2
-#define LVGL_TASK_STACK_SIZE   (4 * 1024)
+#define LVGL_TASK_STACK_SIZE   (10 * 1024)
 #define LVGL_TASK_PRIORITY     2
 #define LVGL_TRACE_TOUCH       0
 #define LVGL_TRACE_FLUSH       0
+#define LVGL_PERF_PERIODIC_LOG 0
+#define LVGL_PERF_LOG_WINDOW_US 5000000LL
 
-#if CONFIG_OBD_BOARD_WS_175_AMOLED
-static esp_lv_adapter_rotation_t ws175_display_rotation(void)
+static lv_disp_rot_t display_rotation(void)
 {
-    const uint16_t rotation_degrees =
-        nvs_cfg_get_display_rotation_degrees(nvs_cfg_get(), BOARD_WS_175_AMOLED_DISPLAY_ROTATION);
-
-    switch (rotation_degrees) {
-    case 0:
-        return ESP_LV_ADAPTER_ROTATE_0;
-    case 90:
-        return ESP_LV_ADAPTER_ROTATE_90;
-    case 180:
-        return ESP_LV_ADAPTER_ROTATE_180;
-    case 270:
-        return ESP_LV_ADAPTER_ROTATE_270;
+#if CONFIG_OBD_BOARD_WS_175_AMOLED
+    switch (nvs_cfg_get_display_rotation_degrees(nvs_cfg_get(), BOARD_WS_175_AMOLED_DISPLAY_ROTATION)) {
+    case 180u:
+        return LV_DISP_ROT_180;
+    case 0u:
     default:
-        ESP_LOGW(TAG, "Unsupported WS175 display rotation=%d, fallback to 0",
-                 (int)rotation_degrees);
-        return ESP_LV_ADAPTER_ROTATE_0;
+        return LV_DISP_ROT_NONE;
     }
-}
+#else
+    return LV_DISP_ROT_NONE;
 #endif
+}
 
-#if !CONFIG_OBD_BOARD_WS_175_AMOLED
 static lv_color_t *alloc_lvgl_draw_buffer(size_t bytes, const char *label, bool prefer_internal_dma)
 {
     lv_color_t *buffer = NULL;
@@ -108,13 +136,114 @@ static lv_color_t *alloc_lvgl_draw_buffer(size_t bytes, const char *label, bool 
     return buffer;
 }
 
+static void lvgl_perf_trace_reset_locked(void)
+{
+    memset(&s_lvgl_perf_trace, 0, sizeof(s_lvgl_perf_trace));
+}
+
+void app_lvgl_perf_trace_begin(const char *reason, uint8_t from_page, uint8_t to_page)
+{
+    portENTER_CRITICAL(&s_lvgl_perf_trace_mux);
+    lvgl_perf_trace_reset_locked();
+    s_lvgl_perf_trace.active = true;
+    s_lvgl_perf_trace.from_page = from_page;
+    s_lvgl_perf_trace.to_page = to_page;
+    s_lvgl_perf_trace.start_us = esp_timer_get_time();
+    if (reason != NULL) {
+        snprintf(s_lvgl_perf_trace.reason, sizeof(s_lvgl_perf_trace.reason), "%s", reason);
+    }
+    portEXIT_CRITICAL(&s_lvgl_perf_trace_mux);
+}
+
+void app_lvgl_perf_trace_update_target(uint8_t to_page)
+{
+    portENTER_CRITICAL(&s_lvgl_perf_trace_mux);
+    if (s_lvgl_perf_trace.active) {
+        s_lvgl_perf_trace.to_page = to_page;
+    }
+    portEXIT_CRITICAL(&s_lvgl_perf_trace_mux);
+}
+
+void app_lvgl_perf_trace_cancel(void)
+{
+    portENTER_CRITICAL(&s_lvgl_perf_trace_mux);
+    lvgl_perf_trace_reset_locked();
+    portEXIT_CRITICAL(&s_lvgl_perf_trace_mux);
+}
+
+bool app_lvgl_perf_trace_end(app_lvgl_perf_trace_stats_t *out_stats)
+{
+    bool active = false;
+
+    portENTER_CRITICAL(&s_lvgl_perf_trace_mux);
+    active = s_lvgl_perf_trace.active;
+    if (active && out_stats != NULL) {
+        memset(out_stats, 0, sizeof(*out_stats));
+        snprintf(out_stats->reason, sizeof(out_stats->reason), "%s", s_lvgl_perf_trace.reason);
+        out_stats->from_page = s_lvgl_perf_trace.from_page;
+        out_stats->to_page = s_lvgl_perf_trace.to_page;
+        out_stats->duration_ms = (uint32_t)((esp_timer_get_time() - s_lvgl_perf_trace.start_us) / 1000LL);
+        out_stats->flushes = s_lvgl_perf_trace.flush_count;
+        out_stats->pixels = s_lvgl_perf_trace.pixel_count;
+        out_stats->avg_pixels = (s_lvgl_perf_trace.flush_count > 0)
+                                    ? (s_lvgl_perf_trace.pixel_count / s_lvgl_perf_trace.flush_count)
+                                    : 0;
+        out_stats->max_width = s_lvgl_perf_trace.max_width;
+        out_stats->max_height = s_lvgl_perf_trace.max_height;
+        out_stats->full_width_flushes = s_lvgl_perf_trace.full_width_flushes;
+        out_stats->line_band_flushes = s_lvgl_perf_trace.line_band_flushes;
+        out_stats->tail_band_flushes = s_lvgl_perf_trace.tail_band_flushes;
+        out_stats->rounds_started = s_lvgl_perf_trace.rounds_started;
+        out_stats->avg_submit_us = (s_lvgl_perf_trace.flush_count > 0)
+                                       ? (s_lvgl_perf_trace.submit_us_total / s_lvgl_perf_trace.flush_count)
+                                       : 0;
+        out_stats->max_submit_us = s_lvgl_perf_trace.submit_us_max;
+        out_stats->avg_done_us = (s_lvgl_perf_trace.done_count > 0)
+                                     ? (s_lvgl_perf_trace.done_us_total / s_lvgl_perf_trace.done_count)
+                                     : 0;
+        out_stats->max_done_us = s_lvgl_perf_trace.done_us_max;
+        out_stats->rotation = (uint8_t)display_rotation();
+        out_stats->buffer_lines = board_profile()->draw_buffer_lines;
+    }
+    lvgl_perf_trace_reset_locked();
+    portEXIT_CRITICAL(&s_lvgl_perf_trace_mux);
+
+    return active;
+}
+
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io,
                                     esp_lcd_panel_io_event_data_t *edata,
                                     void *user_ctx)
 {
+    int64_t done_us = 0;
+    bool trace_active = false;
+
     (void)panel_io;
     (void)edata;
     (void)user_ctx;
+
+    if (s_flush_pending_start_us != 0) {
+        done_us = esp_timer_get_time() - s_flush_pending_start_us;
+        if (done_us > 0) {
+            s_flush_window_done_count++;
+            s_flush_window_done_us += done_us;
+            if (done_us > s_flush_window_max_done_us) {
+                s_flush_window_max_done_us = done_us;
+            }
+        }
+        s_flush_pending_start_us = 0;
+    }
+
+    portENTER_CRITICAL_ISR(&s_lvgl_perf_trace_mux);
+    trace_active = s_lvgl_perf_trace.active;
+    if (trace_active && done_us > 0) {
+        s_lvgl_perf_trace.done_count++;
+        s_lvgl_perf_trace.done_us_total += done_us;
+        if (done_us > s_lvgl_perf_trace.done_us_max) {
+            s_lvgl_perf_trace.done_us_max = done_us;
+        }
+    }
+    portEXIT_CRITICAL_ISR(&s_lvgl_perf_trace_mux);
 
     if (s_registered_disp_drv == NULL) {
         return false;
@@ -128,19 +257,79 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
 {
     esp_lcd_panel_handle_t panel = (esp_lcd_panel_handle_t)drv->user_data;
     esp_err_t err;
+    const uint32_t width = (uint32_t)(area->x2 - area->x1 + 1);
+    const uint32_t height = (uint32_t)(area->y2 - area->y1 + 1);
+    const uint32_t pixels = width * height;
+    const int64_t start_us = esp_timer_get_time();
+    const uint32_t band_lines = board_profile()->draw_buffer_lines;
+    const bool spans_full_width = (area->x1 == 0) && (width == (uint32_t)drv->hor_res);
+    const bool is_line_band = spans_full_width && (height == band_lines);
+    const bool is_tail_band = spans_full_width &&
+                              (area->y2 == (drv->ver_res - 1)) &&
+                              (height < band_lines);
+    const bool starts_round = is_line_band && (area->y1 == 0);
 
     s_flush_request_count++;
+    s_flush_window_count++;
+    s_flush_window_pixels += pixels;
+    if (pixels > s_flush_window_max_pixels) {
+        s_flush_window_max_pixels = pixels;
+        s_flush_window_max_width = width;
+        s_flush_window_max_height = height;
+    }
+    portENTER_CRITICAL(&s_lvgl_perf_trace_mux);
+    if (s_lvgl_perf_trace.active) {
+        s_lvgl_perf_trace.flush_count++;
+        s_lvgl_perf_trace.pixel_count += pixels;
+        if (pixels > s_lvgl_perf_trace.max_pixels) {
+            s_lvgl_perf_trace.max_pixels = pixels;
+            s_lvgl_perf_trace.max_width = width;
+            s_lvgl_perf_trace.max_height = height;
+        }
+        if (spans_full_width) {
+            s_lvgl_perf_trace.full_width_flushes++;
+        }
+        if (is_line_band) {
+            s_lvgl_perf_trace.line_band_flushes++;
+        }
+        if (is_tail_band) {
+            s_lvgl_perf_trace.tail_band_flushes++;
+        }
+        if (starts_round) {
+            s_lvgl_perf_trace.rounds_started++;
+        }
+    }
+    portEXIT_CRITICAL(&s_lvgl_perf_trace_mux);
 #if LVGL_TRACE_FLUSH
     if (s_flush_request_count <= 12 || (s_flush_request_count % 20) == 0 ||
         ((area->x2 - area->x1) > 300 && (area->y2 - area->y1) > 300)) {
-        ESP_LOGD(TAG, "flush req #%" PRIu32 ": area=(%d,%d)-(%d,%d) px=%dx%d panel=%p",
+        ESP_LOGI(TAG, "flush req #%" PRIu32 ": area=(%d,%d)-(%d,%d) px=%dx%d panel=%p rot=%d",
                  s_flush_request_count, area->x1, area->y1, area->x2, area->y2,
-                 area->x2 - area->x1 + 1, area->y2 - area->y1 + 1, (void *)panel);
+                 area->x2 - area->x1 + 1, area->y2 - area->y1 + 1, (void *)panel,
+                 display_rotation());
     }
 #endif
 
     err = esp_lcd_panel_draw_bitmap(panel, area->x1, area->y1,
                                     area->x2 + 1, area->y2 + 1, color_map);
+    s_flush_pending_start_us = (err == ESP_OK) ? start_us : 0;
+    if (err == ESP_OK) {
+        int64_t submit_us = esp_timer_get_time() - start_us;
+        if (submit_us > 0) {
+            s_flush_window_submit_us += submit_us;
+            if (submit_us > s_flush_window_max_submit_us) {
+                s_flush_window_max_submit_us = submit_us;
+            }
+        }
+        portENTER_CRITICAL(&s_lvgl_perf_trace_mux);
+        if (s_lvgl_perf_trace.active && submit_us > 0) {
+            s_lvgl_perf_trace.submit_us_total += submit_us;
+            if (submit_us > s_lvgl_perf_trace.submit_us_max) {
+                s_lvgl_perf_trace.submit_us_max = submit_us;
+            }
+        }
+        portEXIT_CRITICAL(&s_lvgl_perf_trace_mux);
+    }
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "flush req #%" PRIu32 " failed: %s area=(%d,%d)-(%d,%d)",
                  s_flush_request_count, esp_err_to_name(err),
@@ -157,18 +346,13 @@ static void lvgl_rounder_cb(lv_disp_drv_t *disp_drv, lv_area_t *area)
     area->x2 = ((area->x2 >> 1) << 1) + 1;
     area->y2 = ((area->y2 >> 1) << 1) + 1;
 }
-#endif
 
-static void lvgl_rounder_area_cb(lv_area_t *area, void *user_data)
+static void lvgl_wait_cb(lv_disp_drv_t *drv)
 {
-    (void)user_data;
-    area->x1 = (area->x1 >> 1) << 1;
-    area->y1 = (area->y1 >> 1) << 1;
-    area->x2 = ((area->x2 >> 1) << 1) + 1;
-    area->y2 = ((area->y2 >> 1) << 1) + 1;
+    (void)drv;
+    vTaskDelay(pdMS_TO_TICKS(1));
 }
 
-#if !CONFIG_OBD_BOARD_WS_175_AMOLED
 static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 {
     esp_lcd_touch_handle_t touch = (esp_lcd_touch_handle_t)drv->user_data;
@@ -232,30 +416,21 @@ static void lvgl_unlock(void)
     assert(lvgl_mux && "lvgl_mux not created");
     xSemaphoreGive(lvgl_mux);
 }
-#endif
 
 bool app_lvgl_lock(int timeout_ms)
 {
-#if CONFIG_OBD_BOARD_WS_175_AMOLED
-    return esp_lv_adapter_lock(timeout_ms) == ESP_OK;
-#else
     return lvgl_lock(timeout_ms);
-#endif
 }
 
 void app_lvgl_unlock(void)
 {
-#if CONFIG_OBD_BOARD_WS_175_AMOLED
-    esp_lv_adapter_unlock();
-#else
     lvgl_unlock();
-#endif
 }
 
-#if !CONFIG_OBD_BOARD_WS_175_AMOLED
 static void lvgl_port_task(void *arg)
 {
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
+    int64_t last_perf_log_us = esp_timer_get_time();
 
     (void)arg;
     ESP_LOGI(TAG, "Starting LVGL task");
@@ -272,21 +447,67 @@ static void lvgl_port_task(void *arg)
             task_delay_ms = LVGL_TASK_MIN_DELAY_MS;
         }
 
+        {
+            const int64_t now_us = esp_timer_get_time();
+            if ((now_us - last_perf_log_us) >= LVGL_PERF_LOG_WINDOW_US) {
+                if (LVGL_PERF_PERIODIC_LOG && s_flush_window_count > 0) {
+                    const int64_t window_us = now_us - last_perf_log_us;
+                    const uint32_t avg_pixels = s_flush_window_pixels / s_flush_window_count;
+                    const uint32_t flushes_per_s = (uint32_t)((s_flush_window_count * 1000000ULL) / (uint64_t)window_us);
+                    const uint32_t pixels_per_s = (uint32_t)((s_flush_window_pixels * 1000000ULL) / (uint64_t)window_us);
+                    const int64_t avg_submit_us = (s_flush_window_count > 0)
+                                                      ? (s_flush_window_submit_us / s_flush_window_count)
+                                                      : 0;
+                    const int64_t avg_done_us = (s_flush_window_done_count > 0)
+                                                    ? (s_flush_window_done_us / s_flush_window_done_count)
+                                                    : 0;
+                    ESP_LOGI(TAG,
+                             "LVGL perf(5s): flushes=%" PRIu32 " flushes/s=%" PRIu32
+                             " px=%" PRIu32 " px/s=%" PRIu32
+                             " avg_px=%" PRIu32 " max_rect=%" PRIu32 "x%" PRIu32
+                             " submit_us(avg/max)=%" PRIi64 "/%" PRIi64
+                             " done_us(avg/max)=%" PRIi64 "/%" PRIi64
+                             " rot=%d lines=%u",
+                             s_flush_window_count,
+                             flushes_per_s,
+                             s_flush_window_pixels,
+                             pixels_per_s,
+                             avg_pixels,
+                             s_flush_window_max_width,
+                             s_flush_window_max_height,
+                             avg_submit_us,
+                             s_flush_window_max_submit_us,
+                             avg_done_us,
+                             s_flush_window_max_done_us,
+                             display_rotation(),
+                             (unsigned)board_profile()->draw_buffer_lines);
+                }
+
+                s_flush_window_count = 0;
+                s_flush_window_pixels = 0;
+                s_flush_window_max_pixels = 0;
+                s_flush_window_max_width = 0;
+                s_flush_window_max_height = 0;
+                s_flush_window_done_count = 0;
+                s_flush_window_submit_us = 0;
+                s_flush_window_done_us = 0;
+                s_flush_window_max_submit_us = 0;
+                s_flush_window_max_done_us = 0;
+                last_perf_log_us = now_us;
+            }
+        }
+
         vTaskDelay(pdMS_TO_TICKS(task_delay_ms));
     }
 }
-#endif
 
 void app_main(void)
 {
     board_display_context_t board_ctx = {0};
     const board_profile_t *profile = NULL;
-
-#if !CONFIG_OBD_BOARD_WS_175_AMOLED
     static lv_disp_draw_buf_t disp_buf;
     static lv_disp_drv_t disp_drv;
     bool prefer_internal_lvgl_dma = false;
-#endif
 
     ESP_LOGI(TAG, "app_main: enter");
     ESP_LOGI(TAG, "app_main: init nvs");
@@ -330,54 +551,6 @@ void app_main(void)
     ESP_LOGI(TAG, "Display ready: %ux%u %u-bit touch=%s",
              board_ctx.hor_res, board_ctx.ver_res, board_ctx.color_bits,
              board_ctx.has_touch ? "yes" : "no");
-
-#if CONFIG_OBD_BOARD_WS_175_AMOLED
-    {
-        esp_lv_adapter_config_t lvgl_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG();
-        const esp_lv_adapter_rotation_t rotation = ws175_display_rotation();
-        esp_lv_adapter_display_config_t disp_cfg = ESP_LV_ADAPTER_DISPLAY_SPI_WITH_PSRAM_DEFAULT_CONFIG(
-            board_ctx.panel, board_ctx.panel_io, board_ctx.hor_res, board_ctx.ver_res, rotation);
-        lv_display_t *disp = NULL;
-
-        // QSPI panel is registered as PANEL_IF_OTHER in esp_lvgl_adapter.
-        // This interface only supports NONE or TE_SYNC tear modes.
-        disp_cfg.tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE;
-
-        /* QSPI OLED still transmits through SPI DMA, so full-frame PSRAM buffers
-         * force the SPI driver to allocate a huge internal bounce buffer per flush.
-         * Keep the adapter on small line buffers to match the validated board profile.
-         */
-        disp_cfg.profile.buffer_height = board_ctx.draw_buffer_lines;
-        disp_cfg.profile.enable_ppa_accel = false;
-
-        ESP_LOGI(TAG, "WS175 LVGL adapter: buffer_height=%u double_buffer=%d use_psram=%d tear_mode=%d",
-                 disp_cfg.profile.buffer_height,
-                 disp_cfg.profile.require_double_buffer,
-                 disp_cfg.profile.use_psram,
-                 disp_cfg.tear_avoid_mode);
-        ESP_LOGI(TAG,
-                 "WS175 display rotation=%u (mode=%u, board_default=%u)",
-                 (unsigned)nvs_cfg_get_display_rotation_degrees(nvs_cfg_get(),
-                                                                BOARD_WS_175_AMOLED_DISPLAY_ROTATION),
-                 (unsigned)nvs_cfg_get_display_rotation_mode(nvs_cfg_get()),
-                 (unsigned)BOARD_WS_175_AMOLED_DISPLAY_ROTATION);
-
-        ESP_LOGI(TAG, "Initialize LVGL through esp_lvgl_adapter");
-        ESP_ERROR_CHECK(esp_lv_adapter_init(&lvgl_cfg));
-
-        disp = esp_lv_adapter_register_display(&disp_cfg);
-        ESP_ERROR_CHECK(disp != NULL ? ESP_OK : ESP_FAIL);
-        ESP_ERROR_CHECK(esp_lv_adapter_set_area_rounder_cb(disp, lvgl_rounder_area_cb, NULL));
-
-        if (board_ctx.has_touch && board_ctx.touch != NULL) {
-            const esp_lv_adapter_touch_config_t touch_cfg =
-                ESP_LV_ADAPTER_TOUCH_DEFAULT_CONFIG(disp, board_ctx.touch);
-            ESP_ERROR_CHECK(esp_lv_adapter_register_touch(&touch_cfg) != NULL ? ESP_OK : ESP_FAIL);
-        }
-
-        ESP_ERROR_CHECK(esp_lv_adapter_start());
-    }
-#else
     ESP_LOGI(TAG, "Initialize LVGL");
     lv_init();
 
@@ -406,14 +579,19 @@ void app_main(void)
     disp_drv.ver_res = board_ctx.ver_res;
     disp_drv.flush_cb = lvgl_flush_cb;
     disp_drv.rounder_cb = lvgl_rounder_cb;
+    disp_drv.wait_cb = lvgl_wait_cb;
     disp_drv.draw_buf = &disp_buf;
     disp_drv.user_data = board_ctx.panel;
+    disp_drv.sw_rotate = (display_rotation() != LV_DISP_ROT_NONE);
+    disp_drv.rotated = display_rotation();
 
     lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
     s_registered_disp_drv = disp->driver;
 
     ESP_LOGI(TAG, "Registered LVGL display driver: template=%p runtime=%p disp=%p",
              (void *)&disp_drv, (void *)s_registered_disp_drv, (void *)disp);
+    ESP_LOGI(TAG, "LVGL software rotation=%d mode=%d",
+             disp_drv.sw_rotate, disp_drv.rotated);
 
     const esp_timer_create_args_t lvgl_tick_timer_args = {
         .callback = &increase_lvgl_tick,
@@ -437,7 +615,6 @@ void app_main(void)
     lvgl_mux = xSemaphoreCreateMutex();
     assert(lvgl_mux);
     xTaskCreate(lvgl_port_task, "LVGL", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, NULL);
-#endif
 
     ESP_LOGI(TAG, "Start UI");
     if (app_lvgl_lock(-1)) {
@@ -453,7 +630,11 @@ void app_main(void)
     elm327_ble_start_default(ble_name);
 
     vTaskDelay(pdMS_TO_TICKS(500));
-    racechrono_ble_diy_start();
+    if (nvs_cfg_is_racechrono_ble_enabled(user_cfg)) {
+        racechrono_ble_diy_start();
+    } else {
+        ESP_LOGI(TAG, "RaceChrono BLE DIY disabled by settings");
+    }
 
     rs485_brake_temp_start();
     qmi8658_gforce_start();

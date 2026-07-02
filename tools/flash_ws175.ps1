@@ -13,17 +13,82 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$idfPython = "C:\Users\Hokori\.espressif\python_env\idf5.5_py3.11_env\Scripts"
-$env:PATH = "$idfPython;$env:PATH"
+$requiredIdfVersion = "5.5.4"
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$localEnvScript = Join-Path $PSScriptRoot "idf-env.local.ps1"
+
 $env:PYTHONUTF8 = "1"
 
 $idfArgs = @(
     "-D", "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.ws175"
 )
 
+function Import-Ws175LocalEnvOverride {
+    if (Test-Path $localEnvScript) {
+        . $localEnvScript
+    }
+}
+
+function Resolve-Ws175IdfPath {
+    $idfPathCandidates = @(
+        $env:WS175_IDF_PATH,
+        $env:IDF_PATH
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+    foreach ($candidate in $idfPathCandidates) {
+        $resolvedCandidate = [System.IO.Path]::GetFullPath($candidate)
+        if (Test-Path (Join-Path $resolvedCandidate "tools\activate.py")) {
+            return $resolvedCandidate
+        }
+    }
+
+    throw @"
+ESP-IDF path is not configured.
+
+Required version: v$requiredIdfVersion
+Configure one of these before running this script:
+1. Set process/user env var IDF_PATH
+2. Set process/user env var WS175_IDF_PATH
+3. Create tools\idf-env.local.ps1 from tools\idf-env.example.ps1
+"@
+}
+
+function Resolve-Ws175PythonScriptsPath {
+    $pythonCandidates = @()
+
+    if (-not [string]::IsNullOrWhiteSpace($env:WS175_IDF_PYTHON_SCRIPTS)) {
+        $pythonCandidates += $env:WS175_IDF_PYTHON_SCRIPTS
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:IDF_PYTHON_ENV_PATH)) {
+        $pythonCandidates += (Join-Path $env:IDF_PYTHON_ENV_PATH "Scripts")
+    }
+
+    foreach ($candidate in $pythonCandidates) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
+            return [System.IO.Path]::GetFullPath($candidate)
+        }
+    }
+
+    return $null
+}
+
 function Initialize-Ws175EspIdf {
-    $idfExports = python "D:\esp\v5.5.4-clean\tools\activate.py" --export
+    Import-Ws175LocalEnvOverride
+
+    $idfPythonScripts = Resolve-Ws175PythonScriptsPath
+    if ($idfPythonScripts) {
+        $env:PATH = "$idfPythonScripts;$env:PATH"
+    }
+
+    $idfPath = Resolve-Ws175IdfPath
+    $activateScript = Join-Path $idfPath "tools\activate.py"
+    $idfExports = python $activateScript --export
     . $idfExports
+
+    if ($env:IDF_VERSION -and $env:IDF_VERSION -ne $requiredIdfVersion) {
+        Write-Warning "Active ESP-IDF version is $($env:IDF_VERSION), but this repo expects v$requiredIdfVersion."
+    }
 }
 
 function Write-SerialDiagnostics {
@@ -214,17 +279,17 @@ function Invoke-Ws175Flash {
     }
 }
 
-if ($BuildOnly) {
-    Invoke-Ws175Build
-    exit 0
-}
-
 if ($DiagnoseOnly) {
     Write-SerialDiagnostics -SerialPortName $Port
     exit 0
 }
 
 Initialize-Ws175EspIdf
+
+if ($BuildOnly) {
+    Invoke-Ws175Build
+    exit 0
+}
 
 if ($ProbeOnly) {
     Invoke-Ws175Probe
