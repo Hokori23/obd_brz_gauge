@@ -1,9 +1,11 @@
 #include "nvs_storage.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "app_obd_dsp/vehicle_profiles.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "export_path/ui.h"
 #include "export_path/ui_runtime_common.h"
 #include "freertos/FreeRTOS.h"
@@ -17,7 +19,10 @@
 #define KEY_CFG "settings"
 #define NS_STAT "stat"
 #define KEY_STAT "runtime"
+#define NS_DIAG "diag"
+#define KEY_ERR_LOG "errors"
 #define STAT_FLUSH_PERIOD_MS 30000
+#define ERROR_FLUSH_PERIOD_MS 5000
 
 typedef struct {
     uint8_t protocol;
@@ -46,8 +51,23 @@ static nvs_user_cfg_t s_cfg = {
     .oil_pressure_warn_x10 = 80,
 };
 static nvs_stat_t s_stat = {0};
+static nvs_error_log_t s_error_log = {
+    .version = NVS_ERROR_LOG_VERSION,
+};
 static bool s_stat_dirty = false;
+static bool s_error_log_dirty = false;
+static uint32_t s_stat_dirty_seq = 0u;
+static uint32_t s_error_log_dirty_seq = 0u;
 static SemaphoreHandle_t s_mux;
+
+typedef struct {
+    bool flush_error_log;
+    bool flush_stat;
+    uint32_t error_log_dirty_seq;
+    uint32_t stat_dirty_seq;
+    nvs_error_log_t error_log;
+    nvs_stat_t stat;
+} nvs_flush_snapshot_t;
 
 static esp_err_t load_cfg_blob(void);
 static void dashboard_cfg_set_defaults(ui_dashboard_cfg_t *cfg);
@@ -56,8 +76,17 @@ static void dashboard_cfg_sanitize_default_page(nvs_user_cfg_t *cfg);
 static void cfg_migrate_from_legacy(const legacy_nvs_user_cfg_v0_t *legacy);
 static void cfg_sanitize(nvs_user_cfg_t *cfg);
 static esp_err_t load_blob(const char *ns, const char *key, void *out, size_t len);
+static esp_err_t load_blob_or_create(const char *ns, const char *key, void *out, size_t len);
 static esp_err_t save_blob(const char *ns, const char *key, const void *data, size_t len);
 static void stat_flush_task(void *arg);
+static void error_log_sanitize(nvs_error_log_t *log);
+static void mark_stat_dirty_locked(void);
+static void mark_error_log_dirty_locked(void);
+static void nvs_storage_collect_flush_snapshot_locked(nvs_flush_snapshot_t *snapshot, bool include_stat);
+static void nvs_storage_commit_flush_snapshot(const nvs_flush_snapshot_t *snapshot,
+                                              esp_err_t error_log_err,
+                                              esp_err_t stat_err);
+static void error_log_append_locked(const char *tag, esp_err_t err, const char *message);
 
 #define UI_DASHBOARD_PAGE_UNSUPPORTED_MASK ((uint8_t)((1u << UI_DASHBOARD_MAX_SLOTS) - 1u))
 #define UI_DASHBOARD_PAGE_TYPE_SHIFT       6u
@@ -188,8 +217,14 @@ esp_err_t nvs_storage_init(void)
     ESP_ERROR_CHECK(err);
 
     load_cfg_blob();
-    load_blob(NS_STAT, KEY_STAT, &s_stat, sizeof(s_stat));
+    if (load_blob_or_create(NS_STAT, KEY_STAT, &s_stat, sizeof(s_stat)) != ESP_OK) {
+        ESP_LOGW(TAG, "Using in-memory default for %s/%s", NS_STAT, KEY_STAT);
+    }
+    if (load_blob_or_create(NS_DIAG, KEY_ERR_LOG, &s_error_log, sizeof(s_error_log)) != ESP_OK) {
+        ESP_LOGW(TAG, "Using in-memory default for %s/%s", NS_DIAG, KEY_ERR_LOG);
+    }
     cfg_sanitize(&s_cfg);
+    error_log_sanitize(&s_error_log);
 
     s_mux = xSemaphoreCreateMutex();
     xTaskCreate(stat_flush_task, "nvs_flush", 2048, NULL, 4, NULL);
@@ -223,7 +258,7 @@ void nvs_stat_add_odometer(uint32_t delta_m)
 {
     xSemaphoreTake(s_mux, portMAX_DELAY);
     s_stat.odometer_m += delta_m;
-    s_stat_dirty = true;
+    mark_stat_dirty_locked();
     xSemaphoreGive(s_mux);
 }
 
@@ -231,7 +266,15 @@ void nvs_stat_add_runtime(uint32_t delta_s)
 {
     xSemaphoreTake(s_mux, portMAX_DELAY);
     s_stat.run_time_s += delta_s;
-    s_stat_dirty = true;
+    mark_stat_dirty_locked();
+    xSemaphoreGive(s_mux);
+}
+
+void nvs_stat_add_trip(uint32_t delta_m)
+{
+    xSemaphoreTake(s_mux, portMAX_DELAY);
+    s_stat.trip_m += delta_m;
+    mark_stat_dirty_locked();
     xSemaphoreGive(s_mux);
 }
 
@@ -261,7 +304,7 @@ void nvs_stat_update_speed(uint8_t speed_kmh, uint32_t dt_ms)
         }
     }
 
-    s_stat_dirty = true;
+    mark_stat_dirty_locked();
     xSemaphoreGive(s_mux);
 }
 
@@ -272,7 +315,7 @@ void nvs_stat_reset_trip(void)
     s_stat.max_speed_kmh = 0;
     s_stat.avg_speed_kmh = 0;
     s_stat.trip_run_time_s = 0;
-    s_stat_dirty = true;
+    mark_stat_dirty_locked();
     xSemaphoreGive(s_mux);
 }
 
@@ -284,19 +327,75 @@ nvs_stat_t nvs_stat_get_mileage(void)
     return stat;
 }
 
+void nvs_error_log_record(const char *tag, esp_err_t err, const char *message)
+{
+    if (s_mux == NULL) {
+        error_log_append_locked(tag, err, message);
+        return;
+    }
+
+    xSemaphoreTake(s_mux, portMAX_DELAY);
+    error_log_append_locked(tag, err, message);
+    xSemaphoreGive(s_mux);
+}
+
+uint8_t nvs_error_log_count(void)
+{
+    uint8_t count;
+
+    if (s_mux == NULL) {
+        return s_error_log.count;
+    }
+
+    xSemaphoreTake(s_mux, portMAX_DELAY);
+    count = s_error_log.count;
+    xSemaphoreGive(s_mux);
+    return count;
+}
+
+void nvs_error_log_copy(nvs_error_log_t *out)
+{
+    if (out == NULL) {
+        return;
+    }
+
+    if (s_mux == NULL) {
+        *out = s_error_log;
+        return;
+    }
+
+    xSemaphoreTake(s_mux, portMAX_DELAY);
+    *out = s_error_log;
+    xSemaphoreGive(s_mux);
+}
+
 static void stat_flush_task(void *arg)
 {
     (void)arg;
+    uint32_t stat_elapsed_ms = 0u;
+    nvs_flush_snapshot_t snapshot;
+
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(STAT_FLUSH_PERIOD_MS));
-        if (!s_stat_dirty) {
-            continue;
-        }
+        esp_err_t error_log_err = ESP_OK;
+        esp_err_t stat_err = ESP_OK;
+
+        vTaskDelay(pdMS_TO_TICKS(ERROR_FLUSH_PERIOD_MS));
+        stat_elapsed_ms += ERROR_FLUSH_PERIOD_MS;
         xSemaphoreTake(s_mux, portMAX_DELAY);
-        if (save_blob(NS_STAT, KEY_STAT, &s_stat, sizeof(s_stat)) == ESP_OK) {
-            s_stat_dirty = false;
+        nvs_storage_collect_flush_snapshot_locked(&snapshot, stat_elapsed_ms >= STAT_FLUSH_PERIOD_MS);
+        if (stat_elapsed_ms >= STAT_FLUSH_PERIOD_MS) {
+            stat_elapsed_ms = 0u;
         }
         xSemaphoreGive(s_mux);
+
+        if (snapshot.flush_error_log) {
+            error_log_err = save_blob(NS_DIAG, KEY_ERR_LOG, &snapshot.error_log, sizeof(snapshot.error_log));
+        }
+        if (snapshot.flush_stat) {
+            stat_err = save_blob(NS_STAT, KEY_STAT, &snapshot.stat, sizeof(snapshot.stat));
+        }
+
+        nvs_storage_commit_flush_snapshot(&snapshot, error_log_err, stat_err);
     }
 }
 
@@ -470,19 +569,55 @@ static void cfg_sanitize(nvs_user_cfg_t *cfg)
 static esp_err_t load_blob(const char *ns, const char *key, void *out, size_t len)
 {
     nvs_handle_t h;
-    size_t size = len;
     esp_err_t err;
+    size_t size = 0u;
 
-    if (nvs_open(ns, NVS_READONLY, &h) == ESP_OK) {
-        err = nvs_get_blob(h, key, out, &size);
-        nvs_close(h);
-        if (err == ESP_OK && size == len) {
-            return ESP_OK;
-        }
+    if (out == NULL || len == 0u) {
+        return ESP_ERR_INVALID_ARG;
     }
 
-    memset(out, 0, len);
-    return save_blob(ns, key, out, len);
+    err = nvs_open(ns, NVS_READONLY, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = nvs_get_blob(h, key, NULL, &size);
+    if (err != ESP_OK) {
+        nvs_close(h);
+        return err;
+    }
+
+    if (size != len) {
+        ESP_LOGW(TAG,
+                 "Skip loading %s/%s due to blob size mismatch: stored=%u expected=%u",
+                 ns,
+                 key,
+                 (unsigned)size,
+                 (unsigned)len);
+        nvs_close(h);
+        return ESP_FAIL;
+    }
+
+    size = len;
+    err = nvs_get_blob(h, key, out, &size);
+    nvs_close(h);
+    return err;
+}
+
+static esp_err_t load_blob_or_create(const char *ns, const char *key, void *out, size_t len)
+{
+    esp_err_t err = load_blob(ns, key, out, len);
+
+    if (err == ESP_OK) {
+        return ESP_OK;
+    }
+
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        return save_blob(ns, key, out, len);
+    }
+
+    ESP_LOGW(TAG, "Preserving existing default for %s/%s after load failure: %s", ns, key, esp_err_to_name(err));
+    return err;
 }
 
 static esp_err_t save_blob(const char *ns, const char *key, const void *data, size_t len)
@@ -498,4 +633,103 @@ static esp_err_t save_blob(const char *ns, const char *key, const void *data, si
     }
     nvs_close(h);
     return err;
+}
+
+static void error_log_sanitize(nvs_error_log_t *log)
+{
+    if (log == NULL) {
+        return;
+    }
+
+    if (log->version != NVS_ERROR_LOG_VERSION) {
+        memset(log, 0, sizeof(*log));
+        log->version = NVS_ERROR_LOG_VERSION;
+        return;
+    }
+
+    if (log->head >= NVS_ERROR_LOG_CAPACITY) {
+        log->head = 0u;
+    }
+    if (log->count > NVS_ERROR_LOG_CAPACITY) {
+        log->count = NVS_ERROR_LOG_CAPACITY;
+    }
+}
+
+static void mark_stat_dirty_locked(void)
+{
+    s_stat_dirty = true;
+    s_stat_dirty_seq++;
+}
+
+static void mark_error_log_dirty_locked(void)
+{
+    s_error_log_dirty = true;
+    s_error_log_dirty_seq++;
+}
+
+static void nvs_storage_collect_flush_snapshot_locked(nvs_flush_snapshot_t *snapshot, bool include_stat)
+{
+    if (snapshot == NULL) {
+        return;
+    }
+
+    memset(snapshot, 0, sizeof(*snapshot));
+    if (s_error_log_dirty) {
+        snapshot->flush_error_log = true;
+        snapshot->error_log_dirty_seq = s_error_log_dirty_seq;
+        snapshot->error_log = s_error_log;
+    }
+    if (include_stat && s_stat_dirty) {
+        snapshot->flush_stat = true;
+        snapshot->stat_dirty_seq = s_stat_dirty_seq;
+        snapshot->stat = s_stat;
+    }
+}
+
+static void nvs_storage_commit_flush_snapshot(const nvs_flush_snapshot_t *snapshot,
+                                              esp_err_t error_log_err,
+                                              esp_err_t stat_err)
+{
+    if (snapshot == NULL || s_mux == NULL) {
+        return;
+    }
+
+    xSemaphoreTake(s_mux, portMAX_DELAY);
+    if (snapshot->flush_error_log &&
+        error_log_err == ESP_OK &&
+        s_error_log_dirty_seq == snapshot->error_log_dirty_seq) {
+        s_error_log_dirty = false;
+    }
+    if (snapshot->flush_stat &&
+        stat_err == ESP_OK &&
+        s_stat_dirty_seq == snapshot->stat_dirty_seq) {
+        s_stat_dirty = false;
+    }
+    xSemaphoreGive(s_mux);
+}
+
+static void error_log_append_locked(const char *tag, esp_err_t err, const char *message)
+{
+    nvs_error_entry_t *entry;
+
+    error_log_sanitize(&s_error_log);
+
+    entry = &s_error_log.entries[s_error_log.head];
+    memset(entry, 0, sizeof(*entry));
+    entry->seq = s_error_log.next_seq++;
+    entry->uptime_s = (uint32_t)(esp_timer_get_time() / 1000000LL);
+    entry->err_code = (int32_t)err;
+
+    if (tag != NULL) {
+        snprintf(entry->tag, sizeof(entry->tag), "%s", tag);
+    }
+    if (message != NULL) {
+        snprintf(entry->message, sizeof(entry->message), "%s", message);
+    }
+
+    s_error_log.head = (uint8_t)((s_error_log.head + 1u) % NVS_ERROR_LOG_CAPACITY);
+    if (s_error_log.count < NVS_ERROR_LOG_CAPACITY) {
+        s_error_log.count++;
+    }
+    mark_error_log_dirty_locked();
 }

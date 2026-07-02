@@ -28,6 +28,8 @@ _Static_assert(BOARD_WS_175_AMOLED_TRANSFER_BYTES(20) == (466u * 20u * 2u),
 _Static_assert(BOARD_WS_175_AMOLED_TRANSFER_BYTES(BOARD_WS_175_AMOLED_DRAW_BUFFER_LINES) ==
                    ((uint32_t)BOARD_WS_175_AMOLED_H_RES * (uint32_t)BOARD_WS_175_AMOLED_DRAW_BUFFER_LINES * sizeof(uint16_t)),
                "WS175 draw buffer transfer bytes should stay aligned with the runtime LVGL buffer contract");
+_Static_assert(BOARD_WS_175_AMOLED_DISPLAY_ROTATION == 180,
+               "WS175 display should stay on the validated 180-degree rotation default");
 _Static_assert(BOARD_WS_175_AMOLED_TOUCH_SWAP_XY == 0, "WS175 touch should not swap axes by default");
 _Static_assert(BOARD_WS_175_AMOLED_TOUCH_MIRROR_X == 1, "WS175 touch should mirror X by default");
 _Static_assert(BOARD_WS_175_AMOLED_TOUCH_MIRROR_Y == 1, "WS175 touch should mirror Y by default");

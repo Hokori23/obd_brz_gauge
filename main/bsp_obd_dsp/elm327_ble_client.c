@@ -116,6 +116,7 @@ bool elm327_ble_send_ascii_blocking(const char *ascii_cmd);
 #define GFORCE_MONITOR_BUF_SIZE 160
 static char s_gforce_monitor_buf[GFORCE_MONITOR_BUF_SIZE];
 static size_t s_gforce_monitor_len = 0;
+static int64_t s_gforce_monitor_last_log_us = 0;
 
 static ble_scan_result_t *ble_scan_buffer_alloc(void)
 {
@@ -360,6 +361,7 @@ static void elm327_send_standard_init_sequence(uint8_t protocol_to_use, const ch
     s_elm_ready = true;
     s_gforce_monitor_active = false;
     s_gforce_monitor_len = 0u;
+    s_gforce_monitor_last_log_us = 0;
     s_accum_len = 0u;
     s_accum_buf[0] = '\0';
     s_expect_mode21 = false;
@@ -409,6 +411,29 @@ static void elm327_exit_gforce_monitor_mode(uint8_t protocol_to_use, const char 
     ESP_LOGI(TAG, "Exited G-force OBD monitor mode");
 }
 
+static void elm327_log_gforce_monitor_sample(const char *line, int16_t lat_x100, int16_t lon_x100)
+{
+    int64_t now_us;
+
+    if (line == NULL) {
+        return;
+    }
+
+    now_us = esp_timer_get_time();
+    if ((now_us - s_gforce_monitor_last_log_us) < 1000000LL) {
+        return;
+    }
+
+    s_gforce_monitor_last_log_us = now_us;
+    ESP_LOGI(TAG,
+             "GFORCE OBD sample lat=%d.%02dg lon=%d.%02dg line=%.32s",
+             (int)(lat_x100 / 100),
+             abs((int)(lat_x100 % 100)),
+             (int)(lon_x100 / 100),
+             abs((int)(lon_x100 % 100)),
+             line);
+}
+
 static bool elm327_parse_gforce_monitor_line(const char *line)
 {
     {
@@ -421,6 +446,7 @@ static bool elm327_parse_gforce_monitor_line(const char *line)
 
         obd_data_set_lat_accel_x100(lat_x100);
         obd_data_set_lon_accel_x100(lon_x100);
+        elm327_log_gforce_monitor_sample(line, lat_x100, lon_x100);
         return true;
     }
 }
@@ -1233,6 +1259,7 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
     case ESP_GATTC_OPEN_EVT: {
         if (param->open.status != ESP_GATT_OK) {
             ESP_LOGE(TAG, "Open failed status=%d", param->open.status);
+            nvs_error_log_record(TAG, ESP_FAIL, "BLE open failed");
             start_scan();
         }
         break;
@@ -1296,18 +1323,24 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
 
         if (ret != ESP_OK || char_count == 0) {
             ESP_LOGE(TAG, "No characteristics found in range! Cannot communicate.");
+            nvs_error_log_record(TAG, ESP_ERR_NOT_FOUND, "No GATT characteristics");
             break;
         }
 
         // 閸掑棝鍘ら悧鐟扮窙閺佹壆绮?
         uint16_t alloc_count = char_count;
         esp_gattc_char_elem_t *chars = (esp_gattc_char_elem_t *)malloc(alloc_count * sizeof(esp_gattc_char_elem_t));
-        if (!chars) { ESP_LOGE(TAG, "malloc failed"); break; }
+        if (!chars) {
+            ESP_LOGE(TAG, "malloc failed");
+            nvs_error_log_record(TAG, ESP_ERR_NO_MEM, "Char alloc failed");
+            break;
+        }
 
         ret = esp_ble_gattc_get_all_char(gattc_if, s_conn_id,
             s_service_start, s_service_end, chars, &alloc_count, 0);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "get_all_char failed: %d", ret);
+            nvs_error_log_record(TAG, ESP_FAIL, "get_all_char failed");
             free(chars); break;
         }
 
@@ -1347,6 +1380,7 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
 
         if (s_char_write_handle == 0) {
             ESP_LOGE(TAG, "No WRITE characteristic found! Cannot send commands.");
+            nvs_error_log_record(TAG, ESP_ERR_NOT_FOUND, "No write characteristic");
             break;
         }
         // 婵″倹鐏夊▽鈩冩箒閻欘剛鐝涢惃鍑琌TIFY閻楃懓绶涢敍灞筋槻閻劌鍟撻崣銉︾労

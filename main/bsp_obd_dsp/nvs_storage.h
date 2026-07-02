@@ -46,6 +46,11 @@ typedef struct {
 #define NVS_OBD_POLL_MODE_FAST   1u
 #define NVS_OBD_POLL_MODE_COUNT  2u
 
+#define NVS_ERROR_LOG_VERSION  1u
+#define NVS_ERROR_LOG_CAPACITY 20u
+#define NVS_ERROR_TAG_LEN      16u
+#define NVS_ERROR_MSG_LEN      64u
+
 typedef struct {
     uint8_t protocol;
     theme_cfg_t theme_cfg;
@@ -72,6 +77,23 @@ typedef struct {
     uint8_t rsv[2];
 } nvs_stat_t;
 
+typedef struct {
+    uint32_t seq;
+    uint32_t uptime_s;
+    int32_t err_code;
+    char tag[NVS_ERROR_TAG_LEN];
+    char message[NVS_ERROR_MSG_LEN];
+} nvs_error_entry_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t next_seq;
+    uint8_t head;
+    uint8_t count;
+    uint8_t rsv[2];
+    nvs_error_entry_t entries[NVS_ERROR_LOG_CAPACITY];
+} nvs_error_log_t;
+
 esp_err_t nvs_storage_init(void);
 
 const nvs_user_cfg_t *nvs_cfg_get(void);
@@ -91,3 +113,7 @@ void nvs_stat_add_trip(uint32_t delta_m);
 void nvs_stat_reset_trip(void);
 void nvs_stat_update_speed(uint8_t speed_kmh, uint32_t dt_ms);
 nvs_stat_t nvs_stat_get_mileage(void);
+
+void nvs_error_log_record(const char *tag, esp_err_t err, const char *message);
+uint8_t nvs_error_log_count(void);
+void nvs_error_log_copy(nvs_error_log_t *out);

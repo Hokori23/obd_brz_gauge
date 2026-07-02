@@ -17,6 +17,7 @@
 
 #include "app_obd_dsp/aux_sensor_demand.h"
 #include "app_obd_dsp/obd_data_cache.h"
+#include "bsp_obd_dsp/nvs_storage.h"
 
 #define RC_TAG "racechrono_diy"
 
@@ -40,6 +41,11 @@ typedef struct {
     uint32_t pid;
     int32_t (*read_scaled)(bool *valid);
 } rc_chan_t;
+
+typedef struct {
+    uint8_t channel_idx;
+    int8_t rule_idx;
+} rc_active_channel_t;
 
 static esp_gatt_if_t s_gatts_if = ESP_GATT_IF_NONE;
 static uint16_t s_conn_id = 0;
@@ -65,6 +71,8 @@ static int64_t s_last_send_err_log_us = 0;
 
 static TaskHandle_t s_stream_task = NULL;
 static int64_t s_last_all_sent_us[RC_CH_MAX] = {0};
+static rc_active_channel_t s_active_channels[RC_CH_MAX];
+static uint8_t s_active_channel_count = 0;
 
 // Stable virtual CAN IDs: keep backward compatibility for RaceChrono formulas.
 #define RC_PID_RPM          0x0000F101u
@@ -346,6 +354,39 @@ static bool normalize_client_pid(uint32_t pid_raw, uint32_t *out_pid)
     return false;
 }
 
+static void rebuild_active_channels(void)
+{
+    uint8_t count = 0u;
+
+    if (!s_connected || !s_notify_enabled || !s_attr_ready) {
+        s_active_channel_count = 0u;
+        return;
+    }
+
+    if (s_allow_all) {
+        for (uint8_t i = 0; i < RC_CH_MAX; ++i) {
+            s_active_channels[count].channel_idx = i;
+            s_active_channels[count].rule_idx = -1;
+            count++;
+        }
+        s_active_channel_count = count;
+        return;
+    }
+
+    for (uint8_t i = 0; i < RC_CH_MAX; ++i) {
+        for (uint8_t rule_idx = 0; rule_idx < s_rule_count; ++rule_idx) {
+            if (s_channels[i].pid == s_rules[rule_idx].pid) {
+                s_active_channels[count].channel_idx = i;
+                s_active_channels[count].rule_idx = (int8_t)rule_idx;
+                count++;
+                break;
+            }
+        }
+    }
+
+    s_active_channel_count = count;
+}
+
 static void send_can_packet(uint32_t pid, int32_t value)
 {
     if (!s_connected || !s_notify_enabled || s_handle_can_main == 0 || s_gatts_if == ESP_GATT_IF_NONE) {
@@ -361,49 +402,43 @@ static void send_can_packet(uint32_t pid, int32_t value)
         if ((now_us - s_last_send_err_log_us) > 1000000) {
             s_last_send_err_log_us = now_us;
             ESP_LOGW(RC_TAG, "send_indicate failed: %s", esp_err_to_name(err));
+            nvs_error_log_record(RC_TAG, err, "send_indicate failed");
         }
     }
 }
 
-static bool should_send_by_rule(uint32_t pid, int channel_idx, int64_t now_us)
+static bool should_send_active_channel(const rc_active_channel_t *active_channel, int64_t now_us)
 {
-    uint16_t interval_ms = s_allow_all_interval_ms;
-    rc_pid_rule_t *rule = NULL;
+    uint16_t interval_ms;
 
-    if (!s_allow_all) {
-        for (uint8_t i = 0; i < s_rule_count; i++) {
-            if (s_rules[i].pid == pid) {
-                rule = &s_rules[i];
-                break;
-            }
-        }
-        if (!rule) {
-            return false;
-        }
-        interval_ms = rule->interval_ms;
+    if (active_channel == NULL || active_channel->channel_idx >= RC_CH_MAX) {
+        return false;
     }
 
-    if (interval_ms < 20) {
-        interval_ms = 20;
-    }
-
-    int64_t *last_us = s_allow_all ? NULL : &rule->last_sent_us;
-
-    if (s_allow_all) {
-        if (channel_idx < 0 || channel_idx >= RC_CH_MAX) {
+    if (active_channel->rule_idx < 0) {
+        interval_ms = s_allow_all_interval_ms;
+        if (interval_ms < 20) {
+            interval_ms = 20;
+        }
+        if ((now_us - s_last_all_sent_us[active_channel->channel_idx]) < ((int64_t)interval_ms * 1000)) {
             return false;
         }
-        if ((now_us - s_last_all_sent_us[channel_idx]) < ((int64_t)interval_ms * 1000)) {
-            return false;
-        }
-        s_last_all_sent_us[channel_idx] = now_us;
+        s_last_all_sent_us[active_channel->channel_idx] = now_us;
         return true;
     }
 
-    if ((now_us - *last_us) < ((int64_t)interval_ms * 1000)) {
+    if ((uint8_t)active_channel->rule_idx >= s_rule_count) {
         return false;
     }
-    *last_us = now_us;
+
+    interval_ms = s_rules[(uint8_t)active_channel->rule_idx].interval_ms;
+    if (interval_ms < 20) {
+        interval_ms = 20;
+    }
+    if ((now_us - s_rules[(uint8_t)active_channel->rule_idx].last_sent_us) < ((int64_t)interval_ms * 1000)) {
+        return false;
+    }
+    s_rules[(uint8_t)active_channel->rule_idx].last_sent_us = now_us;
     return true;
 }
 
@@ -417,6 +452,7 @@ static void process_filter_write(const uint8_t *buf, uint16_t len)
     if (cmd == 0) {
         s_allow_all = false;
         s_rule_count = 0;
+        rebuild_active_channels();
         ESP_LOGI(RC_TAG, "Filter: deny all");
         aux_sensor_demand_refresh();
         return;
@@ -431,6 +467,7 @@ static void process_filter_write(const uint8_t *buf, uint16_t len)
         }
         s_allow_all = true;
         s_rule_count = 0;
+        rebuild_active_channels();
         ESP_LOGI(RC_TAG, "Filter: allow all, interval=%u ms", s_allow_all_interval_ms);
         aux_sensor_demand_refresh();
         return;
@@ -456,6 +493,7 @@ static void process_filter_write(const uint8_t *buf, uint16_t len)
         for (uint8_t i = 0; i < s_rule_count; i++) {
             if (s_rules[i].pid == pid) {
                 s_rules[i].interval_ms = interval_ms;
+                rebuild_active_channels();
                 ESP_LOGI(RC_TAG, "Filter: update PID=0x%08" PRIX32 " interval=%u", pid, interval_ms);
                 aux_sensor_demand_refresh();
                 return;
@@ -467,6 +505,7 @@ static void process_filter_write(const uint8_t *buf, uint16_t len)
             s_rules[s_rule_count].interval_ms = interval_ms;
             s_rules[s_rule_count].last_sent_us = 0;
             s_rule_count++;
+            rebuild_active_channels();
             ESP_LOGI(RC_TAG, "Filter: allow PID=0x%08" PRIX32 " interval=%u", pid, interval_ms);
             aux_sensor_demand_refresh();
         }
@@ -479,16 +518,17 @@ static void stream_task(void *arg)
     while (1) {
         if (s_connected && s_notify_enabled && s_attr_ready) {
             int64_t now_us = esp_timer_get_time();
-            for (int i = 0; i < RC_CH_MAX; i++) {
+            for (uint8_t i = 0; i < s_active_channel_count; ++i) {
+                uint8_t channel_idx = s_active_channels[i].channel_idx;
                 bool valid = false;
-                int32_t val = s_channels[i].read_scaled(&valid);
+                int32_t val = s_channels[channel_idx].read_scaled(&valid);
                 if (!valid) {
                     continue;
                 }
-                if (!should_send_by_rule(s_channels[i].pid, i, now_us)) {
+                if (!should_send_active_channel(&s_active_channels[i], now_us)) {
                     continue;
                 }
-                send_can_packet(s_channels[i].pid, val);
+                send_can_packet(s_channels[channel_idx].pid, val);
             }
         }
         vTaskDelay(pdMS_TO_TICKS(20));
@@ -539,6 +579,7 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble
             ESP_LOGI(RC_TAG, "Attr table ready, CAN main handle=0x%04X", s_handle_can_main);
         } else {
             ESP_LOGE(RC_TAG, "Create attr table failed, status=%d", param->add_attr_tab.status);
+            nvs_error_log_record(RC_TAG, ESP_FAIL, "Create attr table failed");
         }
         break;
 
@@ -551,6 +592,7 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble
         s_rule_count = 0;
         memset(s_last_all_sent_us, 0, sizeof(s_last_all_sent_us));
         s_last_send_err_log_us = 0;
+        rebuild_active_channels();
         ESP_LOGI(RC_TAG, "RaceChrono connected");
         aux_sensor_demand_refresh();
         break;
@@ -558,6 +600,7 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble
     case ESP_GATTS_DISCONNECT_EVT:
         s_connected = false;
         s_notify_enabled = false;
+        rebuild_active_channels();
         ESP_LOGI(RC_TAG, "RaceChrono disconnected");
         aux_sensor_demand_refresh();
         start_advertising_if_ready();
@@ -567,6 +610,7 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble
         if (param->write.handle == s_handle_can_cccd && param->write.len >= 2) {
             uint16_t cccd = (uint16_t)param->write.value[0] | ((uint16_t)param->write.value[1] << 8);
             s_notify_enabled = ((cccd & 0x0003u) != 0);
+            rebuild_active_channels();
             ESP_LOGI(RC_TAG, "CAN main cccd=0x%04X stream %s", cccd, s_notify_enabled ? "EN" : "DIS");
             aux_sensor_demand_refresh();
         } else if (s_attr_ready && param->write.handle == s_handle_filter) {
@@ -635,12 +679,14 @@ void racechrono_ble_diy_start(void)
     esp_err_t err = esp_ble_gatts_register_callback(gatts_cb);
     if (err != ESP_OK) {
         ESP_LOGE(RC_TAG, "gatts register cb failed: %s", esp_err_to_name(err));
+        nvs_error_log_record(RC_TAG, err, "gatts register cb failed");
         return;
     }
 
     err = esp_ble_gatts_app_register(RC_APP_ID);
     if (err != ESP_OK) {
         ESP_LOGE(RC_TAG, "gatts app register failed: %s", esp_err_to_name(err));
+        nvs_error_log_record(RC_TAG, err, "gatts app register failed");
         return;
     }
 

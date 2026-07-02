@@ -23,6 +23,10 @@ if ($homeRuntime -notmatch 'gforce_dot') {
     throw "ui_home_runtime.c must keep the single red current-G marker"
 }
 
+if ($homeRuntime -notmatch 'gforce_dot_glow') {
+    throw "ui_home_runtime.c must keep a dedicated glow layer around the current G marker"
+}
+
 if ($homeRuntime -notmatch 'delta_mag' -or $homeRuntime -notmatch 'follow = 0\.14f') {
     throw "ui_home_runtime.c must keep the inertia-based smoothing path for the red dot"
 }
@@ -33,6 +37,10 @@ if ($homeRuntime -notmatch 'history_decay =') {
 
 if ($homeRuntime -notmatch 'quadrant_radius' -or $homeRuntime -notmatch 'quadrant_center_x') {
     throw "ui_home_runtime.c must keep quadrant labels positioned from the circular plot geometry"
+}
+
+if ($homeRuntime -notmatch 'ACC\\nLEFT' -or $homeRuntime -notmatch 'BRAKE\\nRIGHT') {
+    throw "ui_home_runtime.c must keep the four G-force quadrants labeled by accel/brake and left/right semantics"
 }
 
 Write-Output "G-force UI contract checks passed"

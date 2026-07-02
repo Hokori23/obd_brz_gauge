@@ -27,6 +27,7 @@
 #define UI_HOME_GFORCE_HISTORY_POINTS (UI_HOME_GFORCE_HISTORY_BINS + 1)
 #define UI_HOME_PI_F 3.14159265f
 #define UI_HOME_GFORCE_MAX_G 1.20f
+#define UI_HOME_NEIGHBOR_REFRESH_INTERVAL_TICKS 5u
 
 typedef enum {
     UI_HOME_TILE_MENU = 0,
@@ -67,6 +68,7 @@ typedef struct {
     lv_obj_t *gforce_history_glow_line;
     lv_obj_t *gforce_history_line;
     lv_obj_t *gforce_dot;
+    lv_obj_t *gforce_dot_glow;
     lv_obj_t *gforce_center_dot;
     lv_obj_t *gforce_quadrant_labels[4];
     lv_point_t gforce_vector_points[2];
@@ -151,8 +153,21 @@ static void ui_home_exit_edit_mode(void);
 static void ui_home_delete_confirm_result(lv_event_t *e);
 static void ui_home_notice_msgbox_event(lv_event_t *e);
 static void ui_home_refresh_timer_cb(lv_timer_t *timer);
+static void ui_home_runtime_refresh_tiles(bool include_neighbor_tiles);
 static ui_dashboard_page_type_t ui_home_page_type_for_gauge(uint8_t gauge_index);
 static int32_t ui_home_estimate_long_g_x100(bool *valid_out);
+static bool ui_home_read_disp_item_value(disp_item_t item, int32_t *out);
+static void ui_home_refresh_menu_tile(ui_home_tile_runtime_t *rt,
+                                      const char *vehicle_name,
+                                      const char *ble_short);
+static void ui_home_refresh_gear_tile(ui_home_tile_runtime_t *rt);
+static void ui_home_refresh_gforce_tile(ui_home_tile_runtime_t *rt,
+                                        ui_dashboard_page_type_t page_type);
+static void ui_home_refresh_metric_tile(ui_home_tile_runtime_t *rt,
+                                        const ui_dashboard_page_cfg_t *page,
+                                        float sweep_ratio,
+                                        int16_t brake_warn_x10,
+                                        int16_t oil_warn_x10);
 static float ui_home_clampf(float value, float min_value, float max_value);
 static void ui_home_gforce_history_draw_event(lv_event_t *e);
 static void ui_home_gforce_rebuild_history(ui_home_tile_runtime_t *rt);
@@ -215,6 +230,96 @@ static ui_dashboard_page_type_t ui_home_page_type_for_gauge(uint8_t gauge_index)
     const ui_dashboard_page_cfg_t *page = ui_home_get_gauge_cfg(gauge_index);
 
     return ui_dashboard_page_get_type(page);
+}
+
+static bool ui_home_read_disp_item_value(disp_item_t item, int32_t *out)
+{
+    if (out == NULL) {
+        return false;
+    }
+
+    switch (item) {
+    case DISP_ITEM_CLT: {
+        int16_t value = obd_data_get_coolant_temp();
+        if (value > -40) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_IAT: {
+        int16_t value = obd_data_get_intake_temp();
+        if (value > -40) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_OIL: {
+        int16_t value = obd_data_get_oil_temp();
+        if (value > -41) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_LOAD: {
+        int16_t value = obd_data_get_load_pct();
+        if (value >= 0) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_TPS: {
+        int16_t value = obd_data_get_tps();
+        if (value >= 0) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_RPM:
+        *out = (int32_t)obd_data_get_rpm();
+        return true;
+    case DISP_ITEM_SPEED:
+        *out = (int32_t)obd_data_get_speed();
+        return true;
+    case DISP_ITEM_BAT: {
+        int32_t value = obd_data_get_bat_mv();
+        if (value > 0) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_OILP: {
+        int16_t value = obd_data_get_oil_pressure_x10();
+        if (value >= 0) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_BKT: {
+        int16_t value = obd_data_get_brake_temp_x10();
+        if (value > -1000) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_BOOST: {
+        int16_t value = obd_data_get_boost_x10();
+        if (value != -32768) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    default:
+        return false;
+    }
 }
 
 static void ui_home_rebuild_tile_descriptors(void)
@@ -432,8 +537,13 @@ static void ui_home_notice_msgbox_event(lv_event_t *e)
 
 static void ui_home_refresh_timer_cb(lv_timer_t *timer)
 {
+    static uint8_t s_neighbor_refresh_tick = 0u;
+    bool include_neighbor_tiles;
+
     LV_UNUSED(timer);
-    ui_home_runtime_refresh_active_tile();
+    s_neighbor_refresh_tick = (uint8_t)((s_neighbor_refresh_tick + 1u) % UI_HOME_NEIGHBOR_REFRESH_INTERVAL_TICKS);
+    include_neighbor_tiles = (s_neighbor_refresh_tick == 0u);
+    ui_home_runtime_refresh_tiles(include_neighbor_tiles);
 }
 
 static void ui_home_format_ble_name(char *buf, size_t buf_size, const char *name)
@@ -1181,7 +1291,8 @@ static void ui_home_create_gforce_content(uint8_t tile_id,
     lv_coord_t quadrant_radius;
     lv_coord_t quadrant_center_x;
     lv_coord_t quadrant_center_y;
-    static const char *quadrants[4] = {"ACC L", "ACC R", "BRK L", "BRK R"};
+    lv_coord_t label_font;
+    static const char *quadrants[4] = {"ACC\nLEFT", "ACC\nRIGHT", "BRAKE\nLEFT", "BRAKE\nRIGHT"};
 
     rt->root = parent;
     rt->slot_count = 0u;
@@ -1200,7 +1311,8 @@ static void ui_home_create_gforce_content(uint8_t tile_id,
     mid_size = (plot_size * 2) / 3;
     inner_size = plot_size / 3;
     quadrant_gap = LV_MAX(ui_layout_px(10), plot_size / 18);
-    quadrant_radius = (lv_coord_t)((float)radius * 0.57f);
+    quadrant_radius = (lv_coord_t)((float)radius * 0.60f);
+    label_font = LV_MAX(12, plot_size / 20);
     rt->gforce_plot_size = plot_size;
     rt->gforce_plot_radius = radius - LV_MAX(ui_layout_px(14), plot_size / 14);
 
@@ -1220,7 +1332,11 @@ static void ui_home_create_gforce_content(uint8_t tile_id,
     lv_obj_set_size(rt->gforce_plot, plot_size, plot_size);
     lv_obj_set_pos(rt->gforce_plot, plot_x, plot_y);
     lv_obj_clear_flag(rt->gforce_plot, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_bg_opa(rt->gforce_plot, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_radius(rt->gforce_plot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(rt->gforce_plot, lv_color_hex(0x111111), LV_PART_MAIN);
+    lv_obj_set_style_bg_grad_color(rt->gforce_plot, lv_color_hex(0x232323), LV_PART_MAIN);
+    lv_obj_set_style_bg_grad_dir(rt->gforce_plot, LV_GRAD_DIR_VER, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(rt->gforce_plot, 96, LV_PART_MAIN);
 
     rt->gforce_outer_ring = lv_obj_create(rt->gforce_plot);
     lv_obj_remove_style_all(rt->gforce_outer_ring);
@@ -1229,8 +1345,11 @@ static void ui_home_create_gforce_content(uint8_t tile_id,
     lv_obj_set_style_radius(rt->gforce_outer_ring, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_border_width(rt->gforce_outer_ring, outer_border, LV_PART_MAIN);
     lv_obj_set_style_border_color(rt->gforce_outer_ring, lv_color_hex(0xF1F1F1), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(rt->gforce_outer_ring, lv_color_hex(0x101010), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(rt->gforce_outer_ring, LV_OPA_40, LV_PART_MAIN);
+    lv_obj_set_style_border_opa(rt->gforce_outer_ring, LV_OPA_90, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(rt->gforce_outer_ring, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(rt->gforce_outer_ring, LV_MAX(10, plot_size / 16), LV_PART_MAIN);
+    lv_obj_set_style_shadow_opa(rt->gforce_outer_ring, 44, LV_PART_MAIN);
+    lv_obj_set_style_shadow_color(rt->gforce_outer_ring, lv_color_hex(0xFFF3D2), LV_PART_MAIN);
 
     rt->gforce_mid_ring = lv_obj_create(rt->gforce_plot);
     lv_obj_remove_style_all(rt->gforce_mid_ring);
@@ -1238,10 +1357,9 @@ static void ui_home_create_gforce_content(uint8_t tile_id,
     lv_obj_center(rt->gforce_mid_ring);
     lv_obj_set_style_radius(rt->gforce_mid_ring, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_border_width(rt->gforce_mid_ring, LV_MAX(1, outer_border - 1), LV_PART_MAIN);
-    lv_obj_set_style_border_color(rt->gforce_mid_ring, lv_color_hex(0x8A8A8A), LV_PART_MAIN);
-    lv_obj_set_style_border_opa(rt->gforce_mid_ring, LV_OPA_60, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(rt->gforce_mid_ring, lv_color_hex(0x171717), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(rt->gforce_mid_ring, 46, LV_PART_MAIN);
+    lv_obj_set_style_border_color(rt->gforce_mid_ring, lv_color_hex(0xA8A8A8), LV_PART_MAIN);
+    lv_obj_set_style_border_opa(rt->gforce_mid_ring, LV_OPA_50, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(rt->gforce_mid_ring, LV_OPA_TRANSP, LV_PART_MAIN);
 
     rt->gforce_inner_ring = lv_obj_create(rt->gforce_plot);
     lv_obj_remove_style_all(rt->gforce_inner_ring);
@@ -1249,24 +1367,29 @@ static void ui_home_create_gforce_content(uint8_t tile_id,
     lv_obj_center(rt->gforce_inner_ring);
     lv_obj_set_style_radius(rt->gforce_inner_ring, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_border_width(rt->gforce_inner_ring, LV_MAX(1, outer_border - 1), LV_PART_MAIN);
-    lv_obj_set_style_border_color(rt->gforce_inner_ring, lv_color_hex(0x666666), LV_PART_MAIN);
-    lv_obj_set_style_border_opa(rt->gforce_inner_ring, LV_OPA_50, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(rt->gforce_inner_ring, lv_color_hex(0x202020), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(rt->gforce_inner_ring, 36, LV_PART_MAIN);
+    lv_obj_set_style_border_color(rt->gforce_inner_ring, lv_color_hex(0x727272), LV_PART_MAIN);
+    lv_obj_set_style_border_opa(rt->gforce_inner_ring, 44, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(rt->gforce_inner_ring, LV_OPA_TRANSP, LV_PART_MAIN);
 
     rt->gforce_axis_h = lv_obj_create(rt->gforce_plot);
     lv_obj_remove_style_all(rt->gforce_axis_h);
     lv_obj_set_size(rt->gforce_axis_h, plot_size - (plot_size / 7), axis_thickness);
     lv_obj_center(rt->gforce_axis_h);
-    lv_obj_set_style_bg_color(rt->gforce_axis_h, lv_color_hex(0xF2F2F2), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(rt->gforce_axis_h, LV_OPA_70, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(rt->gforce_axis_h, lv_color_hex(0xE8E8E8), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(rt->gforce_axis_h, LV_OPA_60, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(rt->gforce_axis_h, LV_MAX(3, plot_size / 64), LV_PART_MAIN);
+    lv_obj_set_style_shadow_opa(rt->gforce_axis_h, 34, LV_PART_MAIN);
+    lv_obj_set_style_shadow_color(rt->gforce_axis_h, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
 
     rt->gforce_axis_v = lv_obj_create(rt->gforce_plot);
     lv_obj_remove_style_all(rt->gforce_axis_v);
     lv_obj_set_size(rt->gforce_axis_v, axis_thickness, plot_size - (plot_size / 7));
     lv_obj_center(rt->gforce_axis_v);
-    lv_obj_set_style_bg_color(rt->gforce_axis_v, lv_color_hex(0xF2F2F2), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(rt->gforce_axis_v, LV_OPA_70, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(rt->gforce_axis_v, lv_color_hex(0xE8E8E8), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(rt->gforce_axis_v, LV_OPA_60, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(rt->gforce_axis_v, LV_MAX(3, plot_size / 64), LV_PART_MAIN);
+    lv_obj_set_style_shadow_opa(rt->gforce_axis_v, 34, LV_PART_MAIN);
+    lv_obj_set_style_shadow_color(rt->gforce_axis_v, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
 
     rt->gforce_history_fill = lv_obj_create(rt->gforce_plot);
     lv_obj_remove_style_all(rt->gforce_history_fill);
@@ -1280,7 +1403,7 @@ static void ui_home_create_gforce_content(uint8_t tile_id,
     lv_obj_center(rt->gforce_history_glow_line);
     lv_obj_set_style_line_width(rt->gforce_history_glow_line, LV_MAX(6, plot_size / 26), LV_PART_MAIN);
     lv_obj_set_style_line_color(rt->gforce_history_glow_line, lv_color_hex(0xC8A93D), LV_PART_MAIN);
-    lv_obj_set_style_line_opa(rt->gforce_history_glow_line, LV_OPA_40, LV_PART_MAIN);
+    lv_obj_set_style_line_opa(rt->gforce_history_glow_line, 92, LV_PART_MAIN);
     lv_obj_set_style_line_rounded(rt->gforce_history_glow_line, true, LV_PART_MAIN);
 
     rt->gforce_history_line = lv_line_create(rt->gforce_plot);
@@ -1294,10 +1417,23 @@ static void ui_home_create_gforce_content(uint8_t tile_id,
     rt->gforce_vector_line = lv_line_create(rt->gforce_plot);
     lv_obj_set_size(rt->gforce_vector_line, plot_size, plot_size);
     lv_obj_center(rt->gforce_vector_line);
-    lv_obj_set_style_line_width(rt->gforce_vector_line, LV_MAX(2, plot_size / 64), LV_PART_MAIN);
-    lv_obj_set_style_line_color(rt->gforce_vector_line, lv_color_hex(0xFF6A5C), LV_PART_MAIN);
-    lv_obj_set_style_line_opa(rt->gforce_vector_line, 140, LV_PART_MAIN);
+    lv_obj_set_style_line_width(rt->gforce_vector_line, LV_MAX(1, plot_size / 96), LV_PART_MAIN);
+    lv_obj_set_style_line_color(rt->gforce_vector_line, lv_color_hex(0xFF8E76), LV_PART_MAIN);
+    lv_obj_set_style_line_opa(rt->gforce_vector_line, 48, LV_PART_MAIN);
     lv_obj_set_style_line_rounded(rt->gforce_vector_line, true, LV_PART_MAIN);
+
+    rt->gforce_dot_glow = lv_obj_create(rt->gforce_plot);
+    lv_obj_remove_style_all(rt->gforce_dot_glow);
+    lv_obj_set_size(rt->gforce_dot_glow,
+                    LV_MAX(ui_layout_px(28), plot_size / 8),
+                    LV_MAX(ui_layout_px(28), plot_size / 8));
+    lv_obj_center(rt->gforce_dot_glow);
+    lv_obj_set_style_radius(rt->gforce_dot_glow, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(rt->gforce_dot_glow, lv_color_hex(0xFF5A42), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(rt->gforce_dot_glow, 56, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(rt->gforce_dot_glow, LV_MAX(16, plot_size / 12), LV_PART_MAIN);
+    lv_obj_set_style_shadow_opa(rt->gforce_dot_glow, 120, LV_PART_MAIN);
+    lv_obj_set_style_shadow_color(rt->gforce_dot_glow, lv_color_hex(0xFF6E4E), LV_PART_MAIN);
 
     rt->gforce_dot = lv_obj_create(rt->gforce_plot);
     lv_obj_remove_style_all(rt->gforce_dot);
@@ -1310,6 +1446,9 @@ static void ui_home_create_gforce_content(uint8_t tile_id,
     lv_obj_set_style_bg_opa(rt->gforce_dot, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(rt->gforce_dot, LV_MAX(2, plot_size / 90), LV_PART_MAIN);
     lv_obj_set_style_border_color(rt->gforce_dot, lv_color_hex(0xFFF6E8), LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(rt->gforce_dot, LV_MAX(6, plot_size / 28), LV_PART_MAIN);
+    lv_obj_set_style_shadow_opa(rt->gforce_dot, 120, LV_PART_MAIN);
+    lv_obj_set_style_shadow_color(rt->gforce_dot, lv_color_hex(0xFF7A5C), LV_PART_MAIN);
 
     rt->gforce_center_dot = lv_obj_create(rt->gforce_plot);
     lv_obj_remove_style_all(rt->gforce_center_dot);
@@ -1320,16 +1459,23 @@ static void ui_home_create_gforce_content(uint8_t tile_id,
     lv_obj_set_style_radius(rt->gforce_center_dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_bg_color(rt->gforce_center_dot, lv_color_hex(0xFFF6D0), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(rt->gforce_center_dot, LV_OPA_80, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(rt->gforce_center_dot, LV_MAX(4, plot_size / 40), LV_PART_MAIN);
+    lv_obj_set_style_shadow_opa(rt->gforce_center_dot, 72, LV_PART_MAIN);
+    lv_obj_set_style_shadow_color(rt->gforce_center_dot, lv_color_hex(0xFFE39A), LV_PART_MAIN);
     lv_obj_move_foreground(rt->gforce_vector_line);
+    lv_obj_move_foreground(rt->gforce_dot_glow);
     lv_obj_move_foreground(rt->gforce_center_dot);
     lv_obj_move_foreground(rt->gforce_dot);
 
     for (uint8_t i = 0; i < 4u; ++i) {
         rt->gforce_quadrant_labels[i] = lv_label_create(parent);
         lv_label_set_text(rt->gforce_quadrant_labels[i], quadrants[i]);
-        lv_obj_set_style_text_font(rt->gforce_quadrant_labels[i], ui_font_typoder(15), LV_PART_MAIN);
-        lv_obj_set_style_text_color(rt->gforce_quadrant_labels[i], lv_color_hex(0xB8B8B8), LV_PART_MAIN);
-        lv_obj_set_style_text_opa(rt->gforce_quadrant_labels[i], 215, LV_PART_MAIN);
+        lv_label_set_long_mode(rt->gforce_quadrant_labels[i], LV_LABEL_LONG_CLIP);
+        lv_obj_set_style_text_align(rt->gforce_quadrant_labels[i], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_set_style_text_line_space(rt->gforce_quadrant_labels[i], 0, LV_PART_MAIN);
+        lv_obj_set_style_text_font(rt->gforce_quadrant_labels[i], ui_font_typoder(label_font), LV_PART_MAIN);
+        lv_obj_set_style_text_color(rt->gforce_quadrant_labels[i], lv_color_hex(0xD8D2C2), LV_PART_MAIN);
+        lv_obj_set_style_text_opa(rt->gforce_quadrant_labels[i], 225, LV_PART_MAIN);
     }
     lv_obj_update_layout(parent);
     quadrant_center_x = plot_x + radius;
@@ -1427,12 +1573,12 @@ static void ui_home_gforce_history_draw_event(lv_event_t *e)
 
     lv_draw_rect_dsc_init(&fill_dsc);
     fill_dsc.bg_color = lv_color_hex(0xE2BE47);
-    fill_dsc.bg_opa = 72;
+    fill_dsc.bg_opa = 92;
     fill_dsc.border_width = 0;
     fill_dsc.shadow_width = LV_MAX(10, rt->gforce_plot_size / 18);
     fill_dsc.shadow_spread = LV_MAX(1, rt->gforce_plot_size / 80);
     fill_dsc.shadow_color = lv_color_hex(0xC59B22);
-    fill_dsc.shadow_opa = 72;
+    fill_dsc.shadow_opa = 96;
 
     lv_obj_get_coords(target, &coords);
     for (uint16_t i = 0; i < UI_HOME_GFORCE_HISTORY_BINS; ++i) {
@@ -1594,15 +1740,27 @@ static void ui_home_gforce_update_plot(ui_home_tile_runtime_t *rt, float lat_g, 
     rt->gforce_vector_points[1].y = dot_y;
     lv_line_set_points(rt->gforce_vector_line, rt->gforce_vector_points, 2);
 
+    if (rt->gforce_dot_glow != NULL) {
+        lv_coord_t glow_size = lv_obj_get_width(rt->gforce_dot_glow);
+        lv_obj_set_pos(rt->gforce_dot_glow, dot_x - (glow_size / 2), dot_y - (glow_size / 2));
+    }
     lv_obj_set_pos(rt->gforce_dot, dot_x - (dot_size / 2), dot_y - (dot_size / 2));
 }
 
 static void ui_home_create_add_content(uint8_t tile_id, lv_obj_t *parent)
 {
     ui_home_tile_runtime_t *rt = &s_home_tile_runtime[tile_id];
+    lv_obj_t *plus_wrap;
+    lv_obj_t *plus_h;
+    lv_obj_t *plus_v;
+    lv_coord_t btn_size;
+    lv_coord_t plus_size;
+    lv_coord_t bar_long;
+    lv_coord_t bar_thick;
 
     lv_obj_t *btn = lv_btn_create(parent);
-    lv_obj_set_size(btn, ui_layout_px(240), ui_layout_px(240));
+    btn_size = ui_layout_px(240);
+    lv_obj_set_size(btn, btn_size, btn_size);
     lv_obj_center(btn);
     lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x121212), LV_PART_MAIN);
@@ -1611,11 +1769,31 @@ static void ui_home_create_add_content(uint8_t tile_id, lv_obj_t *parent)
     lv_obj_add_flag(btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(btn, ui_home_add_page_click, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *plus = lv_label_create(btn);
-    lv_label_set_text(plus, "+");
-    lv_obj_set_style_text_font(plus, ui_font_typoder(100), LV_PART_MAIN);
-    lv_obj_set_style_text_color(plus, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_center(plus);
+    plus_size = LV_MAX(ui_layout_px(96), (lv_coord_t)((btn_size * 52) / 100));
+    bar_long = LV_MAX(ui_layout_px(74), (lv_coord_t)((btn_size * 36) / 100));
+    bar_thick = LV_MAX(ui_layout_px(10), (lv_coord_t)((btn_size * 7) / 100));
+
+    plus_wrap = lv_obj_create(btn);
+    lv_obj_remove_style_all(plus_wrap);
+    lv_obj_set_size(plus_wrap, plus_size, plus_size);
+    lv_obj_center(plus_wrap);
+    lv_obj_clear_flag(plus_wrap, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+    plus_h = lv_obj_create(plus_wrap);
+    lv_obj_remove_style_all(plus_h);
+    lv_obj_set_size(plus_h, bar_long, bar_thick);
+    lv_obj_center(plus_h);
+    lv_obj_set_style_radius(plus_h, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(plus_h, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(plus_h, LV_OPA_COVER, LV_PART_MAIN);
+
+    plus_v = lv_obj_create(plus_wrap);
+    lv_obj_remove_style_all(plus_v);
+    lv_obj_set_size(plus_v, bar_thick, bar_long);
+    lv_obj_center(plus_v);
+    lv_obj_set_style_radius(plus_v, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(plus_v, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(plus_v, LV_OPA_COVER, LV_PART_MAIN);
 
     rt->root = parent;
 }
@@ -1957,24 +2135,104 @@ static void ui_home_sync_tile_mounts(uint8_t active_page)
 
 }
 
-void ui_home_runtime_refresh_active_tile(void)
+static void ui_home_refresh_menu_tile(ui_home_tile_runtime_t *rt,
+                                      const char *vehicle_name,
+                                      const char *ble_short)
+{
+    ui_label_set_text_if_changed(rt->menu_vehicle_label, vehicle_name);
+    ui_label_set_text_fmt_if_changed(rt->menu_ble_label, "BLE: %s", ble_short);
+}
+
+static void ui_home_refresh_gear_tile(ui_home_tile_runtime_t *rt)
+{
+    uint16_t rpm = obd_data_get_rpm();
+    uint16_t speed = obd_data_get_speed();
+    enGear gear = calculate_gear((float)rpm, (float)speed);
+    const char *gear_text = "N";
+
+    switch (gear) {
+    case GEAR_1: gear_text = "1"; break;
+    case GEAR_2: gear_text = "2"; break;
+    case GEAR_3: gear_text = "3"; break;
+    case GEAR_4: gear_text = "4"; break;
+    case GEAR_5: gear_text = "5"; break;
+    case GEAR_6: gear_text = "6"; break;
+    case GEAR_NEUTRAL:
+    default:
+        gear_text = "N";
+        break;
+    }
+
+    ui_label_set_text_if_changed(rt->custom_value_label, gear_text);
+}
+
+static void ui_home_refresh_gforce_tile(ui_home_tile_runtime_t *rt,
+                                        ui_dashboard_page_type_t page_type)
+{
+    int16_t lat_x100 =
+        (page_type == UI_DASHBOARD_PAGE_TYPE_G_FORCE_ESP32)
+            ? obd_data_get_lat_accel_imu_x100()
+            : obd_data_get_lat_accel_x100();
+    int16_t lon_x100 =
+        (page_type == UI_DASHBOARD_PAGE_TYPE_G_FORCE_ESP32)
+            ? obd_data_get_lon_accel_imu_x100()
+            : obd_data_get_lon_accel_x100();
+    bool lon_valid = false;
+    int32_t lon_display_x100;
+
+    if (lon_x100 > -32768) {
+        lon_valid = true;
+        lon_display_x100 = lon_x100;
+    } else if (page_type == UI_DASHBOARD_PAGE_TYPE_G_FORCE_OBD) {
+        lon_display_x100 = ui_home_estimate_long_g_x100(&lon_valid);
+    } else {
+        lon_display_x100 = 0;
+    }
+
+    ui_home_gforce_update_plot(rt,
+                               (lat_x100 > -32768) ? ((float)lat_x100 / 100.0f) : 0.0f,
+                               lon_valid ? ((float)lon_display_x100 / 100.0f) : 0.0f);
+}
+
+static void ui_home_refresh_metric_tile(ui_home_tile_runtime_t *rt,
+                                        const ui_dashboard_page_cfg_t *page,
+                                        float sweep_ratio,
+                                        int16_t brake_warn_x10,
+                                        int16_t oil_warn_x10)
+{
+    disp_item_t visible_items[UI_DASHBOARD_MAX_SLOTS];
+    uint8_t visible_count = ui_home_collect_visible_items(page, visible_items);
+
+    for (uint8_t i = 0; i < rt->slot_count && i < visible_count; ++i) {
+        disp_item_t item = visible_items[i];
+        int32_t value = 0;
+        bool valid = false;
+
+        ui_home_apply_slot_typography(rt->name_labels[i],
+                                      rt->value_labels[i],
+                                      rt->unit_labels[i],
+                                      item,
+                                      rt->slot_count);
+        disp_item_sync_meta(rt->name_labels[i], rt->unit_labels[i], &rt->item_cache[i], item);
+        if (sweep_ratio >= 0.0f) {
+            value = disp_item_sweep_value(item, sweep_ratio);
+            valid = true;
+        } else {
+            valid = ui_home_read_disp_item_value(item, &value);
+        }
+        disp_item_set_text(rt->value_labels[i], item, value, valid);
+        disp_item_set_value_color(rt->value_labels[i], item, value, valid,
+                                  brake_warn_x10, oil_warn_x10);
+    }
+}
+
+static void ui_home_runtime_refresh_tiles(bool include_neighbor_tiles)
 {
     const nvs_user_cfg_t *user_cfg = nvs_cfg_get();
     const vehicle_profile_t *vehicle = vehicle_profile_get_active();
     const char *vehicle_name = (vehicle && vehicle->name) ? vehicle->name : "VEHICLE";
     const char *ble_name = elm327_ble_get_connected_name();
     char ble_short[16];
-    int16_t clt = obd_data_get_coolant_temp();
-    int16_t iat = obd_data_get_intake_temp();
-    int16_t oil = obd_data_get_oil_temp();
-    int16_t oilp_x10 = obd_data_get_oil_pressure_x10();
-    int16_t brake_x10 = obd_data_get_brake_temp_x10();
-    int16_t load_pct = obd_data_get_load_pct();
-    int16_t tps = obd_data_get_tps();
-    int32_t bat_mv = obd_data_get_bat_mv();
-    int16_t boost_x10 = obd_data_get_boost_x10();
-    uint16_t rpm = obd_data_get_rpm();
-    uint16_t speed = obd_data_get_speed();
     int16_t brake_warn_x10 = (int16_t)(user_cfg->brake_temp_warn_c * 10);
     int16_t oil_warn_x10 = (int16_t)user_cfg->oil_pressure_warn_x10;
     float sweep_ratio = -1.0f;
@@ -1999,92 +2257,32 @@ void ui_home_runtime_refresh_active_tile(void)
         if (!s_home_tile_mounted[tile_id]) {
             continue;
         }
+        if (!include_neighbor_tiles && tile_id != s_home_active_page) {
+            continue;
+        }
 
         switch (s_home_tile_descs[tile_id].kind) {
         case UI_HOME_TILE_MENU:
-            ui_label_set_text_if_changed(rt->menu_vehicle_label, vehicle_name);
-            ui_label_set_text_fmt_if_changed(rt->menu_ble_label, "BLE: %s", ble_short);
+            ui_home_refresh_menu_tile(rt, vehicle_name, ble_short);
             break;
         case UI_HOME_TILE_GAUGE: {
             const ui_dashboard_page_cfg_t *page =
                 ui_home_get_gauge_cfg((uint8_t)s_home_tile_descs[tile_id].gauge_index);
             ui_dashboard_page_type_t page_type =
                 ui_home_page_type_for_gauge((uint8_t)s_home_tile_descs[tile_id].gauge_index);
-            disp_item_t visible_items[UI_DASHBOARD_MAX_SLOTS];
-            uint8_t visible_count;
             if (page == NULL) {
                 break;
             }
             if (page_type == UI_DASHBOARD_PAGE_TYPE_GEAR) {
-                enGear gear = calculate_gear((float)rpm, (float)speed);
-                const char *gear_text = "N";
-
-                switch (gear) {
-                case GEAR_1: gear_text = "1"; break;
-                case GEAR_2: gear_text = "2"; break;
-                case GEAR_3: gear_text = "3"; break;
-                case GEAR_4: gear_text = "4"; break;
-                case GEAR_5: gear_text = "5"; break;
-                case GEAR_6: gear_text = "6"; break;
-                case GEAR_NEUTRAL:
-                default:
-                    gear_text = "N";
-                    break;
-                }
-
-                ui_label_set_text_if_changed(rt->custom_value_label, gear_text);
+                ui_home_refresh_gear_tile(rt);
                 break;
             }
             if (page_type == UI_DASHBOARD_PAGE_TYPE_G_FORCE_OBD ||
                 page_type == UI_DASHBOARD_PAGE_TYPE_G_FORCE_ESP32) {
-                int16_t lat_x100 =
-                    (page_type == UI_DASHBOARD_PAGE_TYPE_G_FORCE_ESP32)
-                        ? obd_data_get_lat_accel_imu_x100()
-                        : obd_data_get_lat_accel_x100();
-                int16_t lon_x100 =
-                    (page_type == UI_DASHBOARD_PAGE_TYPE_G_FORCE_ESP32)
-                        ? obd_data_get_lon_accel_imu_x100()
-                        : obd_data_get_lon_accel_x100();
-                bool lon_valid = false;
-                int32_t lon_display_x100;
-
-                if (lon_x100 > -32768) {
-                    lon_valid = true;
-                    lon_display_x100 = lon_x100;
-                } else if (page_type == UI_DASHBOARD_PAGE_TYPE_G_FORCE_OBD) {
-                    lon_display_x100 = ui_home_estimate_long_g_x100(&lon_valid);
-                } else {
-                    lon_display_x100 = 0;
-                }
-                ui_home_gforce_update_plot(rt,
-                                           (lat_x100 > -32768) ? ((float)lat_x100 / 100.0f) : 0.0f,
-                                           lon_valid ? ((float)lon_display_x100 / 100.0f) : 0.0f);
+                ui_home_refresh_gforce_tile(rt, page_type);
                 break;
             }
-            visible_count = ui_home_collect_visible_items(page, visible_items);
-            for (uint8_t i = 0; i < rt->slot_count && i < visible_count; ++i) {
-                disp_item_t item = visible_items[i];
-                int32_t value = 0;
-                bool valid = false;
-
-                ui_home_apply_slot_typography(rt->name_labels[i],
-                                              rt->value_labels[i],
-                                              rt->unit_labels[i],
-                                              item,
-                                              rt->slot_count);
-                disp_item_sync_meta(rt->name_labels[i], rt->unit_labels[i], &rt->item_cache[i], item);
-                if (sweep_ratio >= 0.0f) {
-                    value = disp_item_sweep_value(item, sweep_ratio);
-                    valid = true;
-                } else {
-                    valid = disp_item_read_value(item,
-                                                 clt, iat, oil, load_pct, tps, bat_mv,
-                                                 oilp_x10, brake_x10, rpm, speed, boost_x10, &value);
-                }
-                disp_item_set_text(rt->value_labels[i], item, value, valid);
-                disp_item_set_value_color(rt->value_labels[i], item, value, valid,
-                                          brake_warn_x10, oil_warn_x10);
-            }
+            ui_home_refresh_metric_tile(rt, page, sweep_ratio, brake_warn_x10, oil_warn_x10);
             break;
         }
         case UI_HOME_TILE_ADD:
@@ -2092,6 +2290,11 @@ void ui_home_runtime_refresh_active_tile(void)
             break;
         }
     }
+}
+
+void ui_home_runtime_refresh_active_tile(void)
+{
+    ui_home_runtime_refresh_tiles(true);
 }
 
 static void ui_home_tileview_value_changed(lv_event_t *e)

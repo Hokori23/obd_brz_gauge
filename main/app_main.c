@@ -21,6 +21,7 @@
 
 #if CONFIG_OBD_BOARD_WS_175_AMOLED
 #include "esp_lv_adapter.h"
+#include "bsp_obd_dsp/boards/board_ws_175_amoled_spec.h"
 #endif
 
 #include "app_obd_dsp/aux_sensor_demand.h"
@@ -58,6 +59,26 @@ static lv_disp_drv_t *s_registered_disp_drv = NULL;
 #define LVGL_TASK_PRIORITY     2
 #define LVGL_TRACE_TOUCH       0
 #define LVGL_TRACE_FLUSH       0
+
+#if CONFIG_OBD_BOARD_WS_175_AMOLED
+static esp_lv_adapter_rotation_t ws175_display_rotation(void)
+{
+    switch (BOARD_WS_175_AMOLED_DISPLAY_ROTATION) {
+    case 0:
+        return ESP_LV_ADAPTER_ROTATE_0;
+    case 90:
+        return ESP_LV_ADAPTER_ROTATE_90;
+    case 180:
+        return ESP_LV_ADAPTER_ROTATE_180;
+    case 270:
+        return ESP_LV_ADAPTER_ROTATE_270;
+    default:
+        ESP_LOGW(TAG, "Unsupported WS175 display rotation=%d, fallback to 0",
+                 BOARD_WS_175_AMOLED_DISPLAY_ROTATION);
+        return ESP_LV_ADAPTER_ROTATE_0;
+    }
+}
+#endif
 
 #if !CONFIG_OBD_BOARD_WS_175_AMOLED
 static lv_color_t *alloc_lvgl_draw_buffer(size_t bytes, const char *label, bool prefer_internal_dma)
@@ -310,8 +331,9 @@ void app_main(void)
 #if CONFIG_OBD_BOARD_WS_175_AMOLED
     {
         esp_lv_adapter_config_t lvgl_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG();
+        const esp_lv_adapter_rotation_t rotation = ws175_display_rotation();
         esp_lv_adapter_display_config_t disp_cfg = ESP_LV_ADAPTER_DISPLAY_SPI_WITH_PSRAM_DEFAULT_CONFIG(
-            board_ctx.panel, board_ctx.panel_io, board_ctx.hor_res, board_ctx.ver_res, ESP_LV_ADAPTER_ROTATE_0);
+            board_ctx.panel, board_ctx.panel_io, board_ctx.hor_res, board_ctx.ver_res, rotation);
         lv_display_t *disp = NULL;
 
         // QSPI panel is registered as PANEL_IF_OTHER in esp_lvgl_adapter.
@@ -330,6 +352,7 @@ void app_main(void)
                  disp_cfg.profile.require_double_buffer,
                  disp_cfg.profile.use_psram,
                  disp_cfg.tear_avoid_mode);
+        ESP_LOGI(TAG, "WS175 display rotation=%d", (int)BOARD_WS_175_AMOLED_DISPLAY_ROTATION);
 
         ESP_LOGI(TAG, "Initialize LVGL through esp_lvgl_adapter");
         ESP_ERROR_CHECK(esp_lv_adapter_init(&lvgl_cfg));

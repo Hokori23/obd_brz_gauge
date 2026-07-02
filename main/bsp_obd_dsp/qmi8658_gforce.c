@@ -5,6 +5,7 @@
 #include "driver/i2c_master.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -48,6 +49,7 @@ typedef struct {
 
 static volatile bool s_enabled;
 static qmi8658_state_t s_state = {0};
+static int64_t s_qmi8658_last_log_us = 0;
 
 static esp_err_t qmi8658_read_reg(i2c_master_dev_handle_t dev, uint8_t reg, uint8_t *data, size_t len)
 {
@@ -175,6 +177,36 @@ static int16_t qmi8658_to_x100(float axis_g)
     return (int16_t)lrintf(axis_g * 100.0f);
 }
 
+static void qmi8658_log_sample(const qmi8658_state_t *state,
+                               float raw_x_g,
+                               float raw_y_g,
+                               float lat_g,
+                               float lon_g)
+{
+    int64_t now_us;
+
+    if (state == NULL) {
+        return;
+    }
+
+    now_us = esp_timer_get_time();
+    if ((now_us - s_qmi8658_last_log_us) < 1000000LL) {
+        return;
+    }
+
+    s_qmi8658_last_log_us = now_us;
+    ESP_LOGI(TAG,
+             "GFORCE IMU raw=(%d,%d)x100g bias=(%d,%d)x100g filt=(%d,%d)x100g",
+             (int)lrintf(raw_x_g * 100.0f),
+             (int)lrintf(raw_y_g * 100.0f),
+             (int)lrintf(state->bias_x * 100.0f),
+             (int)lrintf(state->bias_y * 100.0f),
+             (int)lrintf(state->filtered_x * 100.0f),
+             (int)lrintf(state->filtered_y * 100.0f));
+    (void)lat_g;
+    (void)lon_g;
+}
+
 static void qmi8658_gforce_task(void *arg)
 {
     qmi8658_state_t *state = (qmi8658_state_t *)arg;
@@ -211,6 +243,7 @@ static void qmi8658_gforce_task(void *arg)
 
             obd_data_set_lat_accel_imu_x100(qmi8658_to_x100(state->filtered_x));
             obd_data_set_lon_accel_imu_x100(qmi8658_to_x100(state->filtered_y));
+            qmi8658_log_sample(state, x_g, y_g, lat_g, lon_g);
         }
 
         vTaskDelay(pdMS_TO_TICKS(QMI8658_SAMPLE_PERIOD_MS));
@@ -237,6 +270,7 @@ void qmi8658_gforce_set_enabled(bool enabled)
         s_state.bias_ready = false;
         s_state.filtered_x = 0.0f;
         s_state.filtered_y = 0.0f;
+        s_qmi8658_last_log_us = 0;
     }
 
     s_enabled = enabled;

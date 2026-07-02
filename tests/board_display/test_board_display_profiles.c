@@ -28,6 +28,8 @@ _Static_assert(BOARD_WS_175_AMOLED_DRAW_BUFFER_LINES == 50,
                "WS175 should keep the validated 50-line LVGL draw buffer");
 _Static_assert(BOARD_WS_175_AMOLED_HAS_TOUCH == 1,
                "WS175 should keep touch enabled in its board profile contract");
+_Static_assert(BOARD_WS_175_AMOLED_DISPLAY_ROTATION == 180,
+               "WS175 should keep the validated 180-degree display rotation");
 _Static_assert(BOARD_WS_175_AMOLED_TOUCH_SWAP_XY == 0,
                "WS175 should keep the validated touch axis orientation");
 _Static_assert(BOARD_WS_175_AMOLED_TOUCH_MIRROR_X == 1,
