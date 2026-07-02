@@ -52,10 +52,10 @@ This round focused on the dynamic dashboard home and its related drill-in screen
   - NVS flush contention
   - persisted error-log background flush flow
   - demanded OBD poll-slot scheduling
-- Settings is now a two-level navigation page:
-  - root categories: `DISPLAY` / `DASHBOARD` / `VEHICLE`
-  - detail pages carry the actual controls
-  - the root/detail split is computed against the round safe area instead of the earlier one-page absolute-row form
+- Settings is now a unified horizontal navigation page:
+  - peer categories: `DISPLAY` / `DASHBOARD` / `VEHICLE` / `OBD`
+  - each category completes interaction in one screen
+  - page switching and safe-area layout are computed against the round display instead of the earlier absolute-row form
 - `No page config` remains as an explicit fallback screen, but it now exposes a `BACK` action and returns to the originating gauge page when possible.
 
 ## Key findings
@@ -67,7 +67,7 @@ This round focused on the dynamic dashboard home and its related drill-in screen
 - For storage writes, lock hold time matters more than raw flush frequency; moving NVS I/O out of the mutex is a better ROI optimization than simply stretching the timer further.
 - On the OBD/UI side, page-switch correctness and performance are coupled: if swipe navigation does not immediately refresh demand state, the system wastes bandwidth polling data for no-longer-visible widgets.
 - In the OBD task, merely "skipping send" is not enough. If skipped slots still consume the same delay budget, low-cardinality dashboards can feel much slower than they should.
-- For this product shape, a two-level settings IA gives better UX and safer round-screen layout than continuing to compress more controls into one dense page.
+- For this product shape, a unified horizontal settings IA gives better UX and safer round-screen layout than mixing vertical detail pages with return gestures.
 
 ## Verification
 
@@ -86,3 +86,35 @@ This round focused on the dynamic dashboard home and its related drill-in screen
   - menu/static pages can likely run slower
 - Extract more dashboard-config rules into host-testable pure logic so later page-type expansion stays cheaper to verify.
 - Keep the WS175 line-buffer strategy unless a dedicated hardware revalidation proves full-frame buffering is actually safer and faster on-device.
+- Extend the same demand-driven pattern to `Oil Pressure`:
+  - only sample ADS1115 while the active page actually uses `OIP`
+  - keep room for future external subscribers, similar to the current `BKT` / RaceChrono gating model
+
+## Follow-up 2026-07-03
+
+### Why this polish round expanded
+
+This work stopped being a pure visual cleanup. It turned into a combined UX, sensor-demand, storage-safety, and runtime-structure pass because the user feedback exposed cross-layer issues:
+
+- settings and OBD interaction were not using the same mental model as the dashboard pages
+- several modals had inconsistent semantics, including reboot-confirm behavior
+- G-force pages still had unresolved direction/origin issues and weak use of round-screen area
+- background polling and NVS flush behavior were still spending work outside actual UI demand
+
+### High-value decisions merged from the temporary rationale snapshot
+
+- `Settings` now owns the OBD protocol path; the old separate OBD protocol screen is legacy debt, not the target UX.
+- Modal behavior should stay unified around the same shell-theme and confirm/cancel semantics.
+- ZC6 gear should prefer real monitor/decode data, including `R`, rather than simulated-only behavior.
+- Dashboard item availability is a vehicle-capability problem, not a one-off UI exception.
+- Generated host-test `.o` files are build artifacts and should not be treated as meaningful source changes.
+
+### Performance finding worth keeping
+
+Home horizontal page switching was instrumented with `ui_home_perf`. The current evidence shows:
+
+- the expensive part is not page-specific mount or refresh logic
+- the active bottleneck is the horizontal tile/scroll path itself
+- the same two-full-screen redraw pattern appears with `rot=0` and with `rot=180`
+
+This means future performance work should focus on the home page-switch container model first, not on per-page content tweaks.

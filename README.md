@@ -57,6 +57,33 @@ idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkc
 idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.ws175" -p PORT flash monitor
 ```
 
+- 仓库约定的 ESP-IDF 版本是 `v5.5.4`
+- 个人机器的实际安装路径不应写死进仓库；推荐通过 VS Code ESP-IDF 插件、`IDF_PATH` 环境变量，或 `tools/idf-env.local.ps1` 本地覆盖文件来指定
+- 如果你直接在普通 `powershell` 里运行而不是在 ESP-IDF 插件终端里运行，请先确保当前 shell 已拿到正确的 `IDF_PATH` / Python 环境
+- `tools/flash_ws175.ps1` 现在会优先读取：
+  - `WS175_IDF_PATH`
+  - `IDF_PATH`
+  - `WS175_IDF_PYTHON_SCRIPTS`
+  - `IDF_PYTHON_ENV_PATH`
+- 本地可复制 `tools/idf-env.example.ps1` 为 `tools/idf-env.local.ps1`，填入你自己的路径；这个文件不需要提交
+
+### 推荐使用方式
+
+1. `VS Code ESP-IDF 插件终端`
+   适合日常开发。插件会自动准备好 `IDF_PATH`、Python 环境和工具链，最不容易出现“`idf.py build` 不存在或环境不对”的误判。
+2. `普通 PowerShell + 本机环境变量`
+   适合你手动跑命令或给外部脚本复用。至少保证当前 shell 能看到正确的 `IDF_PATH`，必要时再补 `IDF_PYTHON_ENV_PATH`。
+3. `tools/idf-env.local.ps1`
+   适合个人机器有固定路径，但又不想把绝对路径写进仓库。`flash_ws175.ps1` 会自动读取这个本地覆盖文件。
+
+### Agent / 终端常见差异
+
+- `VS Code` 里能构建，不代表新开的 `powershell` 也能直接构建
+- `agent` 如果不是从 ESP-IDF 插件终端启动，经常拿不到同一套环境变量
+- 所以出现 `idf.py build` 失败时，先区分：
+  - 是仓库代码编译失败
+  - 还是当前 shell 没有进入 ESP-IDF 环境
+
 ## 推荐阅读顺序
 
 1. [main/README.md](main/README.md)
@@ -72,3 +99,11 @@ idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkc
 - [docs/README.en.md](docs/README.en.md)
 - [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
 - [docs/WS175_DASHBOARD_POLISH_2026-07-02.md](docs/WS175_DASHBOARD_POLISH_2026-07-02.md)
+
+## Update 2026-07-03
+
+Current repo direction to remember:
+
+- `Settings` now owns the `OBD` settings path as part of one unified IA.
+- The old standalone OBD protocol screen is legacy debt and should not be treated as the target UX.
+- Home horizontal page-switch performance has been instrumented with `ui_home_perf`; current evidence shows the bottleneck is the existing tile/scroll implementation path, not page-specific content.
