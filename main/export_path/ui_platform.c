@@ -107,24 +107,28 @@ void ui_settings_layout_get(ui_settings_layout_t *layout)
 
     ui_round_shell_layout_get(10, &layout->shell);
     layout->title_y = ui_layout_px(-138);
-    layout->label_page_y = ui_layout_px(-112);
+    layout->label_page_y = ui_layout_px(-114);
     layout->roller_width = (uint16_t)ui_layout_px(140);
     layout->roller_radius = (uint16_t)ui_layout_px(8);
-    layout->roller_page_y = ui_layout_px(-82);
+    layout->roller_page_y = ui_layout_px(-90);
     layout->divider_width = (uint16_t)ui_layout_px(220);
-    layout->divider1_y = ui_layout_px(-54);
-    layout->label_vehicle_y = ui_layout_px(-30);
-    layout->roller_vehicle_y = ui_layout_px(-2);
-    layout->divider2_y = ui_layout_px(26);
-    layout->label_poll_y = ui_layout_px(40);
-    layout->roller_poll_y = ui_layout_px(68);
-    layout->divider3_y = ui_layout_px(94);
-    layout->label_brightness_y = ui_layout_px(106);
-    layout->slider_width = (uint16_t)ui_layout_px(180);
+    layout->divider1_y = ui_layout_px(-68);
+    layout->label_vehicle_y = ui_layout_px(-50);
+    layout->roller_vehicle_y = ui_layout_px(-26);
+    layout->divider2_y = ui_layout_px(-4);
+    layout->label_poll_y = ui_layout_px(14);
+    layout->roller_poll_y = ui_layout_px(38);
+    layout->divider3_y = ui_layout_px(62);
+    layout->label_rotation_y = ui_layout_px(80);
+    layout->roller_rotation_y = ui_layout_px(104);
+    layout->divider4_y = ui_layout_px(128);
+    layout->label_brightness_y = ui_layout_px(146);
+    layout->slider_width = (uint16_t)ui_layout_px(168);
     layout->slider_height = (uint16_t)ui_layout_px(10);
-    layout->slider_y = ui_layout_px(130);
+    layout->slider_y = ui_layout_px(164);
     layout->slider_knob_pad = (uint16_t)ui_layout_px(5);
-    layout->brightness_value_y = ui_layout_px(152);
+    layout->brightness_value_x = ui_layout_px(86);
+    layout->brightness_value_y = ui_layout_px(146);
     layout->hint_y = ui_layout_px(124);
 }
 

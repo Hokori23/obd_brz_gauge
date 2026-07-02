@@ -39,6 +39,10 @@ $tests = @(
         Output = Join-Path $outputDir "test_nvs_error_log_contract.o"
     },
     @{
+        Source = Join-Path $PSScriptRoot "..\tests\nvs_storage\test_nvs_error_log_logic.c"
+        Output = Join-Path $outputDir "test_nvs_error_log_logic.o"
+    },
+    @{
         Source = Join-Path $PSScriptRoot "..\tests\lvgl_buffer_profile\test_lvgl_buffer_profile.c"
         Output = Join-Path $outputDir "test_lvgl_buffer_profile.o"
     },
@@ -112,6 +116,16 @@ if ($LASTEXITCODE -ne 0) {
     throw "ui navigation contract checks failed"
 }
 
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\ui_navigation\test_settings_layout_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "settings layout contract checks failed"
+}
+
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\ui_navigation\test_dashboard_config_layout_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "dashboard config layout contract checks failed"
+}
+
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\ui_font_profile\test_ui_font_profile_contract.ps1")
 if ($LASTEXITCODE -ne 0) {
     throw "ui font profile contract checks failed"
@@ -140,6 +154,11 @@ if ($LASTEXITCODE -ne 0) {
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_aux_sensor_demand_obd_contract.ps1")
 if ($LASTEXITCODE -ne 0) {
     throw "aux sensor demand OBD contract checks failed"
+}
+
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_dashboard_vehicle_support_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "dashboard vehicle support contract checks failed"
 }
 
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_obd_poll_demand_schedule_contract.ps1")

@@ -24,8 +24,12 @@ if ($bleScan -notmatch '(?s)static void ui_ble_scan_screen_deleted\(lv_event_t \
     throw "BLE scan workflow must stop scanning when the screen is deleted"
 }
 
-if ($settings -notmatch '(?s)static void on_settings_background\(lv_event_t \*e\).*ui_home_runtime_show_page\(UI_HOME_PAGE_MENU_ID,\s*LV_SCR_LOAD_ANIM_MOVE_LEFT\);') {
-    throw "Settings workflow must return through the home runtime on back gesture"
+if ($settings -notmatch '(?s)static void on_settings_background\(lv_event_t \*e\).*if \(s_settings_section == UI_SETTINGS_SECTION_ROOT\) \{\s*ui_settings_close_to_home\(\);\s*\} else \{\s*ui_settings_show_section\(UI_SETTINGS_SECTION_ROOT\);\s*\}') {
+    throw "Settings workflow must use top-swipe to leave the root page and to step back from second-level pages"
+}
+
+if ($settings -notmatch '(?s)static void ui_settings_close_to_home\(void\).*ui_home_runtime_show_page\(UI_HOME_PAGE_MENU_ID,\s*LV_SCR_LOAD_ANIM_MOVE_LEFT\);') {
+    throw "Settings workflow must still return through the home runtime when closing settings"
 }
 
 Write-Output "home navigation workflow integration checks passed"

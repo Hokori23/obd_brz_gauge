@@ -46,6 +46,11 @@ typedef struct {
 #define NVS_OBD_POLL_MODE_FAST   1u
 #define NVS_OBD_POLL_MODE_COUNT  2u
 
+#define NVS_DISPLAY_ROTATION_MODE_BOARD_DEFAULT 0u
+#define NVS_DISPLAY_ROTATION_MODE_NORMAL        1u
+#define NVS_DISPLAY_ROTATION_MODE_180          2u
+#define NVS_DISPLAY_ROTATION_MODE_COUNT        3u
+
 #define NVS_ERROR_LOG_VERSION  1u
 #define NVS_ERROR_LOG_CAPACITY 20u
 #define NVS_ERROR_TAG_LEN      16u
@@ -100,6 +105,8 @@ const nvs_user_cfg_t *nvs_cfg_get(void);
 esp_err_t nvs_cfg_set(const nvs_user_cfg_t *cfg);
 uint8_t nvs_cfg_get_obd_poll_mode(const nvs_user_cfg_t *cfg);
 uint16_t nvs_cfg_get_obd_poll_slot_delay_ms(const nvs_user_cfg_t *cfg);
+uint8_t nvs_cfg_get_display_rotation_mode(const nvs_user_cfg_t *cfg);
+uint16_t nvs_cfg_get_display_rotation_degrees(const nvs_user_cfg_t *cfg, uint16_t board_default_degrees);
 bool ui_dashboard_item_supported_for_vehicle(uint8_t vehicle_profile_idx, uint8_t item);
 void ui_dashboard_cfg_format_for_vehicle(ui_dashboard_cfg_t *cfg, uint8_t vehicle_profile_idx);
 bool ui_dashboard_page_slot_is_unsupported(const ui_dashboard_page_cfg_t *page, uint8_t slot_index);

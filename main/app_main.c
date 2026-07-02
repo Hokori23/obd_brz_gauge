@@ -63,7 +63,10 @@ static lv_disp_drv_t *s_registered_disp_drv = NULL;
 #if CONFIG_OBD_BOARD_WS_175_AMOLED
 static esp_lv_adapter_rotation_t ws175_display_rotation(void)
 {
-    switch (BOARD_WS_175_AMOLED_DISPLAY_ROTATION) {
+    const uint16_t rotation_degrees =
+        nvs_cfg_get_display_rotation_degrees(nvs_cfg_get(), BOARD_WS_175_AMOLED_DISPLAY_ROTATION);
+
+    switch (rotation_degrees) {
     case 0:
         return ESP_LV_ADAPTER_ROTATE_0;
     case 90:
@@ -74,7 +77,7 @@ static esp_lv_adapter_rotation_t ws175_display_rotation(void)
         return ESP_LV_ADAPTER_ROTATE_270;
     default:
         ESP_LOGW(TAG, "Unsupported WS175 display rotation=%d, fallback to 0",
-                 BOARD_WS_175_AMOLED_DISPLAY_ROTATION);
+                 (int)rotation_degrees);
         return ESP_LV_ADAPTER_ROTATE_0;
     }
 }
@@ -352,7 +355,12 @@ void app_main(void)
                  disp_cfg.profile.require_double_buffer,
                  disp_cfg.profile.use_psram,
                  disp_cfg.tear_avoid_mode);
-        ESP_LOGI(TAG, "WS175 display rotation=%d", (int)BOARD_WS_175_AMOLED_DISPLAY_ROTATION);
+        ESP_LOGI(TAG,
+                 "WS175 display rotation=%u (mode=%u, board_default=%u)",
+                 (unsigned)nvs_cfg_get_display_rotation_degrees(nvs_cfg_get(),
+                                                                BOARD_WS_175_AMOLED_DISPLAY_ROTATION),
+                 (unsigned)nvs_cfg_get_display_rotation_mode(nvs_cfg_get()),
+                 (unsigned)BOARD_WS_175_AMOLED_DISPLAY_ROTATION);
 
         ESP_LOGI(TAG, "Initialize LVGL through esp_lvgl_adapter");
         ESP_ERROR_CHECK(esp_lv_adapter_init(&lvgl_cfg));

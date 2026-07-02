@@ -41,6 +41,10 @@ _Static_assert(UI_LAYOUT_BLE_LIST_HEIGHT(466, 466) == 188,
     "466 BLE list height should scale");
 _Static_assert(UI_LAYOUT_BLE_HINT_Y(466, 466) == -19,
     "466 BLE hint inset should scale");
+_Static_assert((UI_LAYOUT_BLE_LIST_Y(360, 360) + UI_LAYOUT_BLE_LIST_HEIGHT(360, 360)) < 360,
+    "360 BLE list should stay within the round-screen bottom edge");
+_Static_assert((UI_LAYOUT_BLE_LIST_Y(466, 466) + UI_LAYOUT_BLE_LIST_HEIGHT(466, 466)) < 466,
+    "466 BLE list should stay within the round-screen bottom edge");
 
 _Static_assert(UI_LAYOUT_SETTINGS_TITLE_Y(466, 466) == -179,
     "466 settings title offset should scale");
@@ -50,20 +54,30 @@ _Static_assert(UI_LAYOUT_SETTINGS_ROLLER_WIDTH(466, 466) == 181,
     "466 settings roller width should scale");
 _Static_assert(UI_LAYOUT_SETTINGS_DIVIDER_WIDTH(466, 466) == 285,
     "466 settings divider width should scale");
-_Static_assert(UI_LAYOUT_SETTINGS_DIV1_Y(360, 360) == -54,
+_Static_assert(UI_LAYOUT_SETTINGS_DIV1_Y(360, 360) == -68,
     "base settings first divider y should remain unchanged");
-_Static_assert(UI_LAYOUT_SETTINGS_DIV1_Y(466, 466) == -70,
+_Static_assert(UI_LAYOUT_SETTINGS_DIV1_Y(466, 466) == -88,
     "466 settings first divider y should scale");
-_Static_assert(UI_LAYOUT_SETTINGS_DIV2_Y(360, 360) == 26,
+_Static_assert(UI_LAYOUT_SETTINGS_DIV2_Y(360, 360) == -4,
     "base settings second divider y should remain unchanged");
-_Static_assert(UI_LAYOUT_SETTINGS_DIV2_Y(466, 466) == 34,
+_Static_assert(UI_LAYOUT_SETTINGS_DIV2_Y(466, 466) == -5,
     "466 settings second divider y should scale");
-_Static_assert(UI_LAYOUT_SETTINGS_SLIDER_WIDTH(466, 466) == 233,
+_Static_assert(UI_LAYOUT_SETTINGS_LABEL_ROTATION_Y(466, 466) == 104,
+    "466 settings rotation label y should scale");
+_Static_assert(UI_LAYOUT_SETTINGS_ROLLER_ROTATION_Y(466, 466) == 135,
+    "466 settings rotation roller y should scale");
+_Static_assert(UI_LAYOUT_SETTINGS_DIV4_Y(466, 466) == 166,
+    "466 settings rotation divider y should scale");
+_Static_assert(UI_LAYOUT_SETTINGS_SLIDER_WIDTH(466, 466) == 217,
     "466 settings slider width should scale");
 _Static_assert(UI_LAYOUT_SETTINGS_SLIDER_HEIGHT(466, 466) == 13,
     "466 settings slider height should scale");
-_Static_assert(UI_LAYOUT_SETTINGS_HINT_Y(466, 466) == 161,
-    "466 settings hint y should scale");
+_Static_assert(UI_LAYOUT_SETTINGS_BRIGHT_VALUE_X(466, 466) == 111,
+    "466 settings brightness value x should scale");
+_Static_assert((((360 / 2) + UI_LAYOUT_SETTINGS_SLIDER_Y(360, 360)) + (UI_LAYOUT_SETTINGS_SLIDER_HEIGHT(360, 360) / 2)) < 360,
+    "360 settings brightness slider should stay within the screen bottom edge");
+_Static_assert((((466 / 2) + UI_LAYOUT_SETTINGS_SLIDER_Y(466, 466)) + (UI_LAYOUT_SETTINGS_SLIDER_HEIGHT(466, 466) / 2)) < 466,
+    "466 settings brightness slider should stay within the screen bottom edge");
 
 _Static_assert(UI_LAYOUT_BRAKE_TEMP_TITLE_Y(466, 466) == -158,
     "466 brake temp title offset should scale");
@@ -257,6 +271,10 @@ _Static_assert(UI_LAYOUT_OBD_PROTOCOL_HINT_Y(466, 466) == 166,
     "466 OBD protocol hint y should scale");
 _Static_assert(UI_LAYOUT_BLACK_EAR_OFFSET_Y(466, 466) == -184,
     "466 OBD protocol black ear offset should share the round shell scaling");
+_Static_assert(UI_LAYOUT_OBD_PROTOCOL_INNER_ARC_DIAMETER(360, 360) <= 360,
+    "360 OBD protocol inner arc should stay within the visible diameter");
+_Static_assert(UI_LAYOUT_OBD_PROTOCOL_INNER_ARC_DIAMETER(466, 466) <= 466,
+    "466 OBD protocol inner arc should stay within the visible diameter");
 
 _Static_assert(UI_LAYOUT_INFO_CUSTOM_TITLE_Y(466, 466) == -171,
     "466 info custom title y should scale");

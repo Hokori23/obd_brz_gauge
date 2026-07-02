@@ -32,7 +32,6 @@
 #define UI_HOME_REFRESH_PERIOD_METRIC_MS 200u
 #define UI_HOME_REFRESH_PERIOD_GEAR_MS 120u
 #define UI_HOME_REFRESH_PERIOD_GFORCE_MS 80u
-#define UI_HOME_NEIGHBOR_REFRESH_INTERVAL_TICKS 5u
 
 typedef enum {
     UI_HOME_TILE_MENU = 0,
@@ -160,7 +159,7 @@ static void ui_home_notice_msgbox_event(lv_event_t *e);
 static void ui_home_refresh_timer_cb(lv_timer_t *timer);
 static uint32_t ui_home_refresh_period_ms_for_page(uint8_t page_id);
 static void ui_home_refresh_timer_apply_profile(uint8_t page_id);
-static void ui_home_runtime_refresh_tiles(bool include_neighbor_tiles);
+static void ui_home_runtime_refresh_tile(uint8_t tile_id);
 static ui_dashboard_page_type_t ui_home_page_type_for_gauge(uint8_t gauge_index);
 static int32_t ui_home_estimate_long_g_x100(bool *valid_out);
 static bool ui_home_read_disp_item_value(disp_item_t item, int32_t *out);
@@ -545,13 +544,8 @@ static void ui_home_notice_msgbox_event(lv_event_t *e)
 
 static void ui_home_refresh_timer_cb(lv_timer_t *timer)
 {
-    static uint8_t s_neighbor_refresh_tick = 0u;
-    bool include_neighbor_tiles;
-
     LV_UNUSED(timer);
-    s_neighbor_refresh_tick = (uint8_t)((s_neighbor_refresh_tick + 1u) % UI_HOME_NEIGHBOR_REFRESH_INTERVAL_TICKS);
-    include_neighbor_tiles = (s_neighbor_refresh_tick == 0u);
-    ui_home_runtime_refresh_tiles(include_neighbor_tiles);
+    ui_home_runtime_refresh_tile(s_home_active_page);
 }
 
 static uint32_t ui_home_refresh_period_ms_for_page(uint8_t page_id)
@@ -2273,7 +2267,7 @@ static void ui_home_refresh_metric_tile(ui_home_tile_runtime_t *rt,
     }
 }
 
-static void ui_home_runtime_refresh_tiles(bool include_neighbor_tiles)
+static void ui_home_runtime_refresh_tile(uint8_t tile_id)
 {
     const nvs_user_cfg_t *user_cfg = nvs_cfg_get();
     const vehicle_profile_t *vehicle = vehicle_profile_get_active();
@@ -2299,49 +2293,45 @@ static void ui_home_runtime_refresh_tiles(bool include_neighbor_tiles)
     }
     ui_home_format_ble_name(ble_short, sizeof(ble_short), ble_name);
 
-    for (uint8_t tile_id = 0; tile_id < s_home_tile_count; ++tile_id) {
-        ui_home_tile_runtime_t *rt = &s_home_tile_runtime[tile_id];
-        if (!s_home_tile_mounted[tile_id]) {
-            continue;
-        }
-        if (!include_neighbor_tiles && tile_id != s_home_active_page) {
-            continue;
-        }
+    if (tile_id >= s_home_tile_count || !s_home_tile_mounted[tile_id]) {
+        return;
+    }
 
-        switch (s_home_tile_descs[tile_id].kind) {
-        case UI_HOME_TILE_MENU:
-            ui_home_refresh_menu_tile(rt, vehicle_name, ble_short);
-            break;
-        case UI_HOME_TILE_GAUGE: {
-            const ui_dashboard_page_cfg_t *page =
-                ui_home_get_gauge_cfg((uint8_t)s_home_tile_descs[tile_id].gauge_index);
-            ui_dashboard_page_type_t page_type =
-                ui_home_page_type_for_gauge((uint8_t)s_home_tile_descs[tile_id].gauge_index);
-            if (page == NULL) {
-                break;
-            }
-            if (page_type == UI_DASHBOARD_PAGE_TYPE_GEAR) {
-                ui_home_refresh_gear_tile(rt);
-                break;
-            }
-            if (page_type == UI_DASHBOARD_PAGE_TYPE_G_FORCE_OBD ||
-                page_type == UI_DASHBOARD_PAGE_TYPE_G_FORCE_ESP32) {
-                ui_home_refresh_gforce_tile(rt, page_type);
-                break;
-            }
-            ui_home_refresh_metric_tile(rt, page, sweep_ratio, brake_warn_x10, oil_warn_x10);
+    ui_home_tile_runtime_t *rt = &s_home_tile_runtime[tile_id];
+
+    switch (s_home_tile_descs[tile_id].kind) {
+    case UI_HOME_TILE_MENU:
+        ui_home_refresh_menu_tile(rt, vehicle_name, ble_short);
+        break;
+    case UI_HOME_TILE_GAUGE: {
+        const ui_dashboard_page_cfg_t *page =
+            ui_home_get_gauge_cfg((uint8_t)s_home_tile_descs[tile_id].gauge_index);
+        ui_dashboard_page_type_t page_type =
+            ui_home_page_type_for_gauge((uint8_t)s_home_tile_descs[tile_id].gauge_index);
+        if (page == NULL) {
             break;
         }
-        case UI_HOME_TILE_ADD:
-        default:
+        if (page_type == UI_DASHBOARD_PAGE_TYPE_GEAR) {
+            ui_home_refresh_gear_tile(rt);
             break;
         }
+        if (page_type == UI_DASHBOARD_PAGE_TYPE_G_FORCE_OBD ||
+            page_type == UI_DASHBOARD_PAGE_TYPE_G_FORCE_ESP32) {
+            ui_home_refresh_gforce_tile(rt, page_type);
+            break;
+        }
+        ui_home_refresh_metric_tile(rt, page, sweep_ratio, brake_warn_x10, oil_warn_x10);
+        break;
+    }
+    case UI_HOME_TILE_ADD:
+    default:
+        break;
     }
 }
 
 void ui_home_runtime_refresh_active_tile(void)
 {
-    ui_home_runtime_refresh_tiles(true);
+    ui_home_runtime_refresh_tile(s_home_active_page);
 }
 
 static void ui_home_tileview_value_changed(lv_event_t *e)
@@ -2357,6 +2347,7 @@ static void ui_home_tileview_value_changed(lv_event_t *e)
                 s_home_active_page = i;
                 ui_home_sync_tile_mounts(i);
                 ui_home_refresh_timer_apply_profile(i);
+                ui_home_runtime_refresh_active_tile();
                 aux_sensor_demand_refresh();
             }
             break;

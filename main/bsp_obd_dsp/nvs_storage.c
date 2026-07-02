@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "bsp_obd_dsp/nvs_error_log_logic.h"
 #include "app_obd_dsp/vehicle_profiles.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -79,7 +80,6 @@ static esp_err_t load_blob(const char *ns, const char *key, void *out, size_t le
 static esp_err_t load_blob_or_create(const char *ns, const char *key, void *out, size_t len);
 static esp_err_t save_blob(const char *ns, const char *key, const void *data, size_t len);
 static void stat_flush_task(void *arg);
-static void error_log_sanitize(nvs_error_log_t *log);
 static void mark_stat_dirty_locked(void);
 static void mark_error_log_dirty_locked(void);
 static void nvs_storage_collect_flush_snapshot_locked(nvs_flush_snapshot_t *snapshot, bool include_stat);
@@ -115,6 +115,34 @@ uint16_t nvs_cfg_get_obd_poll_slot_delay_ms(const nvs_user_cfg_t *cfg)
     case NVS_OBD_POLL_MODE_NORMAL:
     default:
         return 100u;
+    }
+}
+
+uint8_t nvs_cfg_get_display_rotation_mode(const nvs_user_cfg_t *cfg)
+{
+    uint8_t mode = NVS_DISPLAY_ROTATION_MODE_BOARD_DEFAULT;
+
+    if (cfg != NULL) {
+        mode = cfg->rsv[1];
+    }
+
+    if (mode >= NVS_DISPLAY_ROTATION_MODE_COUNT) {
+        mode = NVS_DISPLAY_ROTATION_MODE_BOARD_DEFAULT;
+    }
+
+    return mode;
+}
+
+uint16_t nvs_cfg_get_display_rotation_degrees(const nvs_user_cfg_t *cfg, uint16_t board_default_degrees)
+{
+    switch (nvs_cfg_get_display_rotation_mode(cfg)) {
+    case NVS_DISPLAY_ROTATION_MODE_NORMAL:
+        return 0u;
+    case NVS_DISPLAY_ROTATION_MODE_180:
+        return 180u;
+    case NVS_DISPLAY_ROTATION_MODE_BOARD_DEFAULT:
+    default:
+        return board_default_degrees;
     }
 }
 
@@ -224,7 +252,7 @@ esp_err_t nvs_storage_init(void)
         ESP_LOGW(TAG, "Using in-memory default for %s/%s", NS_DIAG, KEY_ERR_LOG);
     }
     cfg_sanitize(&s_cfg);
-    error_log_sanitize(&s_error_log);
+    nvs_error_log_logic_sanitize(&s_error_log);
 
     s_mux = xSemaphoreCreateMutex();
     xTaskCreate(stat_flush_task, "nvs_flush", 2048, NULL, 4, NULL);
@@ -549,6 +577,9 @@ static void cfg_sanitize(nvs_user_cfg_t *cfg)
     if (cfg->rsv[0] >= NVS_OBD_POLL_MODE_COUNT) {
         cfg->rsv[0] = NVS_OBD_POLL_MODE_NORMAL;
     }
+    if (cfg->rsv[1] >= NVS_DISPLAY_ROTATION_MODE_COUNT) {
+        cfg->rsv[1] = NVS_DISPLAY_ROTATION_MODE_BOARD_DEFAULT;
+    }
 
     for (int i = 0; i < 3; ++i) {
         if (cfg->temp_display_map[i] > 9) {
@@ -635,26 +666,6 @@ static esp_err_t save_blob(const char *ns, const char *key, const void *data, si
     return err;
 }
 
-static void error_log_sanitize(nvs_error_log_t *log)
-{
-    if (log == NULL) {
-        return;
-    }
-
-    if (log->version != NVS_ERROR_LOG_VERSION) {
-        memset(log, 0, sizeof(*log));
-        log->version = NVS_ERROR_LOG_VERSION;
-        return;
-    }
-
-    if (log->head >= NVS_ERROR_LOG_CAPACITY) {
-        log->head = 0u;
-    }
-    if (log->count > NVS_ERROR_LOG_CAPACITY) {
-        log->count = NVS_ERROR_LOG_CAPACITY;
-    }
-}
-
 static void mark_stat_dirty_locked(void)
 {
     s_stat_dirty = true;
@@ -710,26 +721,10 @@ static void nvs_storage_commit_flush_snapshot(const nvs_flush_snapshot_t *snapsh
 
 static void error_log_append_locked(const char *tag, esp_err_t err, const char *message)
 {
-    nvs_error_entry_t *entry;
-
-    error_log_sanitize(&s_error_log);
-
-    entry = &s_error_log.entries[s_error_log.head];
-    memset(entry, 0, sizeof(*entry));
-    entry->seq = s_error_log.next_seq++;
-    entry->uptime_s = (uint32_t)(esp_timer_get_time() / 1000000LL);
-    entry->err_code = (int32_t)err;
-
-    if (tag != NULL) {
-        snprintf(entry->tag, sizeof(entry->tag), "%s", tag);
-    }
-    if (message != NULL) {
-        snprintf(entry->message, sizeof(entry->message), "%s", message);
-    }
-
-    s_error_log.head = (uint8_t)((s_error_log.head + 1u) % NVS_ERROR_LOG_CAPACITY);
-    if (s_error_log.count < NVS_ERROR_LOG_CAPACITY) {
-        s_error_log.count++;
-    }
+    nvs_error_log_logic_append(&s_error_log,
+                               (uint32_t)(esp_timer_get_time() / 1000000LL),
+                               (int32_t)err,
+                               tag,
+                               message);
     mark_error_log_dirty_locked();
 }

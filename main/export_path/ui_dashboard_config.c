@@ -141,7 +141,7 @@ static uint8_t ui_dashboard_config_get_return_page_id(void)
         return (uint8_t)(s_dashboard_config_gauge_index + 1u);
     }
 
-    return dashboard->gauge_page_count;
+    return UI_HOME_PAGE_MENU_ID;
 }
 
 static const ui_dashboard_page_cfg_t *ui_dashboard_config_get_page_cfg(uint8_t gauge_index)
@@ -271,6 +271,15 @@ static void ui_dashboard_config_close_to_home(lv_scr_load_anim_t anim)
     ui_home_runtime_rebuild_and_load(ui_dashboard_config_get_return_page_id(), anim);
 }
 
+static void ui_dashboard_config_error_back(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+
+    ui_dashboard_config_close_to_home(LV_SCR_LOAD_ANIM_NONE);
+}
+
 static lv_obj_t *ui_dashboard_config_create_row(lv_obj_t *parent, lv_coord_t height)
 {
     lv_obj_t *row = lv_obj_create(parent);
@@ -355,11 +364,45 @@ static void ui_dashboard_config_screen_init(void)
     lv_obj_add_event_cb(s_dashboard_config_screen, ui_dashboard_config_deleted, LV_EVENT_DELETE, NULL);
 
     if (page == NULL) {
+        lv_coord_t err_title_font = ui_layout_px(22);
+        lv_coord_t err_hint_font = ui_layout_px(12);
+        lv_coord_t btn_w;
+        lv_coord_t btn_h;
+        lv_coord_t btn_y;
         lv_obj_t *err_label = lv_label_create(s_dashboard_config_screen);
         lv_label_set_text(err_label, "No page config");
-        lv_obj_set_style_text_font(err_label, ui_font_typoder(22), LV_PART_MAIN);
+        lv_obj_set_style_text_font(err_label, ui_font_typoder(err_title_font), LV_PART_MAIN);
         lv_obj_set_style_text_color(err_label, lv_color_hex(0xFF4444), LV_PART_MAIN);
-        lv_obj_center(err_label);
+        lv_obj_align(err_label, LV_ALIGN_CENTER, 0, ui_layout_px(-28));
+
+        lv_obj_t *hint_label = lv_label_create(s_dashboard_config_screen);
+        lv_label_set_text(hint_label, "Tap back to return");
+        lv_obj_set_style_text_font(hint_label, ui_font_hint(err_hint_font), LV_PART_MAIN);
+        lv_obj_set_style_text_color(hint_label, lv_color_hex(0xA0A0A0), LV_PART_MAIN);
+        lv_obj_align_to(hint_label, err_label, LV_ALIGN_OUT_BOTTOM_MID, 0, ui_layout_px(8));
+
+        btn_w = (lv_coord_t)(ui_screen_width() - ((ui_safe_margin() + ui_layout_px(20)) * 2));
+        btn_h = ui_layout_px(38);
+        if (btn_w < ui_layout_px(96)) {
+            btn_w = ui_layout_px(96);
+        }
+        btn_y = ui_layout_px(46);
+
+        lv_obj_t *back_btn = lv_btn_create(s_dashboard_config_screen);
+        lv_obj_set_size(back_btn, btn_w, btn_h);
+        lv_obj_align(back_btn, LV_ALIGN_CENTER, 0, btn_y);
+        lv_obj_set_style_radius(back_btn, btn_h / 2, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(back_btn, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(back_btn, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_width(back_btn, 0, LV_PART_MAIN);
+        lv_obj_set_style_shadow_width(back_btn, 0, LV_PART_MAIN);
+        lv_obj_add_event_cb(back_btn, ui_dashboard_config_error_back, LV_EVENT_CLICKED, NULL);
+
+        lv_obj_t *back_label = lv_label_create(back_btn);
+        lv_label_set_text(back_label, "BACK");
+        lv_obj_set_style_text_font(back_label, ui_font_typoder(ui_layout_px(18)), LV_PART_MAIN);
+        lv_obj_set_style_text_color(back_label, lv_color_hex(0x000000), LV_PART_MAIN);
+        lv_obj_center(back_label);
         aux_sensor_demand_refresh();
         return;
     }

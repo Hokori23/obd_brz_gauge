@@ -41,21 +41,25 @@
 #define UI_LAYOUT_SETTINGS_LABEL_PAGE_Y(width, height) UI_LAYOUT_PX((width), (height), -112)
 #define UI_LAYOUT_SETTINGS_ROLLER_WIDTH(width, height) UI_LAYOUT_PX((width), (height), 140)
 #define UI_LAYOUT_SETTINGS_ROLLER_RADIUS(width, height) UI_LAYOUT_PX((width), (height), 8)
-#define UI_LAYOUT_SETTINGS_ROLLER_PAGE_Y(width, height) UI_LAYOUT_PX((width), (height), -82)
+#define UI_LAYOUT_SETTINGS_ROLLER_PAGE_Y(width, height) UI_LAYOUT_PX((width), (height), -90)
 #define UI_LAYOUT_SETTINGS_DIVIDER_WIDTH(width, height) UI_LAYOUT_PX((width), (height), 220)
-#define UI_LAYOUT_SETTINGS_DIV1_Y(width, height) UI_LAYOUT_PX((width), (height), -54)
-#define UI_LAYOUT_SETTINGS_LABEL_VEHICLE_Y(width, height) UI_LAYOUT_PX((width), (height), -30)
-#define UI_LAYOUT_SETTINGS_ROLLER_VEHICLE_Y(width, height) UI_LAYOUT_PX((width), (height), -2)
-#define UI_LAYOUT_SETTINGS_DIV2_Y(width, height) UI_LAYOUT_PX((width), (height), 26)
-#define UI_LAYOUT_SETTINGS_LABEL_POLL_Y(width, height) UI_LAYOUT_PX((width), (height), 40)
-#define UI_LAYOUT_SETTINGS_ROLLER_POLL_Y(width, height) UI_LAYOUT_PX((width), (height), 68)
-#define UI_LAYOUT_SETTINGS_DIV3_Y(width, height) UI_LAYOUT_PX((width), (height), 94)
-#define UI_LAYOUT_SETTINGS_LABEL_BRIGHT_Y(width, height) UI_LAYOUT_PX((width), (height), 106)
-#define UI_LAYOUT_SETTINGS_SLIDER_WIDTH(width, height) UI_LAYOUT_PX((width), (height), 180)
+#define UI_LAYOUT_SETTINGS_DIV1_Y(width, height) UI_LAYOUT_PX((width), (height), -68)
+#define UI_LAYOUT_SETTINGS_LABEL_VEHICLE_Y(width, height) UI_LAYOUT_PX((width), (height), -50)
+#define UI_LAYOUT_SETTINGS_ROLLER_VEHICLE_Y(width, height) UI_LAYOUT_PX((width), (height), -26)
+#define UI_LAYOUT_SETTINGS_DIV2_Y(width, height) UI_LAYOUT_PX((width), (height), -4)
+#define UI_LAYOUT_SETTINGS_LABEL_POLL_Y(width, height) UI_LAYOUT_PX((width), (height), 14)
+#define UI_LAYOUT_SETTINGS_ROLLER_POLL_Y(width, height) UI_LAYOUT_PX((width), (height), 38)
+#define UI_LAYOUT_SETTINGS_DIV3_Y(width, height) UI_LAYOUT_PX((width), (height), 62)
+#define UI_LAYOUT_SETTINGS_LABEL_ROTATION_Y(width, height) UI_LAYOUT_PX((width), (height), 80)
+#define UI_LAYOUT_SETTINGS_ROLLER_ROTATION_Y(width, height) UI_LAYOUT_PX((width), (height), 104)
+#define UI_LAYOUT_SETTINGS_DIV4_Y(width, height) UI_LAYOUT_PX((width), (height), 128)
+#define UI_LAYOUT_SETTINGS_LABEL_BRIGHT_Y(width, height) UI_LAYOUT_PX((width), (height), 146)
+#define UI_LAYOUT_SETTINGS_SLIDER_WIDTH(width, height) UI_LAYOUT_PX((width), (height), 168)
 #define UI_LAYOUT_SETTINGS_SLIDER_HEIGHT(width, height) UI_LAYOUT_PX((width), (height), 10)
-#define UI_LAYOUT_SETTINGS_SLIDER_Y(width, height) UI_LAYOUT_PX((width), (height), 130)
+#define UI_LAYOUT_SETTINGS_SLIDER_Y(width, height) UI_LAYOUT_PX((width), (height), 164)
 #define UI_LAYOUT_SETTINGS_SLIDER_KNOB_PAD(width, height) UI_LAYOUT_PX((width), (height), 5)
-#define UI_LAYOUT_SETTINGS_BRIGHT_VALUE_Y(width, height) UI_LAYOUT_PX((width), (height), 152)
+#define UI_LAYOUT_SETTINGS_BRIGHT_VALUE_X(width, height) UI_LAYOUT_PX((width), (height), 86)
+#define UI_LAYOUT_SETTINGS_BRIGHT_VALUE_Y(width, height) UI_LAYOUT_PX((width), (height), 146)
 #define UI_LAYOUT_SETTINGS_HINT_Y(width, height) UI_LAYOUT_PX((width), (height), 124)
 
 #define UI_LAYOUT_BRAKE_TEMP_TITLE_Y(width, height) UI_LAYOUT_PX((width), (height), -122)
@@ -246,11 +250,15 @@ typedef struct {
     int16_t label_poll_y;
     int16_t roller_poll_y;
     int16_t divider3_y;
+    int16_t label_rotation_y;
+    int16_t roller_rotation_y;
+    int16_t divider4_y;
     int16_t label_brightness_y;
     uint16_t slider_width;
     uint16_t slider_height;
     int16_t slider_y;
     uint16_t slider_knob_pad;
+    int16_t brightness_value_x;
     int16_t brightness_value_y;
     int16_t hint_y;
 } ui_settings_layout_t;
