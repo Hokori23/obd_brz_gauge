@@ -151,6 +151,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "nvs flush contention contract checks failed"
 }
 
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\nvs_storage\test_nvs_flush_task_stack_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "nvs flush task stack contract checks failed"
+}
+
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_aux_sensor_demand_obd_contract.ps1")
 if ($LASTEXITCODE -ne 0) {
     throw "aux sensor demand OBD contract checks failed"
@@ -174,6 +179,16 @@ if ($LASTEXITCODE -ne 0) {
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_gforce_monitor_decode_usage_contract.ps1")
 if ($LASTEXITCODE -ne 0) {
     throw "G-force monitor decode usage contract checks failed"
+}
+
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_zc6_gear_obd_monitor_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "ZC6 gear OBD monitor contract checks failed"
+}
+
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_zc6_gear_reverse_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "ZC6 reverse gear contract checks failed"
 }
 
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_gforce_ui_contract.ps1")

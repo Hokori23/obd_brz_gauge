@@ -24,6 +24,7 @@
 #define KEY_ERR_LOG "errors"
 #define STAT_FLUSH_PERIOD_MS 30000
 #define ERROR_FLUSH_PERIOD_MS 5000
+#define NVS_FLUSH_TASK_STACK_BYTES 4096
 
 typedef struct {
     uint8_t protocol;
@@ -39,6 +40,35 @@ typedef struct {
     uint8_t needle_source_idx;
     uint8_t rsv[2];
 } legacy_nvs_user_cfg_v0_t;
+
+typedef struct {
+    uint8_t slot_count;
+    uint8_t slot_items[UI_DASHBOARD_MAX_SLOTS];
+    uint8_t rsv;
+} legacy_ui_dashboard_page_cfg_v1_t;
+
+typedef struct {
+    uint8_t version;
+    uint8_t gauge_page_count;
+    uint8_t rsv[2];
+    legacy_ui_dashboard_page_cfg_v1_t pages[UI_DASHBOARD_MAX_PAGES];
+} legacy_ui_dashboard_cfg_v1_t;
+
+typedef struct {
+    uint8_t protocol;
+    theme_cfg_t theme_cfg;
+    char ble_device_name[32];
+    uint8_t default_page;
+    uint8_t brightness_day;
+    uint8_t vehicle_profile_idx;
+    uint16_t brake_temp_warn_c;
+    uint16_t oil_pressure_warn_x10;
+    uint8_t temp_display_map[3];
+    uint8_t info_display_map[5];
+    uint8_t needle_source_idx;
+    uint8_t rsv[2];
+    legacy_ui_dashboard_cfg_v1_t dashboard_cfg;
+} legacy_nvs_user_cfg_v1_t;
 
 static nvs_user_cfg_t s_cfg = {
     .protocol = 0,
@@ -70,11 +100,14 @@ typedef struct {
     nvs_stat_t stat;
 } nvs_flush_snapshot_t;
 
+static nvs_flush_snapshot_t s_flush_snapshot;
+
 static esp_err_t load_cfg_blob(void);
 static void dashboard_cfg_set_defaults(ui_dashboard_cfg_t *cfg);
 static void dashboard_cfg_sanitize(ui_dashboard_cfg_t *cfg);
 static void dashboard_cfg_sanitize_default_page(nvs_user_cfg_t *cfg);
 static void cfg_migrate_from_legacy(const legacy_nvs_user_cfg_v0_t *legacy);
+static void cfg_migrate_from_v1(const legacy_nvs_user_cfg_v1_t *legacy);
 static void cfg_sanitize(nvs_user_cfg_t *cfg);
 static esp_err_t load_blob(const char *ns, const char *key, void *out, size_t len);
 static esp_err_t load_blob_or_create(const char *ns, const char *key, void *out, size_t len);
@@ -87,10 +120,16 @@ static void nvs_storage_commit_flush_snapshot(const nvs_flush_snapshot_t *snapsh
                                               esp_err_t error_log_err,
                                               esp_err_t stat_err);
 static void error_log_append_locked(const char *tag, esp_err_t err, const char *message);
+static uint16_t ui_dashboard_gear_clamp_rpm(uint16_t rpm);
+static void ui_dashboard_page_apply_gear_defaults(ui_dashboard_page_cfg_t *page);
+static uint8_t ui_dashboard_gear_segment_step_index_for_rpm(uint16_t rpm_step);
 
 #define UI_DASHBOARD_PAGE_UNSUPPORTED_MASK ((uint8_t)((1u << UI_DASHBOARD_MAX_SLOTS) - 1u))
 #define UI_DASHBOARD_PAGE_TYPE_SHIFT       6u
 #define UI_DASHBOARD_PAGE_TYPE_MASK        ((uint8_t)(0x3u << UI_DASHBOARD_PAGE_TYPE_SHIFT))
+#define UI_DASHBOARD_GEAR_FLAG_RPM_RING    0x01u
+
+static const uint16_t s_ui_dashboard_gear_segment_rpm_options[] = {100u, 200u, 500u, 800u, 1000u, 2000u};
 
 uint8_t nvs_cfg_get_obd_poll_mode(const nvs_user_cfg_t *cfg)
 {
@@ -116,6 +155,46 @@ uint16_t nvs_cfg_get_obd_poll_slot_delay_ms(const nvs_user_cfg_t *cfg)
     default:
         return 100u;
     }
+}
+
+uint8_t nvs_cfg_get_racechrono_ble_mode(const nvs_user_cfg_t *cfg)
+{
+    uint8_t mode = NVS_RACECHRONO_BLE_ENABLED;
+
+    if (cfg != NULL) {
+        mode = cfg->theme_cfg.rsv[0];
+    }
+
+    if (mode >= NVS_RACECHRONO_BLE_COUNT) {
+        mode = NVS_RACECHRONO_BLE_ENABLED;
+    }
+
+    return mode;
+}
+
+bool nvs_cfg_is_racechrono_ble_enabled(const nvs_user_cfg_t *cfg)
+{
+    return nvs_cfg_get_racechrono_ble_mode(cfg) == NVS_RACECHRONO_BLE_ENABLED;
+}
+
+uint8_t nvs_cfg_get_oil_pressure_mode(const nvs_user_cfg_t *cfg)
+{
+    uint8_t mode = NVS_OIL_PRESSURE_MODE_ALWAYS;
+
+    if (cfg != NULL) {
+        mode = cfg->theme_cfg.rsv[1];
+    }
+
+    if (mode >= NVS_OIL_PRESSURE_MODE_COUNT) {
+        mode = NVS_OIL_PRESSURE_MODE_ALWAYS;
+    }
+
+    return mode;
+}
+
+bool nvs_cfg_is_oil_pressure_demand_driven(const nvs_user_cfg_t *cfg)
+{
+    return nvs_cfg_get_oil_pressure_mode(cfg) == NVS_OIL_PRESSURE_MODE_DEMAND;
 }
 
 uint8_t nvs_cfg_get_display_rotation_mode(const nvs_user_cfg_t *cfg)
@@ -206,6 +285,111 @@ void ui_dashboard_page_set_type(ui_dashboard_page_cfg_t *page, ui_dashboard_page
     page->rsv |= (uint8_t)((uint8_t)type << UI_DASHBOARD_PAGE_TYPE_SHIFT);
 }
 
+uint16_t ui_dashboard_page_get_gear_redline_rpm(const ui_dashboard_page_cfg_t *page)
+{
+    if (page == NULL) {
+        return UI_DASHBOARD_GEAR_REDLINE_RPM_DEFAULT;
+    }
+
+    return ui_dashboard_gear_clamp_rpm((uint16_t)page->gear_redline_rpm_100 * 100u);
+}
+
+void ui_dashboard_page_set_gear_redline_rpm(ui_dashboard_page_cfg_t *page, uint16_t rpm)
+{
+    uint16_t clamped_rpm;
+
+    if (page == NULL) {
+        return;
+    }
+
+    clamped_rpm = ui_dashboard_gear_clamp_rpm(rpm);
+    page->gear_redline_rpm_100 = (uint8_t)(clamped_rpm / 100u);
+    if (ui_dashboard_page_get_gear_max_rpm(page) < clamped_rpm) {
+        page->gear_max_rpm_100 = page->gear_redline_rpm_100;
+    }
+}
+
+uint16_t ui_dashboard_page_get_gear_max_rpm(const ui_dashboard_page_cfg_t *page)
+{
+    uint16_t redline;
+    uint16_t max_rpm;
+
+    if (page == NULL) {
+        return UI_DASHBOARD_GEAR_MAX_RPM_DEFAULT;
+    }
+
+    redline = ui_dashboard_page_get_gear_redline_rpm(page);
+    max_rpm = ui_dashboard_gear_clamp_rpm((uint16_t)page->gear_max_rpm_100 * 100u);
+    if (max_rpm < redline) {
+        max_rpm = redline;
+    }
+    return max_rpm;
+}
+
+void ui_dashboard_page_set_gear_max_rpm(ui_dashboard_page_cfg_t *page, uint16_t rpm)
+{
+    uint16_t clamped_rpm;
+    uint16_t redline;
+
+    if (page == NULL) {
+        return;
+    }
+
+    redline = ui_dashboard_page_get_gear_redline_rpm(page);
+    clamped_rpm = ui_dashboard_gear_clamp_rpm(rpm);
+    if (clamped_rpm < redline) {
+        clamped_rpm = redline;
+    }
+    page->gear_max_rpm_100 = (uint8_t)(clamped_rpm / 100u);
+}
+
+bool ui_dashboard_page_is_gear_rpm_ring_enabled(const ui_dashboard_page_cfg_t *page)
+{
+    if (page == NULL) {
+        return true;
+    }
+
+    return (page->gear_flags & UI_DASHBOARD_GEAR_FLAG_RPM_RING) != 0u;
+}
+
+void ui_dashboard_page_set_gear_rpm_ring_enabled(ui_dashboard_page_cfg_t *page, bool enabled)
+{
+    if (page == NULL) {
+        return;
+    }
+
+    if (enabled) {
+        page->gear_flags |= UI_DASHBOARD_GEAR_FLAG_RPM_RING;
+    } else {
+        page->gear_flags &= (uint8_t)~UI_DASHBOARD_GEAR_FLAG_RPM_RING;
+    }
+}
+
+uint16_t ui_dashboard_page_get_gear_segment_rpm_step(const ui_dashboard_page_cfg_t *page)
+{
+    uint8_t idx = ui_dashboard_gear_segment_step_index_for_rpm(UI_DASHBOARD_GEAR_SEGMENT_RPM_DEFAULT);
+
+    if (page != NULL) {
+        idx = page->gear_segment_rpm_step_idx;
+    }
+
+    if (idx >= (sizeof(s_ui_dashboard_gear_segment_rpm_options) /
+                sizeof(s_ui_dashboard_gear_segment_rpm_options[0]))) {
+        idx = ui_dashboard_gear_segment_step_index_for_rpm(UI_DASHBOARD_GEAR_SEGMENT_RPM_DEFAULT);
+    }
+
+    return s_ui_dashboard_gear_segment_rpm_options[idx];
+}
+
+void ui_dashboard_page_set_gear_segment_rpm_step(ui_dashboard_page_cfg_t *page, uint16_t rpm_step)
+{
+    if (page == NULL) {
+        return;
+    }
+
+    page->gear_segment_rpm_step_idx = ui_dashboard_gear_segment_step_index_for_rpm(rpm_step);
+}
+
 void ui_dashboard_cfg_format_for_vehicle(ui_dashboard_cfg_t *cfg, uint8_t vehicle_profile_idx)
 {
     if (cfg == NULL) {
@@ -232,11 +416,18 @@ void ui_dashboard_cfg_format_for_vehicle(ui_dashboard_cfg_t *cfg, uint8_t vehicl
 
         page->rsv = unsupported_mask;
         ui_dashboard_page_set_type(page, page_type);
+        ui_dashboard_page_set_gear_redline_rpm(page, ui_dashboard_page_get_gear_redline_rpm(page));
+        ui_dashboard_page_set_gear_max_rpm(page, ui_dashboard_page_get_gear_max_rpm(page));
+        ui_dashboard_page_set_gear_rpm_ring_enabled(page,
+                                                    ui_dashboard_page_is_gear_rpm_ring_enabled(page));
+        ui_dashboard_page_set_gear_segment_rpm_step(page,
+                                                    ui_dashboard_page_get_gear_segment_rpm_step(page));
     }
 }
 
 esp_err_t nvs_storage_init(void)
 {
+    BaseType_t task_created;
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -255,7 +446,21 @@ esp_err_t nvs_storage_init(void)
     nvs_error_log_logic_sanitize(&s_error_log);
 
     s_mux = xSemaphoreCreateMutex();
-    xTaskCreate(stat_flush_task, "nvs_flush", 2048, NULL, 4, NULL);
+    if (s_mux == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    task_created = xTaskCreate(stat_flush_task,
+                               "nvs_flush",
+                               NVS_FLUSH_TASK_STACK_BYTES,
+                               NULL,
+                               4,
+                               NULL);
+    if (task_created != pdPASS) {
+        vSemaphoreDelete(s_mux);
+        s_mux = NULL;
+        return ESP_ERR_NO_MEM;
+    }
     return ESP_OK;
 }
 
@@ -401,7 +606,7 @@ static void stat_flush_task(void *arg)
 {
     (void)arg;
     uint32_t stat_elapsed_ms = 0u;
-    nvs_flush_snapshot_t snapshot;
+    nvs_flush_snapshot_t *snapshot = &s_flush_snapshot;
 
     while (1) {
         esp_err_t error_log_err = ESP_OK;
@@ -410,20 +615,20 @@ static void stat_flush_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(ERROR_FLUSH_PERIOD_MS));
         stat_elapsed_ms += ERROR_FLUSH_PERIOD_MS;
         xSemaphoreTake(s_mux, portMAX_DELAY);
-        nvs_storage_collect_flush_snapshot_locked(&snapshot, stat_elapsed_ms >= STAT_FLUSH_PERIOD_MS);
+        nvs_storage_collect_flush_snapshot_locked(snapshot, stat_elapsed_ms >= STAT_FLUSH_PERIOD_MS);
         if (stat_elapsed_ms >= STAT_FLUSH_PERIOD_MS) {
             stat_elapsed_ms = 0u;
         }
         xSemaphoreGive(s_mux);
 
-        if (snapshot.flush_error_log) {
-            error_log_err = save_blob(NS_DIAG, KEY_ERR_LOG, &snapshot.error_log, sizeof(snapshot.error_log));
+        if (snapshot->flush_error_log) {
+            error_log_err = save_blob(NS_DIAG, KEY_ERR_LOG, &snapshot->error_log, sizeof(snapshot->error_log));
         }
-        if (snapshot.flush_stat) {
-            stat_err = save_blob(NS_STAT, KEY_STAT, &snapshot.stat, sizeof(snapshot.stat));
+        if (snapshot->flush_stat) {
+            stat_err = save_blob(NS_STAT, KEY_STAT, &snapshot->stat, sizeof(snapshot->stat));
         }
 
-        nvs_storage_commit_flush_snapshot(&snapshot, error_log_err, stat_err);
+        nvs_storage_commit_flush_snapshot(snapshot, error_log_err, stat_err);
     }
 }
 
@@ -458,6 +663,19 @@ static esp_err_t load_cfg_blob(void)
         return err;
     }
 
+    if (err == ESP_OK && size == sizeof(legacy_nvs_user_cfg_v1_t)) {
+        legacy_nvs_user_cfg_v1_t legacy = {0};
+        size_t read_size = sizeof(legacy);
+        err = nvs_get_blob(h, KEY_CFG, &legacy, &read_size);
+        nvs_close(h);
+        if (err == ESP_OK) {
+            cfg_migrate_from_v1(&legacy);
+            cfg_sanitize(&s_cfg);
+            return save_blob(NS_CFG, KEY_CFG, &s_cfg, sizeof(s_cfg));
+        }
+        return err;
+    }
+
     nvs_close(h);
     cfg_sanitize(&s_cfg);
     return save_blob(NS_CFG, KEY_CFG, &s_cfg, sizeof(s_cfg));
@@ -476,6 +694,7 @@ static void dashboard_cfg_set_defaults(ui_dashboard_cfg_t *cfg)
     cfg->pages[0].slot_items[0] = 5; /* DISP_ITEM_RPM */
     cfg->pages[0].slot_items[1] = 6; /* DISP_ITEM_SPEED */
     cfg->pages[0].slot_items[2] = 2; /* DISP_ITEM_OIL */
+    ui_dashboard_page_apply_gear_defaults(&cfg->pages[0]);
 }
 
 static void dashboard_cfg_sanitize(ui_dashboard_cfg_t *cfg)
@@ -505,6 +724,12 @@ static void dashboard_cfg_sanitize(ui_dashboard_cfg_t *cfg)
         }
         page->rsv &= (uint8_t)(UI_DASHBOARD_PAGE_UNSUPPORTED_MASK | UI_DASHBOARD_PAGE_TYPE_MASK);
         ui_dashboard_page_set_type(page, ui_dashboard_page_get_type(page));
+        ui_dashboard_page_set_gear_redline_rpm(page, ui_dashboard_page_get_gear_redline_rpm(page));
+        ui_dashboard_page_set_gear_max_rpm(page, ui_dashboard_page_get_gear_max_rpm(page));
+        ui_dashboard_page_set_gear_rpm_ring_enabled(page,
+                                                    ui_dashboard_page_is_gear_rpm_ring_enabled(page));
+        ui_dashboard_page_set_gear_segment_rpm_step(page,
+                                                    ui_dashboard_page_get_gear_segment_rpm_step(page));
     }
 }
 
@@ -543,6 +768,39 @@ static void cfg_migrate_from_legacy(const legacy_nvs_user_cfg_v0_t *legacy)
     s_cfg.needle_source_idx = legacy->needle_source_idx;
     memcpy(s_cfg.rsv, legacy->rsv, sizeof(s_cfg.rsv));
     dashboard_cfg_set_defaults(&s_cfg.dashboard_cfg);
+}
+
+static void cfg_migrate_from_v1(const legacy_nvs_user_cfg_v1_t *legacy)
+{
+    if (legacy == NULL) {
+        return;
+    }
+
+    s_cfg.protocol = legacy->protocol;
+    s_cfg.theme_cfg = legacy->theme_cfg;
+    memcpy(s_cfg.ble_device_name, legacy->ble_device_name, sizeof(s_cfg.ble_device_name));
+    s_cfg.default_page = legacy->default_page;
+    s_cfg.brightness_day = legacy->brightness_day;
+    s_cfg.vehicle_profile_idx = legacy->vehicle_profile_idx;
+    s_cfg.brake_temp_warn_c = legacy->brake_temp_warn_c;
+    s_cfg.oil_pressure_warn_x10 = legacy->oil_pressure_warn_x10;
+    memcpy(s_cfg.temp_display_map, legacy->temp_display_map, sizeof(s_cfg.temp_display_map));
+    memcpy(s_cfg.info_display_map, legacy->info_display_map, sizeof(s_cfg.info_display_map));
+    s_cfg.needle_source_idx = legacy->needle_source_idx;
+    memcpy(s_cfg.rsv, legacy->rsv, sizeof(s_cfg.rsv));
+
+    memset(&s_cfg.dashboard_cfg, 0, sizeof(s_cfg.dashboard_cfg));
+    s_cfg.dashboard_cfg.version = UI_DASHBOARD_CFG_VERSION;
+    s_cfg.dashboard_cfg.gauge_page_count = legacy->dashboard_cfg.gauge_page_count;
+    memcpy(s_cfg.dashboard_cfg.rsv, legacy->dashboard_cfg.rsv, sizeof(s_cfg.dashboard_cfg.rsv));
+    for (uint8_t i = 0; i < UI_DASHBOARD_MAX_PAGES; ++i) {
+        s_cfg.dashboard_cfg.pages[i].slot_count = legacy->dashboard_cfg.pages[i].slot_count;
+        memcpy(s_cfg.dashboard_cfg.pages[i].slot_items,
+               legacy->dashboard_cfg.pages[i].slot_items,
+               sizeof(s_cfg.dashboard_cfg.pages[i].slot_items));
+        s_cfg.dashboard_cfg.pages[i].rsv = legacy->dashboard_cfg.pages[i].rsv;
+        ui_dashboard_page_apply_gear_defaults(&s_cfg.dashboard_cfg.pages[i]);
+    }
 }
 
 static void cfg_sanitize(nvs_user_cfg_t *cfg)
@@ -595,6 +853,43 @@ static void cfg_sanitize(nvs_user_cfg_t *cfg)
     dashboard_cfg_sanitize(&cfg->dashboard_cfg);
     ui_dashboard_cfg_format_for_vehicle(&cfg->dashboard_cfg, cfg->vehicle_profile_idx);
     dashboard_cfg_sanitize_default_page(cfg);
+}
+
+static uint16_t ui_dashboard_gear_clamp_rpm(uint16_t rpm)
+{
+    if (rpm < UI_DASHBOARD_GEAR_REDLINE_RPM_MIN) {
+        return UI_DASHBOARD_GEAR_REDLINE_RPM_MIN;
+    }
+    if (rpm > UI_DASHBOARD_GEAR_REDLINE_RPM_MAX) {
+        return UI_DASHBOARD_GEAR_REDLINE_RPM_MAX;
+    }
+    return (uint16_t)((rpm / 100u) * 100u);
+}
+
+static void ui_dashboard_page_apply_gear_defaults(ui_dashboard_page_cfg_t *page)
+{
+    if (page == NULL) {
+        return;
+    }
+
+    page->gear_redline_rpm_100 = (uint8_t)(UI_DASHBOARD_GEAR_REDLINE_RPM_DEFAULT / 100u);
+    page->gear_max_rpm_100 = (uint8_t)(UI_DASHBOARD_GEAR_MAX_RPM_DEFAULT / 100u);
+    page->gear_flags = UI_DASHBOARD_GEAR_FLAG_RPM_RING;
+    page->gear_segment_rpm_step_idx =
+        ui_dashboard_gear_segment_step_index_for_rpm(UI_DASHBOARD_GEAR_SEGMENT_RPM_DEFAULT);
+}
+
+static uint8_t ui_dashboard_gear_segment_step_index_for_rpm(uint16_t rpm_step)
+{
+    for (uint8_t i = 0; i < (sizeof(s_ui_dashboard_gear_segment_rpm_options) /
+                             sizeof(s_ui_dashboard_gear_segment_rpm_options[0]));
+         ++i) {
+        if (s_ui_dashboard_gear_segment_rpm_options[i] == rpm_step) {
+            return i;
+        }
+    }
+
+    return 2u;
 }
 
 static esp_err_t load_blob(const char *ns, const char *key, void *out, size_t len)

@@ -17,6 +17,12 @@ typedef struct {
 #define UI_DASHBOARD_MAX_PAGES   8u
 #define UI_DASHBOARD_MAX_SLOTS   6u
 
+#define UI_DASHBOARD_GEAR_REDLINE_RPM_MIN     1500u
+#define UI_DASHBOARD_GEAR_REDLINE_RPM_MAX     9900u
+#define UI_DASHBOARD_GEAR_REDLINE_RPM_DEFAULT 7000u
+#define UI_DASHBOARD_GEAR_MAX_RPM_DEFAULT     8000u
+#define UI_DASHBOARD_GEAR_SEGMENT_RPM_DEFAULT 500u
+
 typedef enum {
     UI_DASHBOARD_PAGE_TYPE_METRIC = 0u,
     UI_DASHBOARD_PAGE_TYPE_GEAR = 1u,
@@ -28,7 +34,11 @@ typedef enum {
 typedef struct {
     uint8_t slot_count;
     uint8_t slot_items[UI_DASHBOARD_MAX_SLOTS];
-    uint8_t rsv; /* bitmask: 1 means slot item is unsupported for current vehicle */
+    uint8_t rsv; /* slot unsupported bitmask + page type bits */
+    uint8_t gear_redline_rpm_100;
+    uint8_t gear_max_rpm_100;
+    uint8_t gear_flags;
+    uint8_t gear_segment_rpm_step_idx;
 } ui_dashboard_page_cfg_t;
 
 typedef struct {
@@ -45,6 +55,14 @@ typedef struct {
 #define NVS_OBD_POLL_MODE_NORMAL 0u
 #define NVS_OBD_POLL_MODE_FAST   1u
 #define NVS_OBD_POLL_MODE_COUNT  2u
+
+#define NVS_RACECHRONO_BLE_ENABLED  0u
+#define NVS_RACECHRONO_BLE_DISABLED 1u
+#define NVS_RACECHRONO_BLE_COUNT    2u
+
+#define NVS_OIL_PRESSURE_MODE_ALWAYS 0u
+#define NVS_OIL_PRESSURE_MODE_DEMAND 1u
+#define NVS_OIL_PRESSURE_MODE_COUNT  2u
 
 #define NVS_DISPLAY_ROTATION_MODE_BOARD_DEFAULT 0u
 #define NVS_DISPLAY_ROTATION_MODE_NORMAL        1u
@@ -105,6 +123,10 @@ const nvs_user_cfg_t *nvs_cfg_get(void);
 esp_err_t nvs_cfg_set(const nvs_user_cfg_t *cfg);
 uint8_t nvs_cfg_get_obd_poll_mode(const nvs_user_cfg_t *cfg);
 uint16_t nvs_cfg_get_obd_poll_slot_delay_ms(const nvs_user_cfg_t *cfg);
+uint8_t nvs_cfg_get_racechrono_ble_mode(const nvs_user_cfg_t *cfg);
+bool nvs_cfg_is_racechrono_ble_enabled(const nvs_user_cfg_t *cfg);
+uint8_t nvs_cfg_get_oil_pressure_mode(const nvs_user_cfg_t *cfg);
+bool nvs_cfg_is_oil_pressure_demand_driven(const nvs_user_cfg_t *cfg);
 uint8_t nvs_cfg_get_display_rotation_mode(const nvs_user_cfg_t *cfg);
 uint16_t nvs_cfg_get_display_rotation_degrees(const nvs_user_cfg_t *cfg, uint16_t board_default_degrees);
 bool ui_dashboard_item_supported_for_vehicle(uint8_t vehicle_profile_idx, uint8_t item);
@@ -112,6 +134,14 @@ void ui_dashboard_cfg_format_for_vehicle(ui_dashboard_cfg_t *cfg, uint8_t vehicl
 bool ui_dashboard_page_slot_is_unsupported(const ui_dashboard_page_cfg_t *page, uint8_t slot_index);
 ui_dashboard_page_type_t ui_dashboard_page_get_type(const ui_dashboard_page_cfg_t *page);
 void ui_dashboard_page_set_type(ui_dashboard_page_cfg_t *page, ui_dashboard_page_type_t type);
+uint16_t ui_dashboard_page_get_gear_redline_rpm(const ui_dashboard_page_cfg_t *page);
+void ui_dashboard_page_set_gear_redline_rpm(ui_dashboard_page_cfg_t *page, uint16_t rpm);
+uint16_t ui_dashboard_page_get_gear_max_rpm(const ui_dashboard_page_cfg_t *page);
+void ui_dashboard_page_set_gear_max_rpm(ui_dashboard_page_cfg_t *page, uint16_t rpm);
+bool ui_dashboard_page_is_gear_rpm_ring_enabled(const ui_dashboard_page_cfg_t *page);
+void ui_dashboard_page_set_gear_rpm_ring_enabled(ui_dashboard_page_cfg_t *page, bool enabled);
+uint16_t ui_dashboard_page_get_gear_segment_rpm_step(const ui_dashboard_page_cfg_t *page);
+void ui_dashboard_page_set_gear_segment_rpm_step(ui_dashboard_page_cfg_t *page, uint16_t rpm_step);
 
 const nvs_stat_t *nvs_stat_get(void);
 void nvs_stat_add_odometer(uint32_t delta_m);

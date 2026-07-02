@@ -27,7 +27,7 @@ if ($nvsStorage -notmatch '(?s)void nvs_error_log_record\(const char \*tag,\s*es
     throw "Persistent error-log workflow must funnel writes through nvs_error_log_record()"
 }
 
-if ($nvsStorage -notmatch '(?s)while \(1\) \{\s*esp_err_t error_log_err = ESP_OK;.*nvs_storage_collect_flush_snapshot_locked\(&snapshot,\s*stat_elapsed_ms >= STAT_FLUSH_PERIOD_MS\);.*save_blob\(NS_DIAG,\s*KEY_ERR_LOG,\s*&snapshot\.error_log,\s*sizeof\(snapshot\.error_log\)\);.*nvs_storage_commit_flush_snapshot\(&snapshot,\s*error_log_err,\s*stat_err\);') {
+if ($nvsStorage -notmatch '(?s)while \(1\) \{\s*esp_err_t error_log_err = ESP_OK;.*nvs_storage_collect_flush_snapshot_locked\((?:&snapshot|snapshot),\s*stat_elapsed_ms >= STAT_FLUSH_PERIOD_MS\);.*save_blob\(NS_DIAG,\s*KEY_ERR_LOG,\s*&(?:snapshot|snapshot->)error_log,\s*sizeof\((?:snapshot|snapshot->)error_log\)\);.*nvs_storage_commit_flush_snapshot\((?:&snapshot|snapshot),\s*error_log_err,\s*stat_err\);') {
     throw "Persistent error-log workflow must flush dirty diagnostic entries from the background task via snapshot save flow"
 }
 
