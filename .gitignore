@@ -1,5 +1,7 @@
 build/
 build-ws175/
+build_default/
+build-tests/host-tests/*.o
 backups/
 managed_components/
 sdkconfig.old
@@ -7,5 +9,6 @@ sdkconfig
 .vscode/
 .DS_Store
 **/.DS_Store
+tools/idf-env.local.ps1
 main/SAX0AC BC CC.pdf
  
