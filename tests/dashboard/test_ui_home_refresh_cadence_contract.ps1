@@ -7,6 +7,19 @@ if ($homeRuntime -notmatch 'UI_HOME_NEIGHBOR_REFRESH_INTERVAL_TICKS') {
     throw "ui_home_runtime.c must define a neighbor refresh cadence constant"
 }
 
+if ($homeRuntime -notmatch 'UI_HOME_REFRESH_PERIOD_MENU_MS' -or
+    $homeRuntime -notmatch 'UI_HOME_REFRESH_PERIOD_GFORCE_MS') {
+    throw "ui_home_runtime.c must define page-type-aware refresh period constants"
+}
+
+if ($homeRuntime -notmatch 'static uint32_t ui_home_refresh_period_ms_for_page\(uint8_t page_id\)') {
+    throw "ui_home_runtime.c must compute refresh period from the active page type"
+}
+
+if ($homeRuntime -notmatch 'lv_timer_set_period\(s_home_refresh_timer,\s*ui_home_refresh_period_ms_for_page\(page_id\)\);') {
+    throw "ui_home_runtime.c must retune the home refresh timer when the active page changes"
+}
+
 if ($homeRuntime -notmatch 'static void ui_home_runtime_refresh_tiles\(bool include_neighbor_tiles\)') {
     throw "ui_home_runtime.c must centralize tile refresh behind an include_neighbor_tiles helper"
 }

@@ -27,6 +27,11 @@
 #define UI_HOME_GFORCE_HISTORY_POINTS (UI_HOME_GFORCE_HISTORY_BINS + 1)
 #define UI_HOME_PI_F 3.14159265f
 #define UI_HOME_GFORCE_MAX_G 1.20f
+#define UI_HOME_REFRESH_PERIOD_MENU_MS 400u
+#define UI_HOME_REFRESH_PERIOD_ADD_MS 400u
+#define UI_HOME_REFRESH_PERIOD_METRIC_MS 200u
+#define UI_HOME_REFRESH_PERIOD_GEAR_MS 120u
+#define UI_HOME_REFRESH_PERIOD_GFORCE_MS 80u
 #define UI_HOME_NEIGHBOR_REFRESH_INTERVAL_TICKS 5u
 
 typedef enum {
@@ -153,6 +158,8 @@ static void ui_home_exit_edit_mode(void);
 static void ui_home_delete_confirm_result(lv_event_t *e);
 static void ui_home_notice_msgbox_event(lv_event_t *e);
 static void ui_home_refresh_timer_cb(lv_timer_t *timer);
+static uint32_t ui_home_refresh_period_ms_for_page(uint8_t page_id);
+static void ui_home_refresh_timer_apply_profile(uint8_t page_id);
 static void ui_home_runtime_refresh_tiles(bool include_neighbor_tiles);
 static ui_dashboard_page_type_t ui_home_page_type_for_gauge(uint8_t gauge_index);
 static int32_t ui_home_estimate_long_g_x100(bool *valid_out);
@@ -396,6 +403,7 @@ static void ui_home_set_active_page(uint8_t page_id, lv_anim_enable_t anim_en)
 
     s_home_active_page = page_id;
     ui_home_sync_tile_mounts(page_id);
+    ui_home_refresh_timer_apply_profile(page_id);
     if (s_home_tileview != NULL) {
         lv_obj_set_tile_id(s_home_tileview, page_id, 0, anim_en);
     }
@@ -544,6 +552,45 @@ static void ui_home_refresh_timer_cb(lv_timer_t *timer)
     s_neighbor_refresh_tick = (uint8_t)((s_neighbor_refresh_tick + 1u) % UI_HOME_NEIGHBOR_REFRESH_INTERVAL_TICKS);
     include_neighbor_tiles = (s_neighbor_refresh_tick == 0u);
     ui_home_runtime_refresh_tiles(include_neighbor_tiles);
+}
+
+static uint32_t ui_home_refresh_period_ms_for_page(uint8_t page_id)
+{
+    if (page_id >= s_home_tile_count) {
+        return UI_HOME_REFRESH_PERIOD_METRIC_MS;
+    }
+
+    switch (s_home_tile_descs[page_id].kind) {
+    case UI_HOME_TILE_MENU:
+        return UI_HOME_REFRESH_PERIOD_MENU_MS;
+    case UI_HOME_TILE_ADD:
+        return UI_HOME_REFRESH_PERIOD_ADD_MS;
+    case UI_HOME_TILE_GAUGE: {
+        ui_dashboard_page_type_t page_type =
+            ui_home_page_type_for_gauge((uint8_t)s_home_tile_descs[page_id].gauge_index);
+        switch (page_type) {
+        case UI_DASHBOARD_PAGE_TYPE_GEAR:
+            return UI_HOME_REFRESH_PERIOD_GEAR_MS;
+        case UI_DASHBOARD_PAGE_TYPE_G_FORCE_OBD:
+        case UI_DASHBOARD_PAGE_TYPE_G_FORCE_ESP32:
+            return UI_HOME_REFRESH_PERIOD_GFORCE_MS;
+        case UI_DASHBOARD_PAGE_TYPE_METRIC:
+        default:
+            return UI_HOME_REFRESH_PERIOD_METRIC_MS;
+        }
+    }
+    default:
+        return UI_HOME_REFRESH_PERIOD_METRIC_MS;
+    }
+}
+
+static void ui_home_refresh_timer_apply_profile(uint8_t page_id)
+{
+    if (s_home_refresh_timer == NULL) {
+        return;
+    }
+
+    lv_timer_set_period(s_home_refresh_timer, ui_home_refresh_period_ms_for_page(page_id));
 }
 
 static void ui_home_format_ble_name(char *buf, size_t buf_size, const char *name)
@@ -2309,6 +2356,8 @@ static void ui_home_tileview_value_changed(lv_event_t *e)
             if (s_home_active_page != i) {
                 s_home_active_page = i;
                 ui_home_sync_tile_mounts(i);
+                ui_home_refresh_timer_apply_profile(i);
+                aux_sensor_demand_refresh();
             }
             break;
         }
@@ -2389,7 +2438,9 @@ void ui_home_runtime_screen_init(void)
     ui_home_set_active_page(s_home_active_page, LV_ANIM_OFF);
     ui_home_runtime_refresh_active_tile();
     if (s_home_refresh_timer == NULL) {
-        s_home_refresh_timer = lv_timer_create(ui_home_refresh_timer_cb, 200, NULL);
+        s_home_refresh_timer = lv_timer_create(ui_home_refresh_timer_cb,
+                                               ui_home_refresh_period_ms_for_page(s_home_active_page),
+                                               NULL);
     }
 }
 

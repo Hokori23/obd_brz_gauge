@@ -33,6 +33,10 @@ if ($homeRuntime -notmatch '(?s)void ui_home_runtime_show_page\(uint8_t page_id,
     throw "Home page switch workflow must refresh sensor demand when the active page changes"
 }
 
+if ($homeRuntime -notmatch '(?s)static void ui_home_tileview_value_changed\(lv_event_t \*e\).*ui_home_refresh_timer_apply_profile\(i\);.*aux_sensor_demand_refresh\(\);') {
+    throw "Swipe-driven home page changes must refresh sensor demand and refresh cadence together"
+}
+
 if ($dashboardConfig -notmatch 'aux_sensor_demand_refresh\(\);') {
     throw "Dashboard configuration workflow must refresh sensor demand after edits"
 }

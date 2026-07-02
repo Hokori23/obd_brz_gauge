@@ -78,8 +78,8 @@ if ($homeRuntimeSource -notmatch '#include "ui_dashboard_config\.h"') {
     throw "ui_home_runtime.c must use the dedicated dashboard configuration module"
 }
 
-if ($homeRuntimeSource -notmatch 'lv_timer_create\(ui_home_refresh_timer_cb, 200, NULL\)') {
-    throw "ui_home_runtime.c must own its periodic tile refresh timer"
+if ($homeRuntimeSource -notmatch 'lv_timer_create\(ui_home_refresh_timer_cb,\s*ui_home_refresh_period_ms_for_page\(s_home_active_page\),\s*NULL\)') {
+    throw "ui_home_runtime.c must own its periodic tile refresh timer and seed it from the active page profile"
 }
 
 if ($dashboardConfigSource -notmatch 'lv_label_set_text\(title, "DASHBOARD"\)') {

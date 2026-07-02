@@ -27,6 +27,14 @@ This round focused on the dynamic dashboard home and its related drill-in screen
 - Home refresh cadence is now asymmetric:
   - the active tile still refreshes every timer tick
   - mounted neighbor tiles refresh at a lower cadence for swipe smoothness without paying the full 3-tile refresh cost every 200 ms
+- Home refresh cadence is now also page-type-aware:
+  - menu / add pages run slower
+  - metric pages keep the previous balanced cadence
+  - gear and G-force pages run faster to improve perceived responsiveness
+- Swipe-driven page changes now refresh both:
+  - the active sensor-demand mask
+  - the home refresh timer profile
+  This closes the gap where gesture navigation could previously keep polling rules from the old page for longer than intended.
 - NVS background flush no longer holds `s_mux` across `save_blob()`:
   - stats and diagnostic error logs are snapshotted under lock
   - the actual NVS write happens outside the critical section
@@ -44,12 +52,14 @@ This round focused on the dynamic dashboard home and its related drill-in screen
 - `掳C` should be emitted from shared display metadata, not patched at individual screen labels.
 - On this hardware/software stack, the next meaningful UI-performance win is reducing unnecessary LVGL text/layout work, not pushing the WS175 display path toward risky full-frame PSRAM buffering.
 - For storage writes, lock hold time matters more than raw flush frequency; moving NVS I/O out of the mutex is a better ROI optimization than simply stretching the timer further.
+- On the OBD/UI side, page-switch correctness and performance are coupled: if swipe navigation does not immediately refresh demand state, the system wastes bandwidth polling data for no-longer-visible widgets.
 
 ## Verification
 
 - `powershell -ExecutionPolicy Bypass -File .\tools\run_ui_platform_static_tests.ps1`
 - `idf.py build`
 - The static test bundle now includes the new refresh-cadence and NVS-flush contention contracts, so later refactors have a higher chance of catching silent performance regressions.
+- Demand-driven workflow contracts now also cover swipe-driven active-page changes, not only programmatic page loads.
 
 ## Next time
 
