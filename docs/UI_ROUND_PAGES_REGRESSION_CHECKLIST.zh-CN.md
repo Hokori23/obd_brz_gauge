@@ -112,3 +112,14 @@ Known current investigation result:
 
 - The home horizontal switch path currently shows a stable two-full-screen redraw pattern.
 - This remains true even when rotation is disabled, so it should be tracked as a container/runtime performance issue rather than a rotation-only issue.
+
+## 2026-07-03 Home Pager Refactor Follow-up
+
+If home horizontal switching is moved off `lv_tileview` onto a custom pager, also re-run these checks:
+
+1. Home horizontal swipe is still fully follow-hand rather than release-to-jump.
+2. `MENU` page keeps vertical routing unchanged: up to BLE scan, down to settings.
+3. Non-`MENU` pages do not accidentally gain vertical page-exit behavior.
+4. Long-press edit mode still locks horizontal page switching until edit mode exits.
+5. `ui_home_perf` still logs page-switch metrics after the container swap.
+6. Adjacent-page mount strategy still works: the target page is fresh immediately after commit, not one timer tick late.
