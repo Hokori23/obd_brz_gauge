@@ -40,6 +40,8 @@
 #define UI_HOME_GEAR_RING_GAP_DEG 3.0f
 #define UI_HOME_GEAR_BLINK_PERIOD_US 250000LL
 
+static const char *TAG = "ui_home";
+
 typedef enum {
     UI_HOME_TILE_MENU = 0,
     UI_HOME_TILE_GAUGE,
@@ -562,13 +564,18 @@ static int8_t ui_home_page_to_gauge_index(uint8_t page_id)
  */
 static void ui_home_set_active_page(uint8_t page_id, lv_anim_enable_t anim_en)
 {
+    bool page_already_mounted;
+
     if (page_id >= s_home_tile_count) {
         page_id = UI_HOME_PAGE_MENU_ID;
     }
 
+    page_already_mounted = (page_id < UI_HOME_MAX_TILE_COUNT) && s_home_tile_mounted[page_id];
+
     if (ui_home_pager_root(&s_home_pager) != NULL &&
         s_home_active_page == page_id &&
-        ui_home_pager_active_page(&s_home_pager) == page_id) {
+        ui_home_pager_active_page(&s_home_pager) == page_id &&
+        page_already_mounted) {
         return;
     }
 
@@ -1694,6 +1701,9 @@ static void ui_home_delete_confirm_result(lv_event_t *e)
 static void ui_home_mount_page(uint8_t page_id)
 {
     if (page_id >= s_home_tile_count || s_home_tile_mounted[page_id] || s_home_tiles[page_id] == NULL) {
+        if (page_id < s_home_tile_count && s_home_tiles[page_id] == NULL) {
+            ESP_LOGE(TAG, "home mount skipped: page=%u tile obj is null", (unsigned)page_id);
+        }
         return;
     }
 
@@ -1719,6 +1729,12 @@ static void ui_home_mount_page(uint8_t page_id)
     }
 
     s_home_tile_mounted[page_id] = true;
+    ESP_LOGI(TAG,
+             "home mount done: page=%u kind=%d tile=%p root=%p",
+             (unsigned)page_id,
+             (int)s_home_tile_descs[page_id].kind,
+             (void *)s_home_tiles[page_id],
+             (void *)root);
 }
 
 /** 卸载某个首页页面的实际内容。 */
@@ -2215,6 +2231,7 @@ static void ui_home_open_menu_overlay(lv_dir_t dir)
 void ui_home_runtime_screen_init(void)
 {
     ui_home_pager_config_t pager_cfg;
+    lv_disp_t *disp;
     lv_coord_t screen_width;
     lv_coord_t screen_height;
 
@@ -2233,6 +2250,35 @@ void ui_home_runtime_screen_init(void)
 
     screen_width = lv_obj_get_width(ui_ScreenPageHome);
     screen_height = lv_obj_get_height(ui_ScreenPageHome);
+
+    // ========== 场景：首屏尺寸兜底 ==========
+    // 新分页器依赖绝对宽高，不能像旧 tileview 一样等百分比布局在 load 后自行展开。
+    // 某些时序下屏幕还没真正关联到 display，这里可能读到 0，继续初始化就会直接得到黑屏空页。
+    if (screen_width <= 0 || screen_height <= 0) {
+        disp = lv_disp_get_default();
+        if (disp != NULL) {
+            if (screen_width <= 0) {
+                screen_width = lv_disp_get_hor_res(disp);
+            }
+            if (screen_height <= 0) {
+                screen_height = lv_disp_get_ver_res(disp);
+            }
+        }
+    }
+
+    ESP_LOGI(TAG,
+             "home screen init: tile_count=%u active_page=%u screen=%p size=%dx%d",
+             (unsigned)s_home_tile_count,
+             (unsigned)s_home_active_page,
+             (void *)ui_ScreenPageHome,
+             (int)screen_width,
+             (int)screen_height);
+
+    if (screen_width <= 0 || screen_height <= 0) {
+        ESP_LOGE(TAG, "home screen init aborted: invalid screen size");
+        return;
+    }
+
     pager_cfg.parent = ui_ScreenPageHome;
     pager_cfg.width = screen_width;
     pager_cfg.height = screen_height;
@@ -2249,6 +2295,7 @@ void ui_home_runtime_screen_init(void)
         if (s_home_tiles[i] != NULL) {
             lv_obj_add_flag(s_home_tiles[i], LV_OBJ_FLAG_EVENT_BUBBLE);
         }
+        ESP_LOGI(TAG, "home page bind: idx=%u obj=%p", (unsigned)i, (void *)s_home_tiles[i]);
     }
 
     ui_home_set_active_page(s_home_active_page, LV_ANIM_OFF);

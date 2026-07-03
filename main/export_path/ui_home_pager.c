@@ -1,6 +1,9 @@
 #include "ui_home_pager.h"
 
 #include <string.h>
+#include "esp_log.h"
+
+static const char *TAG = "ui_home_pager";
 
 /** 把横向偏移应用到分页轨道对象。 */
 static void ui_home_pager_apply_track_x(ui_home_pager_t *pager, lv_coord_t x)
@@ -165,6 +168,7 @@ static void ui_home_pager_event_cb(lv_event_t *e)
 {
     ui_home_pager_t *pager = (ui_home_pager_t *)lv_event_get_user_data(e);
     lv_event_code_t code = lv_event_get_code(e);
+    lv_obj_t *target = lv_event_get_target(e);
     lv_indev_t *indev;
     lv_point_t point;
     int32_t dx;
@@ -181,6 +185,11 @@ static void ui_home_pager_event_cb(lv_event_t *e)
 
     if (code == LV_EVENT_PRESSED) {
         if (pager->locked || pager->settling) {
+            ESP_LOGI(TAG,
+                     "press ignored: target=%p locked=%d settling=%d",
+                     (void *)target,
+                     pager->locked,
+                     pager->settling);
             return;
         }
 
@@ -191,6 +200,13 @@ static void ui_home_pager_event_cb(lv_event_t *e)
         pager->press_start_y = point.y;
         pager->track_start_x = lv_obj_get_x(pager->track);
         pager->last_dx = 0;
+        ESP_LOGI(TAG,
+                 "press begin: target=%p page=%u point=(%d,%d) track_x=%d",
+                 (void *)target,
+                 (unsigned)pager->active_page,
+                 (int)point.x,
+                 (int)point.y,
+                 (int)pager->track_start_x);
         return;
     }
 
@@ -210,6 +226,15 @@ static void ui_home_pager_event_cb(lv_event_t *e)
         // Wait until gesture intent is clear so vertical menu swipes
         // are not accidentally consumed as horizontal page turns.
         pager->axis = ui_home_pager_axis_from_delta(dx, dy, pager->active_page == 0u);
+        if (pager->axis != UI_HOME_PAGER_AXIS_NONE) {
+            ESP_LOGI(TAG,
+                     "axis locked: target=%p axis=%d dx=%ld dy=%ld page=%u",
+                     (void *)target,
+                     (int)pager->axis,
+                     (long)dx,
+                     (long)dy,
+                     (unsigned)pager->active_page);
+        }
         if (pager->axis == UI_HOME_PAGER_AXIS_X) {
             ui_home_pager_emit_drag_begin(pager, pager->target_page);
         }
@@ -228,6 +253,12 @@ static void ui_home_pager_event_cb(lv_event_t *e)
 
     pager->last_dx = (lv_coord_t)dx;
     if (pager->axis == UI_HOME_PAGER_AXIS_X) {
+        ESP_LOGI(TAG,
+                 "release commit: target=%p dx=%ld track_x=%d from=%u",
+                 (void *)target,
+                 (long)dx,
+                 (int)lv_obj_get_x(pager->track),
+                 (unsigned)pager->target_page);
         ui_home_pager_commit_release(pager);
         return;
     }
@@ -255,7 +286,23 @@ void ui_home_pager_init(ui_home_pager_t *pager, const ui_home_pager_config_t *cf
 {
     lv_coord_t track_width;
 
-    if (pager == NULL || cfg == NULL || cfg->parent == NULL || cfg->width <= 0 || cfg->height <= 0) {
+    if (pager == NULL || cfg == NULL) {
+        ESP_LOGE(TAG, "init skipped: pager or cfg is null");
+        return;
+    }
+
+    if (cfg->parent == NULL) {
+        ESP_LOGE(TAG, "init skipped: parent is null");
+        return;
+    }
+
+    if (cfg->width <= 0 || cfg->height <= 0) {
+        ESP_LOGE(TAG,
+                 "init skipped: invalid size width=%d height=%d page_count=%u initial=%u",
+                 (int)cfg->width,
+                 (int)cfg->height,
+                 (unsigned)cfg->page_count,
+                 (unsigned)cfg->initial_page);
         return;
     }
 
@@ -269,6 +316,13 @@ void ui_home_pager_init(ui_home_pager_t *pager, const ui_home_pager_config_t *cf
     pager->commit_cb = cfg->commit_cb;
     pager->vertical_cb = cfg->vertical_cb;
     pager->user = cfg->user;
+
+    ESP_LOGI(TAG,
+             "init pager: width=%d height=%d page_count=%u initial=%u",
+             (int)pager->page_width,
+             (int)pager->page_height,
+             (unsigned)pager->page_count,
+             (unsigned)pager->active_page);
 
     pager->root = lv_obj_create(cfg->parent);
     lv_obj_remove_style_all(pager->root);
@@ -287,6 +341,7 @@ void ui_home_pager_init(ui_home_pager_t *pager, const ui_home_pager_config_t *cf
     lv_obj_set_size(pager->track, track_width, cfg->height);
     lv_obj_set_pos(pager->track, ui_home_pager_track_x_for_page(pager, pager->active_page), 0);
     lv_obj_clear_flag(pager->track, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(pager->track, LV_OBJ_FLAG_EVENT_BUBBLE);
 
     for (uint8_t i = 0; i < pager->page_count; ++i) {
         pager->pages[i] = lv_obj_create(pager->track);
@@ -294,8 +349,15 @@ void ui_home_pager_init(ui_home_pager_t *pager, const ui_home_pager_config_t *cf
         lv_obj_set_size(pager->pages[i], cfg->width, cfg->height);
         lv_obj_set_pos(pager->pages[i], (lv_coord_t)(i * cfg->width), 0);
         lv_obj_clear_flag(pager->pages[i], LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_flag(pager->pages[i], LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_PRESS_LOCK);
+        lv_obj_add_flag(pager->pages[i],
+                        LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_PRESS_LOCK | LV_OBJ_FLAG_EVENT_BUBBLE);
+        lv_obj_add_event_cb(pager->pages[i], ui_home_pager_event_cb, LV_EVENT_PRESSED, pager);
+        lv_obj_add_event_cb(pager->pages[i], ui_home_pager_event_cb, LV_EVENT_PRESSING, pager);
+        lv_obj_add_event_cb(pager->pages[i], ui_home_pager_event_cb, LV_EVENT_RELEASED, pager);
+        lv_obj_add_event_cb(pager->pages[i], ui_home_pager_event_cb, LV_EVENT_PRESS_LOST, pager);
     }
+
+    ESP_LOGI(TAG, "init pager done: root=%p track=%p", (void *)pager->root, (void *)pager->track);
 }
 
 /** 在外部删除 LVGL 对象后重置分页器状态。 */
