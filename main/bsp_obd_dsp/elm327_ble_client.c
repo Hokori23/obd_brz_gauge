@@ -1868,6 +1868,10 @@ void elm327_ble_disconnect(void) {
 }
 
 const char *elm327_ble_get_connected_name(void) {
+    if (!s_connected || s_target_name[0] == '\0') {
+        return NULL;
+    }
+
     return s_target_name;
 }
 

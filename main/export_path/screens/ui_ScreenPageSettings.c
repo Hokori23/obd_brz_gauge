@@ -46,6 +46,7 @@ static lv_obj_t *s_label_bright_val = NULL;
 static ui_settings_page_t s_settings_active_page = UI_SETTINGS_PAGE_DISPLAY;
 static bool s_settings_requires_home_rebuild = false;
 static bool s_settings_suppress_reboot_roller_event = false;
+static bool s_settings_tileview_busy = false;
 static uint8_t s_settings_pending_reboot_value = 0u;
 typedef enum {
     UI_SETTINGS_REBOOT_NONE = 0,
@@ -60,6 +61,11 @@ static const char *s_settings_page_titles[UI_SETTINGS_PAGE_COUNT] = {
     "VEHICLE",
     "OBD",
 };
+
+static bool ui_settings_interaction_blocked(void)
+{
+    return s_settings_tileview_busy;
+}
 
 /** 清空设置页里各个控件的静态引用。 */
 static void ui_settings_reset_control_refs(void)
@@ -90,6 +96,7 @@ static void ui_settings_screen_reset_state(void)
     s_settings_active_page = UI_SETTINGS_PAGE_DISPLAY;
     s_settings_requires_home_rebuild = false;
     s_settings_suppress_reboot_roller_event = false;
+    s_settings_tileview_busy = false;
     s_settings_pending_reboot_target = UI_SETTINGS_REBOOT_NONE;
     s_settings_pending_reboot_value = 0u;
 }
@@ -269,6 +276,9 @@ static void ui_settings_show_reboot_confirm(ui_settings_reboot_target_t target,
 static void on_page_roller_change(lv_event_t *e)
 {
     LV_UNUSED(e);
+    if (ui_settings_interaction_blocked()) {
+        return;
+    }
     nvs_user_cfg_t cfg = *nvs_cfg_get();
     cfg.default_page = (uint8_t)lv_roller_get_selected(s_roller_page);
     nvs_cfg_set(&cfg);
@@ -280,6 +290,9 @@ static void on_bright_slider_change(lv_event_t *e)
     int32_t val = lv_slider_get_value(s_slider_bright);
 
     LV_UNUSED(e);
+    if (ui_settings_interaction_blocked()) {
+        return;
+    }
     if (val < 10) {
         val = 10;
     }
@@ -304,7 +317,8 @@ static void on_rotation_roller_released(lv_event_t *e)
 {
     LV_UNUSED(e);
 
-    if (s_settings_suppress_reboot_roller_event || s_roller_rotation == NULL) {
+    if (ui_settings_interaction_blocked() ||
+        s_settings_suppress_reboot_roller_event || s_roller_rotation == NULL) {
         return;
     }
 
@@ -331,6 +345,9 @@ static void on_vehicle_roller_change(lv_event_t *e)
     nvs_user_cfg_t cfg = *nvs_cfg_get();
 
     LV_UNUSED(e);
+    if (ui_settings_interaction_blocked()) {
+        return;
+    }
     cfg.vehicle_profile_idx = selected;
     nvs_cfg_set(&cfg);
     vehicle_profile_set_active(selected);
@@ -341,7 +358,8 @@ static void on_vehicle_roller_change(lv_event_t *e)
 static void on_protocol_roller_released(lv_event_t *e)
 {
     LV_UNUSED(e);
-    if (s_settings_suppress_reboot_roller_event || s_roller_protocol == NULL) {
+    if (ui_settings_interaction_blocked() ||
+        s_settings_suppress_reboot_roller_event || s_roller_protocol == NULL) {
         return;
     }
 
@@ -392,10 +410,28 @@ static void ui_settings_tileview_value_changed(lv_event_t *e)
     }
 }
 
+static void ui_settings_tileview_busy_event(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+
+    if (lv_event_get_target(e) != s_settings_tileview) {
+        return;
+    }
+
+    if (code == LV_EVENT_SCROLL_BEGIN) {
+        s_settings_tileview_busy = true;
+        return;
+    }
+    if (code == LV_EVENT_SCROLL_END) {
+        s_settings_tileview_busy = false;
+    }
+}
+
 /** 处理底部分页点点击跳转。 */
 static void ui_settings_page_dot_click(lv_event_t *e)
 {
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED || s_settings_tileview == NULL) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED || ui_settings_interaction_blocked() ||
+        s_settings_tileview == NULL) {
         return;
     }
 
@@ -534,6 +570,9 @@ static lv_obj_t *ui_settings_create_inline_roller(lv_obj_t *row,
 static void on_obd_poll_roller_change(lv_event_t *e)
 {
     LV_UNUSED(e);
+    if (ui_settings_interaction_blocked()) {
+        return;
+    }
     nvs_user_cfg_t cfg = *nvs_cfg_get();
     cfg.rsv[0] = (uint8_t)lv_roller_get_selected(s_roller_obd_poll);
     nvs_cfg_set(&cfg);
@@ -543,6 +582,9 @@ static void on_obd_poll_roller_change(lv_event_t *e)
 static void on_racechrono_roller_change(lv_event_t *e)
 {
     LV_UNUSED(e);
+    if (ui_settings_interaction_blocked()) {
+        return;
+    }
     nvs_user_cfg_t cfg = *nvs_cfg_get();
     cfg.theme_cfg.rsv[0] = (uint8_t)lv_roller_get_selected(s_roller_racechrono);
     nvs_cfg_set(&cfg);
@@ -552,6 +594,9 @@ static void on_racechrono_roller_change(lv_event_t *e)
 static void on_oil_pressure_roller_change(lv_event_t *e)
 {
     LV_UNUSED(e);
+    if (ui_settings_interaction_blocked()) {
+        return;
+    }
     nvs_user_cfg_t cfg = *nvs_cfg_get();
     cfg.theme_cfg.rsv[1] = (uint8_t)lv_roller_get_selected(s_roller_oil_pressure);
     nvs_cfg_set(&cfg);
@@ -795,6 +840,8 @@ static void ui_settings_prepare_tileview(lv_coord_t *content_width_out)
     lv_obj_set_scrollbar_mode(s_settings_tileview, LV_SCROLLBAR_MODE_OFF);
     lv_obj_clear_flag(s_settings_tileview, LV_OBJ_FLAG_SCROLL_ELASTIC);
     lv_obj_add_event_cb(s_settings_tileview, ui_settings_tileview_value_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(s_settings_tileview, ui_settings_tileview_busy_event, LV_EVENT_SCROLL_BEGIN, NULL);
+    lv_obj_add_event_cb(s_settings_tileview, ui_settings_tileview_busy_event, LV_EVENT_SCROLL_END, NULL);
     lv_obj_add_event_cb(s_settings_tileview, ui_settings_gesture_event, LV_EVENT_GESTURE, NULL);
 
     for (uint8_t i = 0; i < UI_SETTINGS_PAGE_COUNT; ++i) {

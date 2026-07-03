@@ -33,7 +33,6 @@ static bool s_logo_transition_started = false;
 static void ui_logo_unloaded_cb(lv_event_t *e)
 {
     lv_obj_t *screen = lv_event_get_target(e);
-    ESP_LOGI(TAG, "Logo unloaded: screen=%p active_now=%p", (void *)screen, (void *)lv_scr_act());
     if (screen != NULL) {
         lv_obj_del(screen);
     }
@@ -50,16 +49,11 @@ static void ui_logo_unloaded_cb(lv_event_t *e)
 static void ui_logo_transition_to(lv_obj_t **target_scr, void (*target_init)(void), const char *reason)
 {
     if (s_logo_transition_started) {
-        ESP_LOGI(TAG, "Logo transition ignored: reason=%s already started", reason);
+        LV_UNUSED(reason);
         return;
     }
 
     s_logo_transition_started = true;
-    ESP_LOGI(TAG, "Logo transition start: reason=%s logo=%p target_ptr=%p target=%p",
-             reason,
-             (void *)ui_ScreenPageLogo,
-             (void *)target_scr,
-             target_scr ? (void *)(*target_scr) : NULL);
 
     if (ui_ScreenPageLogo != NULL) {
         lv_obj_add_event_cb(ui_ScreenPageLogo, ui_logo_unloaded_cb, LV_EVENT_SCREEN_UNLOADED, NULL);

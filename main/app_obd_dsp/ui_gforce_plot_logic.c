@@ -4,8 +4,6 @@
 #include <string.h>
 
 #define UI_GFORCE_PLOT_DEADZONE_G 0.015f
-#define UI_GFORCE_PLOT_HISTORY_DECAY 0.035f
-#define UI_GFORCE_PLOT_HISTORY_NEIGHBOR_GAIN 0.08f
 #define UI_GFORCE_PLOT_PI_F 3.14159265f
 
 static float ui_gforce_plot_absf(float value)
@@ -103,38 +101,17 @@ void ui_gforce_plot_step(ui_gforce_plot_state_t *state, float lat_g, float lon_g
                                                     UI_GFORCE_PLOT_MAX_G);
     }
 
-    for (size_t i = 0; i < UI_GFORCE_PLOT_HISTORY_BINS; ++i) {
-        state->history_radius[i] -= UI_GFORCE_PLOT_HISTORY_DECAY;
-        if (state->history_radius[i] < 0.0f) {
-            state->history_radius[i] = 0.0f;
-        }
-    }
-
-    magnitude = sqrtf((state->display_lat_g * state->display_lat_g) +
-                      (state->display_lon_g * state->display_lon_g));
+    magnitude = sqrtf((lat_target * lat_target) + (lon_target * lon_target));
     normalized_radius = ui_gforce_plot_clamp(magnitude / UI_GFORCE_PLOT_MAX_G, 0.0f, 1.0f);
     if (normalized_radius <= 0.01f) {
         return;
     }
 
-    bin_index = ui_gforce_plot_angle_to_bin(state->display_lat_g,
-                                            state->display_lon_g,
+    bin_index = ui_gforce_plot_angle_to_bin(lat_target,
+                                            lon_target,
                                             UI_GFORCE_PLOT_HISTORY_BINS);
     if (state->history_radius[bin_index] < normalized_radius) {
         state->history_radius[bin_index] = normalized_radius;
-    }
-
-    if (UI_GFORCE_PLOT_HISTORY_BINS > 1u) {
-        size_t prev_index = (bin_index == 0u) ? (UI_GFORCE_PLOT_HISTORY_BINS - 1u) : (bin_index - 1u);
-        size_t next_index = (bin_index + 1u) % UI_GFORCE_PLOT_HISTORY_BINS;
-        float neighbor_radius = normalized_radius - UI_GFORCE_PLOT_HISTORY_NEIGHBOR_GAIN;
-
-        if (neighbor_radius > state->history_radius[prev_index]) {
-            state->history_radius[prev_index] = neighbor_radius;
-        }
-        if (neighbor_radius > state->history_radius[next_index]) {
-            state->history_radius[next_index] = neighbor_radius;
-        }
     }
 }
 

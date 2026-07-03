@@ -17,6 +17,7 @@ typedef struct {
 #define SWEEP_STEPS_UP   6
 #define SWEEP_STEPS_DOWN 6
 #define SWEEP_TOTAL      (SWEEP_STEPS_UP + SWEEP_STEPS_DOWN)
+#define UI_VALUE_DEBUG_MOCK_ENABLED 1
 
 static int s_sweep_step = 0;
 static bool s_sweep_pending = false;
@@ -35,6 +36,41 @@ static const disp_item_meta_t s_disp_meta[DISP_ITEM_COUNT] = {
     {"BKT", "\xC2\xB0" "C", 0xFF5A5A},
     {"BST", "bar", 0x00DD88},
 };
+
+static bool disp_item_ui_debug_mock_value(disp_item_t item, int32_t *out)
+{
+    if (out == NULL) {
+        return false;
+    }
+
+    switch (item) {
+    case DISP_ITEM_CLT:
+    case DISP_ITEM_IAT:
+    case DISP_ITEM_OIL:
+    case DISP_ITEM_BKT:
+        *out = 999;
+        return true;
+    case DISP_ITEM_LOAD:
+    case DISP_ITEM_TPS:
+        *out = 100;
+        return true;
+    case DISP_ITEM_RPM:
+        *out = 9999;
+        return true;
+    case DISP_ITEM_SPEED:
+        *out = 999;
+        return true;
+    case DISP_ITEM_BAT:
+        *out = 99900; /* 99.9 V */
+        return true;
+    case DISP_ITEM_OILP:
+    case DISP_ITEM_BOOST:
+        *out = 999; /* 99.9 bar */
+        return true;
+    default:
+        return false;
+    }
+}
 
 /** 返回当前开机扫表动画所在的步进序号。 */
 int ui_runtime_sweep_step_get(void)
@@ -169,6 +205,12 @@ void disp_item_set_text(lv_obj_t *label, disp_item_t item, int32_t value, bool v
     if (!label) {
         return;
     }
+
+#if UI_VALUE_DEBUG_MOCK_ENABLED
+    if (disp_item_ui_debug_mock_value(item, &value)) {
+        valid = true;
+    }
+#endif
 
     if (!valid) {
         ui_label_set_text_if_changed(label, "--");

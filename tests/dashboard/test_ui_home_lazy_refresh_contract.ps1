@@ -19,7 +19,33 @@ if ($homeRuntime -match 'disp_item_read_value\(item,\s*clt,\s*iat,\s*oil,\s*load
     throw "ui_home_runtime.c must no longer route home-page refresh through the eager bulk disp_item_read_value() path"
 }
 
-if ($homeRuntime -notmatch 'if \(rt->item_cache\[i\] != \(uint8_t\)item\)\s*\{\s*ui_home_runtime_widgets_apply_slot_typography') {
+$itemChangeIndex = $homeRuntime.IndexOf('if (rt->item_cache[i] != (uint8_t)item)')
+if ($itemChangeIndex -lt 0) {
+    throw "ui_home_runtime.c must keep a dedicated item-change branch for metric layout updates"
+}
+
+$textUpdateIndex = $homeRuntime.IndexOf('disp_item_set_text', $itemChangeIndex)
+if ($textUpdateIndex -lt 0) {
+    throw "ui_home_runtime.c must update metric value text after the item-change branch"
+}
+
+$itemChangeRegion = $homeRuntime.Substring($itemChangeIndex, $textUpdateIndex - $itemChangeIndex)
+if ($itemChangeRegion -notmatch 'disp_item_sync_meta') {
+    throw "ui_home_runtime.c must update metric label/unit metadata only inside the item-change branch"
+}
+
+if ($itemChangeRegion -notmatch 'ui_home_runtime_widgets_apply_dense_slot_style' -or
+    $itemChangeRegion -notmatch 'ui_home_runtime_widgets_apply_slot_typography') {
+    throw "ui_home_runtime.c must re-apply dense or box metric layout only when the slot item changes"
+}
+
+$afterTextUpdate = $homeRuntime.Substring($textUpdateIndex)
+$nextLoopIndex = $afterTextUpdate.IndexOf('for (')
+if ($nextLoopIndex -gt 0) {
+    $afterTextUpdate = $afterTextUpdate.Substring(0, $nextLoopIndex)
+}
+if ($afterTextUpdate -match 'ui_home_runtime_widgets_apply_dense_slot_style' -or
+    $afterTextUpdate -match 'ui_home_runtime_widgets_apply_slot_typography') {
     throw "ui_home_runtime.c must not re-apply metric typography on every refresh when the slot item has not changed"
 }
 

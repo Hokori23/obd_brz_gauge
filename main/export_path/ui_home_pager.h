@@ -16,7 +16,9 @@ extern "C" {
 #define UI_HOME_PAGER_AXIS_BIAS_THRESHOLD 4
 #define UI_HOME_PAGER_VERTICAL_TRIGGER_THRESHOLD 20
 #define UI_HOME_PAGER_REBOUND_THRESHOLD_PERCENT 18
-#define UI_HOME_PAGER_SETTLE_ANIM_MS 140
+#define UI_HOME_PAGER_SETTLE_ANIM_MIN_MS 72
+#define UI_HOME_PAGER_SETTLE_ANIM_MAX_MS 108
+#define UI_HOME_PAGER_SETTLE_TRACE_TAIL_MS 24
 
 typedef enum {
     UI_HOME_PAGER_AXIS_NONE = 0,
@@ -151,6 +153,43 @@ static inline uint8_t ui_home_pager_target_page_from_release(lv_coord_t track_x,
     }
 
     return ui_home_pager_clamp_page_index(target, page_count);
+}
+
+static inline uint32_t ui_home_pager_settle_duration_ms_for_distance(lv_coord_t distance,
+                                                                     lv_coord_t page_width)
+{
+    uint32_t abs_distance;
+    uint32_t abs_page_width;
+    uint32_t duration;
+    uint32_t span;
+
+    if (distance < 0) {
+        distance = (lv_coord_t)(-distance);
+    }
+    if (page_width < 0) {
+        page_width = (lv_coord_t)(-page_width);
+    }
+
+    abs_distance = (uint32_t)distance;
+    abs_page_width = (page_width > 0) ? (uint32_t)page_width : 0u;
+    span = UI_HOME_PAGER_SETTLE_ANIM_MAX_MS - UI_HOME_PAGER_SETTLE_ANIM_MIN_MS;
+    duration = UI_HOME_PAGER_SETTLE_ANIM_MIN_MS;
+
+    if (abs_page_width > 0u && abs_distance > 0u) {
+        if (abs_distance > abs_page_width) {
+            abs_distance = abs_page_width;
+        }
+        duration += (span * abs_distance) / abs_page_width;
+    }
+
+    if (duration < UI_HOME_PAGER_SETTLE_ANIM_MIN_MS) {
+        duration = UI_HOME_PAGER_SETTLE_ANIM_MIN_MS;
+    }
+    if (duration > UI_HOME_PAGER_SETTLE_ANIM_MAX_MS) {
+        duration = UI_HOME_PAGER_SETTLE_ANIM_MAX_MS;
+    }
+
+    return duration;
 }
 
 void ui_home_pager_init(ui_home_pager_t *pager, const ui_home_pager_config_t *cfg);

@@ -233,6 +233,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "metric background draw contract checks failed"
 }
 
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_metric_dense_layout_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "metric dense layout contract checks failed"
+}
+
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_racechrono_active_channel_contract.ps1")
 if ($LASTEXITCODE -ne 0) {
     throw "RaceChrono active-channel contract checks failed"

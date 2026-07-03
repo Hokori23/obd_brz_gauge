@@ -31,20 +31,20 @@ static uint32_t ui_home_obd_demand_mask(void)
         aux_sensor_is_active_vehicle_zc6() &&
         ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_GEAR);
     bool zc6_gear_rpm_ring_needed =
-        zc6_gear_monitor_needed && ui_home_runtime_active_page_gear_rpm_ring_enabled();
+        ui_home_runtime_active_or_warm_page_gear_rpm_ring_enabled();
     const aux_sensor_obd_page_flags_t flags = {
         .uses_gear_page = ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_GEAR) &&
                           !zc6_gear_monitor_needed,
         .uses_gforce_obd_page = ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_G_FORCE_OBD),
-        .uses_rpm = ui_home_runtime_active_page_uses_item(DISP_ITEM_RPM) || zc6_gear_rpm_ring_needed,
-        .uses_iat = ui_home_runtime_active_page_uses_item(DISP_ITEM_IAT),
-        .uses_speed = ui_home_runtime_active_page_uses_item(DISP_ITEM_SPEED),
-        .uses_clt = ui_home_runtime_active_page_uses_item(DISP_ITEM_CLT),
-        .uses_load = ui_home_runtime_active_page_uses_item(DISP_ITEM_LOAD),
-        .uses_tps = ui_home_runtime_active_page_uses_item(DISP_ITEM_TPS),
-        .uses_oil = ui_home_runtime_active_page_uses_item(DISP_ITEM_OIL),
-        .uses_bat = ui_home_runtime_active_page_uses_item(DISP_ITEM_BAT),
-        .uses_boost = ui_home_runtime_active_page_uses_item(DISP_ITEM_BOOST),
+        .uses_rpm = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_RPM) || zc6_gear_rpm_ring_needed,
+        .uses_iat = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_IAT),
+        .uses_speed = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_SPEED),
+        .uses_clt = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_CLT),
+        .uses_load = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_LOAD),
+        .uses_tps = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_TPS),
+        .uses_oil = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_OIL),
+        .uses_bat = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_BAT),
+        .uses_boost = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_BOOST),
     };
 
     return aux_sensor_demand_mask_from_page_flags(&flags);

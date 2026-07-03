@@ -54,7 +54,6 @@ typedef struct {
 
 static volatile bool s_enabled;
 static qmi8658_state_t s_state = {0};
-static int64_t s_qmi8658_last_log_us = 0;
 
 /** 读取 QMI8658 指定寄存器区间。 */
 static esp_err_t qmi8658_read_reg(i2c_master_dev_handle_t dev, uint8_t reg, uint8_t *data, size_t len)
@@ -136,7 +135,6 @@ static esp_err_t qmi8658_prepare(qmi8658_state_t *state)
     state->bias_ready = false;
     state->filtered_x = 0.0f;
     state->filtered_y = 0.0f;
-    ESP_LOGI(TAG, "QMI8658 ready");
     return ESP_OK;
 }
 
@@ -190,8 +188,6 @@ static void qmi8658_capture_bias(qmi8658_state_t *state)
         state->bias_ready = true;
         state->filtered_x = 0.0f;
         state->filtered_y = 0.0f;
-        ESP_LOGI(TAG, "QMI8658 bias x=%.4fg y=%.4fg z=%.4fg",
-                 state->bias_x, state->bias_y, state->bias_z);
     }
 }
 
@@ -258,39 +254,6 @@ static void qmi8658_map_vehicle_axes(float raw_x_g,
 }
 
 /** 按节流频率输出一次 IMU G-force 诊断日志。 */
-static void qmi8658_log_sample(const qmi8658_state_t *state,
-                               float raw_x_g,
-                               float raw_y_g,
-                               float raw_z_g,
-                               float lat_g,
-                               float lon_g)
-{
-    int64_t now_us;
-
-    if (state == NULL) {
-        return;
-    }
-
-    now_us = esp_timer_get_time();
-    if ((now_us - s_qmi8658_last_log_us) < 1000000LL) {
-        return;
-    }
-
-    s_qmi8658_last_log_us = now_us;
-    ESP_LOGI(TAG,
-             "GFORCE IMU raw=(%d,%d,%d)x100g bias=(%d,%d,%d)x100g mapped=(%d,%d)x100g filt=(%d,%d)x100g",
-             (int)lrintf(raw_x_g * 100.0f),
-             (int)lrintf(raw_y_g * 100.0f),
-             (int)lrintf(raw_z_g * 100.0f),
-             (int)lrintf(state->bias_x * 100.0f),
-             (int)lrintf(state->bias_y * 100.0f),
-             (int)lrintf(state->bias_z * 100.0f),
-             (int)lrintf(lat_g * 100.0f),
-             (int)lrintf(lon_g * 100.0f),
-             (int)lrintf(state->filtered_x * 100.0f),
-             (int)lrintf(state->filtered_y * 100.0f));
-}
-
 /**
  * QMI8658 G-force 后台任务
  *
@@ -339,7 +302,6 @@ static void qmi8658_gforce_task(void *arg)
 
             obd_data_set_lat_accel_imu_x100(qmi8658_to_x100(state->filtered_x));
             obd_data_set_lon_accel_imu_x100(qmi8658_to_x100(state->filtered_y));
-            qmi8658_log_sample(state, x_g, y_g, z_g, lat_g, lon_g);
         }
 
         vTaskDelay(pdMS_TO_TICKS(QMI8658_SAMPLE_PERIOD_MS));
@@ -368,7 +330,6 @@ void qmi8658_gforce_set_enabled(bool enabled)
         s_state.bias_ready = false;
         s_state.filtered_x = 0.0f;
         s_state.filtered_y = 0.0f;
-        s_qmi8658_last_log_us = 0;
     }
 
     s_enabled = enabled;

@@ -31,6 +31,8 @@
 #define UI_HOME_MAX_TILE_COUNT (1u + UI_DASHBOARD_MAX_PAGES + 1u)
 #define UI_HOME_GFORCE_HISTORY_BINS UI_GFORCE_PLOT_HISTORY_BINS
 #define UI_HOME_GFORCE_HISTORY_POINTS (UI_HOME_GFORCE_HISTORY_BINS + 1u)
+#define UI_HOME_GFORCE_POLYGON_MAX_POINTS 30u
+#define UI_HOME_GFORCE_POLYGON_MIN_RADIUS_NORM 0.025f
 #define UI_HOME_PI_F 3.14159265f
 #define UI_HOME_GFORCE_MAX_G UI_GFORCE_PLOT_MAX_G
 #define UI_HOME_REFRESH_PERIOD_MENU_MS 400u
@@ -42,6 +44,8 @@
 #define UI_HOME_GEAR_RING_MAX_SEGMENTS 99u
 #define UI_HOME_GEAR_RING_GAP_DEG 3.0f
 #define UI_HOME_GEAR_BLINK_PERIOD_US 250000LL
+#define UI_HOME_METRIC_LAYOUT_DEBUG 1
+#define UI_HOME_METRIC_LAYOUT_LOG_BUF_LEN 256u
 
 static const char *TAG = "ui_home";
 
@@ -50,6 +54,12 @@ typedef enum {
     UI_HOME_TILE_GAUGE,
     UI_HOME_TILE_ADD
 } ui_home_tile_kind_t;
+
+typedef enum {
+    UI_HOME_PAGE_SLEEP = 0,
+    UI_HOME_PAGE_WARM,
+    UI_HOME_PAGE_ACTIVE,
+} ui_home_page_activity_t;
 
 typedef struct {
     ui_home_tile_kind_t kind;
@@ -62,6 +72,10 @@ typedef struct {
     lv_coord_t w;
     lv_coord_t h;
 } ui_home_slot_layout_t;
+
+typedef struct {
+    ui_home_metric_slot_style_t slots[UI_DASHBOARD_MAX_SLOTS];
+} ui_home_metric_layout_style_t;
 
 typedef struct {
     lv_obj_t *root;
@@ -92,6 +106,7 @@ typedef struct {
     uint8_t item_cache[UI_DASHBOARD_MAX_SLOTS];
     uint8_t slot_count;
     ui_home_slot_layout_t slot_layouts[UI_DASHBOARD_MAX_SLOTS];
+    ui_home_metric_layout_style_t metric_styles;
     lv_obj_t *menu_vehicle_label;
     lv_obj_t *menu_ble_label;
     lv_obj_t *menu_settings_btn;
@@ -116,10 +131,12 @@ static ui_home_pager_t s_home_pager;
 static lv_obj_t *s_home_tiles[UI_HOME_MAX_TILE_COUNT];
 static lv_obj_t *s_home_content_roots[UI_HOME_MAX_TILE_COUNT];
 static bool s_home_tile_mounted[UI_HOME_MAX_TILE_COUNT];
+static ui_home_page_activity_t s_home_tile_activity[UI_HOME_MAX_TILE_COUNT];
 static ui_home_tile_desc_t s_home_tile_descs[UI_HOME_MAX_TILE_COUNT];
 static ui_home_tile_runtime_t s_home_tile_runtime[UI_HOME_MAX_TILE_COUNT];
 static uint8_t s_home_tile_count = 0;
 static uint8_t s_home_active_page = UI_HOME_PAGE_MENU_ID;
+static uint32_t s_home_refresh_epoch = 0u;
 static bool s_home_edit_mode = false;
 static uint8_t s_home_edit_page = UI_HOME_PAGE_MENU_ID;
 static lv_obj_t *s_home_edit_overlay = NULL;
@@ -129,6 +146,7 @@ static lv_obj_t *s_home_notice_msgbox = NULL;
 static lv_obj_t *s_home_screen_pending_delete = NULL;
 static lv_timer_t *s_home_refresh_timer = NULL;
 static ui_home_nav_perf_trace_t s_home_nav_perf = {0};
+static uint8_t s_home_metric_layout_logged_slot_mask = 0u;
 
 static void ui_home_load(lv_scr_load_anim_t anim, uint8_t page_id);
 static void ui_home_add_page(void);
@@ -152,6 +170,10 @@ static uint8_t ui_home_collect_visible_items(const ui_dashboard_page_cfg_t *page
 static void ui_home_build_gauge_layout(lv_obj_t *parent,
                                        uint8_t slot_count,
                                        ui_home_slot_layout_t layouts[UI_DASHBOARD_MAX_SLOTS]);
+static void ui_home_build_dense_metric_styles(uint8_t slot_count,
+                                              const ui_home_slot_layout_t layouts[UI_DASHBOARD_MAX_SLOTS],
+                                              const disp_item_t visible_items[UI_DASHBOARD_MAX_SLOTS],
+                                              ui_home_metric_layout_style_t *styles);
 static void ui_home_menu_open_settings(lv_event_t *e);
 static void ui_home_open_menu_overlay(lv_dir_t dir);
 static void ui_home_gauge_long_pressed(lv_event_t *e);
@@ -179,6 +201,11 @@ static void ui_home_refresh_timer_suspend(void);
 static void ui_home_refresh_timer_resume(void);
 static ui_dashboard_page_type_t ui_home_page_type_for_gauge(uint8_t gauge_index);
 static bool ui_home_read_disp_item_value(disp_item_t item, int32_t *out);
+static bool ui_home_interaction_blocked(void);
+static void ui_home_update_tile_activity(uint8_t active_page);
+static bool ui_home_page_uses_item(uint8_t page_id, disp_item_t item);
+static bool ui_home_page_uses_type(uint8_t page_id, ui_dashboard_page_type_t page_type);
+static bool ui_home_page_gear_rpm_ring_enabled(uint8_t page_id);
 static void ui_home_refresh_menu_tile(ui_home_tile_runtime_t *rt,
                                       const char *vehicle_name,
                                       const char *ble_short);
@@ -430,7 +457,9 @@ static void ui_home_page_switch_perf_schedule_finish(uint32_t delay_ms)
 /** 在目标页确定后提交页面切换性能采样。 */
 static void ui_home_page_switch_perf_commit(uint8_t to_page)
 {
-    uint32_t refresh_period_ms;
+    lv_coord_t target_x;
+    lv_coord_t current_x;
+    lv_coord_t distance;
 
     if (!s_home_nav_perf.active) {
         ui_home_page_switch_perf_begin(s_home_active_page);
@@ -439,13 +468,15 @@ static void ui_home_page_switch_perf_commit(uint8_t to_page)
     s_home_nav_perf.target_committed = true;
     s_home_nav_perf.to_page = to_page;
     s_home_nav_perf.commit_us = esp_timer_get_time() - s_home_nav_perf.start_us;
-    refresh_period_ms = ui_home_refresh_period_ms_for_page(to_page);
-    if (refresh_period_ms < 120u) {
-        refresh_period_ms = 120u;
-    } else if (refresh_period_ms > 320u) {
-        refresh_period_ms = 320u;
+    current_x = (s_home_pager.track != NULL) ? lv_obj_get_x(s_home_pager.track) : 0;
+    target_x = (lv_coord_t)(-((lv_coord_t)to_page) * s_home_pager.page_width);
+    distance = current_x - target_x;
+    s_home_nav_perf.settle_ms =
+        ui_home_pager_settle_duration_ms_for_distance(distance, s_home_pager.page_width) +
+        UI_HOME_PAGER_SETTLE_TRACE_TAIL_MS;
+    if (s_home_nav_perf.settle_ms < (UI_HOME_PAGER_SETTLE_ANIM_MIN_MS + UI_HOME_PAGER_SETTLE_TRACE_TAIL_MS)) {
+        s_home_nav_perf.settle_ms = UI_HOME_PAGER_SETTLE_ANIM_MIN_MS + UI_HOME_PAGER_SETTLE_TRACE_TAIL_MS;
     }
-    s_home_nav_perf.settle_ms = (uint32_t)(refresh_period_ms + 80u);
     app_lvgl_perf_trace_update_target(to_page);
     ui_home_page_switch_perf_schedule_finish(s_home_nav_perf.settle_ms);
 }
@@ -531,6 +562,9 @@ static void ui_home_reset_screen_state(void)
     memset(s_home_tiles, 0, sizeof(s_home_tiles));
     memset(s_home_content_roots, 0, sizeof(s_home_content_roots));
     memset(s_home_tile_mounted, 0, sizeof(s_home_tile_mounted));
+    memset(s_home_tile_activity, 0, sizeof(s_home_tile_activity));
+    s_home_refresh_epoch = 0u;
+    s_home_metric_layout_logged_slot_mask = 0u;
     for (uint8_t i = 0; i < UI_HOME_MAX_TILE_COUNT; ++i) {
         ui_home_reset_runtime(i);
         ui_home_reset_tile_effect_cache(i);
@@ -571,6 +605,7 @@ static void ui_home_set_active_page(uint8_t page_id, lv_anim_enable_t anim_en)
 
     s_home_active_page = page_id;
     ui_home_sync_tile_mounts(page_id);
+    ui_home_update_tile_activity(page_id);
     ui_home_refresh_timer_apply_profile(page_id);
     if (ui_home_pager_root(&s_home_pager) != NULL) {
         ui_home_pager_set_active_page(&s_home_pager, page_id, anim_en != LV_ANIM_OFF);
@@ -624,7 +659,7 @@ static uint8_t ui_home_collect_visible_items(const ui_dashboard_page_cfg_t *page
 /** 处理首页菜单里的设置入口点击。 */
 static void ui_home_menu_open_settings(lv_event_t *e)
 {
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED || ui_home_interaction_blocked()) {
         return;
     }
     ui_home_nav_vertical(LV_SCR_LOAD_ANIM_NONE, &ui_ScreenPageSettings, &ui_ScreenPageSettings_screen_init);
@@ -633,7 +668,7 @@ static void ui_home_menu_open_settings(lv_event_t *e)
 /** 处理首页菜单里的蓝牙扫描入口点击。 */
 static void ui_home_menu_open_ble_scan(lv_event_t *e)
 {
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED || ui_home_interaction_blocked()) {
         return;
     }
     ui_home_nav_vertical(LV_SCR_LOAD_ANIM_NONE, &ui_ScreenPageBLEScan, &ui_ScreenPageBLEScan_screen_init);
@@ -642,7 +677,7 @@ static void ui_home_menu_open_ble_scan(lv_event_t *e)
 /** 处理新增仪表页入口点击。 */
 static void ui_home_add_page_click(lv_event_t *e)
 {
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED || ui_home_interaction_blocked()) {
         return;
     }
     ui_home_add_page();
@@ -773,6 +808,25 @@ static void ui_home_make_passive_obj(lv_obj_t *obj)
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 }
 
+static bool ui_home_interaction_blocked(void)
+{
+    return s_home_pager.axis == UI_HOME_PAGER_AXIS_X || s_home_pager.settling;
+}
+
+static void ui_home_update_tile_activity(uint8_t active_page)
+{
+    for (uint8_t i = 0; i < s_home_tile_count; ++i) {
+        if (i == active_page) {
+            s_home_tile_activity[i] = UI_HOME_PAGE_ACTIVE;
+        } else if ((active_page > 0u && i == (uint8_t)(active_page - 1u)) ||
+                   ((uint8_t)(active_page + 1u) < s_home_tile_count && i == (uint8_t)(active_page + 1u))) {
+            s_home_tile_activity[i] = UI_HOME_PAGE_WARM;
+        } else {
+            s_home_tile_activity[i] = UI_HOME_PAGE_SLEEP;
+        }
+    }
+}
+
 /** 按页面类型更新首页刷新定时器的周期。 */
 static void ui_home_refresh_timer_apply_profile(uint8_t page_id)
 {
@@ -888,6 +942,9 @@ static void ui_home_build_gauge_layout(lv_obj_t *parent,
     lv_coord_t row_gap;
     lv_coord_t col_gap;
     lv_coord_t line_thickness = ui_layout_px(1);
+    bool dense_metric_layout = ui_home_runtime_widgets_is_dense_slot_count(slot_count);
+    lv_coord_t grid_left = 0;
+    lv_coord_t grid_right = 0;
     uint8_t row_slot_counts[3] = {0};
     uint8_t row_count = 0;
 
@@ -918,6 +975,16 @@ static void ui_home_build_gauge_layout(lv_obj_t *parent,
         content_top = ui_safe_margin();
         content_bottom = h - ui_safe_margin();
     }
+    if (dense_metric_layout) {
+        lv_coord_t grid_inset = ui_safe_margin() + ui_layout_px((slot_count >= 5u) ? 8 : 10);
+
+        grid_left = grid_inset;
+        grid_right = (lv_coord_t)ui_screen_width() - grid_inset;
+        if (grid_right <= grid_left) {
+            grid_left = ui_safe_margin();
+            grid_right = (lv_coord_t)ui_screen_width() - ui_safe_margin();
+        }
+    }
 
     if (!ui_metric_layout_build_row_model(slot_count, row_slot_counts, &row_count)) {
         return;
@@ -933,16 +1000,49 @@ static void ui_home_build_gauge_layout(lv_obj_t *parent,
     }
 
     lv_coord_t total_gap = (lv_coord_t)((row_count - 1u) * (row_gap + line_thickness));
-    lv_coord_t row_h = (lv_coord_t)((content_bottom - content_top - total_gap) / row_count);
     lv_coord_t min_row_h = ui_layout_px((row_count >= 3u) ? 72 : 96);
-    if (row_h < min_row_h) {
-        row_h = min_row_h;
-    }
-
-    lv_coord_t used_h = (lv_coord_t)(row_count * row_h + total_gap);
+    lv_coord_t row_heights[3] = {0};
+    uint16_t row_weights[3] = {100u, 100u, 100u};
+    uint16_t row_weight_total = 0u;
+    lv_coord_t available_h = (lv_coord_t)(content_bottom - content_top - total_gap);
+    lv_coord_t assigned_h = 0;
+    lv_coord_t used_h = total_gap;
     lv_coord_t start_y = (lv_coord_t)((h - used_h) / 2);
     lv_coord_t current_y = start_y;
     uint8_t slot_index = 0;
+
+    if (available_h < (lv_coord_t)(row_count * min_row_h)) {
+        available_h = (lv_coord_t)(row_count * min_row_h);
+    }
+    if (slot_count == 3u && row_count == 2u) {
+        row_weights[0] = 94u;
+        row_weights[1] = 106u;
+    } else if (slot_count == 5u && row_count == 3u) {
+        row_weights[0] = 92u;
+        row_weights[1] = 92u;
+        row_weights[2] = 116u;
+    }
+    for (uint8_t row = 0; row < row_count; ++row) {
+        row_weight_total = (uint16_t)(row_weight_total + row_weights[row]);
+    }
+    for (uint8_t row = 0; row < row_count; ++row) {
+        lv_coord_t row_h;
+
+        if (row == (uint8_t)(row_count - 1u)) {
+            row_h = (lv_coord_t)(available_h - assigned_h);
+        } else {
+            row_h = (lv_coord_t)(((int32_t)available_h * row_weights[row]) / row_weight_total);
+        }
+        if (row_h < min_row_h) {
+            row_h = min_row_h;
+        }
+        row_heights[row] = row_h;
+        assigned_h = (lv_coord_t)(assigned_h + row_h);
+        used_h = (lv_coord_t)(used_h + row_h);
+    }
+
+    start_y = (lv_coord_t)((h - used_h) / 2);
+    current_y = start_y;
 
     if (slot_count == 1u) {
         lv_coord_t span_left;
@@ -963,8 +1063,14 @@ static void ui_home_build_gauge_layout(lv_obj_t *parent,
         lv_coord_t span_left;
         lv_coord_t span_right;
         lv_coord_t span_w;
+        lv_coord_t row_h = row_heights[row];
 
-        ui_round_shell_safe_span_for_band(current_y, row_h, content_inset, &span_left, &span_right);
+        if (dense_metric_layout) {
+            span_left = grid_left;
+            span_right = grid_right;
+        } else {
+            ui_round_shell_safe_span_for_band(current_y, row_h, content_inset, &span_left, &span_right);
+        }
         span_w = span_right - span_left;
 
         if (row_slot_counts[row] == 1u) {
@@ -983,6 +1089,297 @@ static void ui_home_build_gauge_layout(lv_obj_t *parent,
 }
 
 /** 构建普通仪表页内容。 */
+static bool ui_home_slot_layout_build_row_model(uint8_t slot_count,
+                                                uint8_t row_slot_counts[3],
+                                                uint8_t *row_count_out)
+{
+    return ui_metric_layout_build_row_model(slot_count, row_slot_counts, row_count_out);
+}
+
+static bool ui_home_metric_layout_debug_should_log(uint8_t slot_count)
+{
+#if UI_HOME_METRIC_LAYOUT_DEBUG
+    uint8_t bit;
+
+    if (slot_count >= 8u) {
+        return false;
+    }
+    bit = (uint8_t)(1u << slot_count);
+    if ((s_home_metric_layout_logged_slot_mask & bit) != 0u) {
+        return false;
+    }
+    s_home_metric_layout_logged_slot_mask = (uint8_t)(s_home_metric_layout_logged_slot_mask | bit);
+    return true;
+#else
+    LV_UNUSED(slot_count);
+    return false;
+#endif
+}
+
+static void ui_home_log_metric_layout_summary(uint8_t slot_count,
+                                              const ui_home_slot_layout_t layouts[UI_DASHBOARD_MAX_SLOTS],
+                                              const disp_item_t visible_items[UI_DASHBOARD_MAX_SLOTS],
+                                              const ui_home_metric_layout_style_t *styles)
+{
+#if UI_HOME_METRIC_LAYOUT_DEBUG
+    char slots[UI_HOME_METRIC_LAYOUT_LOG_BUF_LEN] = {0};
+
+    if (layouts == NULL || visible_items == NULL || styles == NULL ||
+        !ui_home_metric_layout_debug_should_log(slot_count)) {
+        return;
+    }
+    for (uint8_t i = 0; i < slot_count && i < UI_DASHBOARD_MAX_SLOTS; ++i) {
+        const ui_home_metric_slot_style_t *style = &styles->slots[i];
+        size_t used = strlen(slots);
+        int written;
+
+        if (!style->valid || used >= (sizeof(slots) - 1u)) {
+            continue;
+        }
+        written = snprintf(&slots[used],
+                           sizeof(slots) - used,
+                           " s%u:%s rw%d vr%dx%d f%d tw%d",
+                           (unsigned)i,
+                           ui_disp_item_name((uint8_t)visible_items[i]),
+                           (int)layouts[i].w,
+                           (int)style->value_rect_w,
+                           (int)style->value_rect_h,
+                           (int)style->value_font,
+                           (int)style->value_text_w);
+        if (written < 0) {
+            break;
+        }
+    }
+    ESP_LOGI(TAG, "metric dbg slots=%u%s", (unsigned)slot_count, slots);
+#else
+    LV_UNUSED(slot_count);
+    LV_UNUSED(layouts);
+    LV_UNUSED(visible_items);
+    LV_UNUSED(styles);
+#endif
+}
+
+static lv_coord_t ui_home_pick_metric_column_anchor(const ui_home_metric_center_interval_t intervals[3],
+                                                    uint8_t count,
+                                                    lv_coord_t preferred_x)
+{
+    lv_coord_t min_x;
+    lv_coord_t max_x;
+    lv_coord_t best_x;
+    lv_coord_t best_distance;
+
+    if (intervals == NULL || count == 0u || !intervals[0].valid) {
+        return preferred_x;
+    }
+
+    min_x = intervals[0].min_x;
+    max_x = intervals[0].max_x;
+    for (uint8_t i = 1u; i < count; ++i) {
+        if (!intervals[i].valid) {
+            continue;
+        }
+        min_x = LV_MAX(min_x, intervals[i].min_x);
+        max_x = LV_MIN(max_x, intervals[i].max_x);
+    }
+    if (min_x <= max_x) {
+        if (preferred_x < min_x) {
+            return min_x;
+        }
+        if (preferred_x > max_x) {
+            return max_x;
+        }
+        return preferred_x;
+    }
+
+    best_x = intervals[0].min_x + ((intervals[0].max_x - intervals[0].min_x) / 2);
+    best_distance = (best_x > preferred_x) ? (best_x - preferred_x) : (preferred_x - best_x);
+    for (uint8_t i = 1u; i < count; ++i) {
+        lv_coord_t center_x;
+        lv_coord_t distance;
+
+        if (!intervals[i].valid) {
+            continue;
+        }
+        center_x = intervals[i].min_x + ((intervals[i].max_x - intervals[i].min_x) / 2);
+        distance = (center_x > preferred_x) ? (center_x - preferred_x) : (preferred_x - center_x);
+        if (distance < best_distance) {
+            best_x = center_x;
+            best_distance = distance;
+        }
+    }
+    return best_x;
+}
+
+static void ui_home_apply_metric_column_anchor(ui_home_metric_layout_style_t *styles,
+                                               const disp_item_t visible_items[UI_DASHBOARD_MAX_SLOTS],
+                                               const uint8_t indexes[3],
+                                               uint8_t count,
+                                               lv_coord_t preferred_x)
+{
+    ui_home_metric_center_interval_t intervals[3] = {0};
+    lv_coord_t anchor;
+
+    if (styles == NULL || visible_items == NULL || indexes == NULL || count == 0u) {
+        return;
+    }
+    for (uint8_t i = 0; i < count; ++i) {
+        ui_home_runtime_widgets_slot_style_center_interval(&styles->slots[indexes[i]],
+                                                           visible_items[indexes[i]],
+                                                           &intervals[i]);
+    }
+    anchor = ui_home_pick_metric_column_anchor(intervals, count, preferred_x);
+    for (uint8_t i = 0; i < count; ++i) {
+        ui_home_runtime_widgets_apply_content_center(&styles->slots[indexes[i]], anchor);
+    }
+}
+
+static lv_coord_t ui_home_metric_column_preferred_center(const ui_home_metric_layout_style_t *styles,
+                                                         const uint8_t indexes[3],
+                                                         uint8_t count,
+                                                         lv_coord_t fallback_x)
+{
+    int32_t center_sum = 0;
+    uint8_t used_count = 0u;
+
+    if (styles == NULL || indexes == NULL || count == 0u) {
+        return fallback_x;
+    }
+    for (uint8_t i = 0; i < count; ++i) {
+        const ui_home_metric_slot_style_t *style = &styles->slots[indexes[i]];
+
+        if (!style->valid) {
+            continue;
+        }
+        center_sum += style->content_center_x;
+        ++used_count;
+    }
+    return (used_count > 0u) ? (lv_coord_t)(center_sum / used_count) : fallback_x;
+}
+
+static void ui_home_build_dense_metric_styles(uint8_t slot_count,
+                                              const ui_home_slot_layout_t layouts[UI_DASHBOARD_MAX_SLOTS],
+                                              const disp_item_t visible_items[UI_DASHBOARD_MAX_SLOTS],
+                                              ui_home_metric_layout_style_t *styles)
+{
+    uint8_t row_slot_counts[3] = {0};
+    uint8_t row_count = 0u;
+    uint8_t slot_index = 0u;
+    uint8_t left_indexes[3] = {0};
+    uint8_t right_indexes[3] = {0};
+    uint8_t left_count = 0u;
+    uint8_t right_count = 0u;
+
+    if (styles == NULL) {
+        return;
+    }
+    memset(styles, 0, sizeof(*styles));
+    if (!ui_home_runtime_widgets_is_dense_slot_count(slot_count)) {
+        return;
+    }
+    if (!ui_home_slot_layout_build_row_model(slot_count, row_slot_counts, &row_count)) {
+        return;
+    }
+
+    for (uint8_t row = 0; row < row_count; ++row) {
+        if (row_slot_counts[row] == 1u) {
+            lv_coord_t center_x = layouts[slot_index].x + (layouts[slot_index].w / 2);
+
+            ui_home_runtime_widgets_build_dense_slot_style(layouts[slot_index].x,
+                                                           layouts[slot_index].y,
+                                                           layouts[slot_index].w,
+                                                           layouts[slot_index].h,
+                                                           slot_count,
+                                                           center_x,
+                                                           visible_items[slot_index],
+                                                           0,
+                                                           true,
+                                                           &styles->slots[slot_index]);
+            ++slot_index;
+        } else {
+            lv_coord_t left_center_x = layouts[slot_index].x + (layouts[slot_index].w / 2);
+            lv_coord_t right_center_x = layouts[slot_index + 1u].x + (layouts[slot_index + 1u].w / 2);
+
+            ui_home_runtime_widgets_build_dense_slot_style(layouts[slot_index].x,
+                                                           layouts[slot_index].y,
+                                                           layouts[slot_index].w,
+                                                           layouts[slot_index].h,
+                                                           slot_count,
+                                                           left_center_x,
+                                                           visible_items[slot_index],
+                                                           0,
+                                                           false,
+                                                           &styles->slots[slot_index]);
+            ui_home_runtime_widgets_build_dense_slot_style(layouts[slot_index + 1u].x,
+                                                           layouts[slot_index + 1u].y,
+                                                           layouts[slot_index + 1u].w,
+                                                           layouts[slot_index + 1u].h,
+                                                           slot_count,
+                                                           right_center_x,
+                                                           visible_items[slot_index + 1u],
+                                                           0,
+                                                           false,
+                                                           &styles->slots[slot_index + 1u]);
+            int16_t row_value_font = LV_MIN(styles->slots[slot_index].value_font,
+                                            styles->slots[slot_index + 1u].value_font);
+
+            if (row_value_font > 0 &&
+                (styles->slots[slot_index].value_font != row_value_font ||
+                 styles->slots[slot_index + 1u].value_font != row_value_font)) {
+                ui_home_runtime_widgets_build_dense_slot_style(layouts[slot_index].x,
+                                                               layouts[slot_index].y,
+                                                               layouts[slot_index].w,
+                                                               layouts[slot_index].h,
+                                                               slot_count,
+                                                               left_center_x,
+                                                               visible_items[slot_index],
+                                                               row_value_font,
+                                                               false,
+                                                               &styles->slots[slot_index]);
+                ui_home_runtime_widgets_build_dense_slot_style(layouts[slot_index + 1u].x,
+                                                               layouts[slot_index + 1u].y,
+                                                               layouts[slot_index + 1u].w,
+                                                               layouts[slot_index + 1u].h,
+                                                               slot_count,
+                                                               right_center_x,
+                                                               visible_items[slot_index + 1u],
+                                                               row_value_font,
+                                                               false,
+                                                               &styles->slots[slot_index + 1u]);
+            }
+            if (slot_count != 3u) {
+                left_indexes[left_count++] = slot_index;
+                right_indexes[right_count++] = (uint8_t)(slot_index + 1u);
+            }
+            slot_index = (uint8_t)(slot_index + 2u);
+        }
+    }
+
+    if (left_count > 0u) {
+        ui_home_apply_metric_column_anchor(styles,
+                                           visible_items,
+                                           left_indexes,
+                                           left_count,
+                                           ui_home_metric_column_preferred_center(
+                                               styles,
+                                               left_indexes,
+                                               left_count,
+                                               (lv_coord_t)(ui_center_x() - ui_layout_px(72))));
+    }
+    if (right_count > 0u) {
+        ui_home_apply_metric_column_anchor(styles,
+                                           visible_items,
+                                           right_indexes,
+                                           right_count,
+                                           ui_home_metric_column_preferred_center(
+                                               styles,
+                                               right_indexes,
+                                               right_count,
+                                               (lv_coord_t)(ui_center_x() + ui_layout_px(72))));
+    }
+
+    ui_home_log_metric_layout_summary(slot_count, layouts, visible_items, styles);
+}
+
 static void ui_home_create_gauge_content(uint8_t tile_id, lv_obj_t *parent, uint8_t gauge_index)
 {
     const ui_dashboard_page_cfg_t *page = ui_home_get_gauge_cfg(gauge_index);
@@ -1032,6 +1429,7 @@ static void ui_home_create_gauge_content(uint8_t tile_id, lv_obj_t *parent, uint
     }
 
     ui_home_build_gauge_layout(parent, visible_count, layouts);
+    ui_home_build_dense_metric_styles(visible_count, layouts, visible_items, &rt->metric_styles);
     memcpy(rt->slot_layouts, layouts, sizeof(layouts));
     rt->metric_bg_draw_obj = lv_obj_create(parent);
     lv_obj_remove_style_all(rt->metric_bg_draw_obj);
@@ -1039,6 +1437,7 @@ static void ui_home_create_gauge_content(uint8_t tile_id, lv_obj_t *parent, uint
     lv_obj_set_pos(rt->metric_bg_draw_obj, 0, 0);
     ui_home_make_passive_obj(rt->metric_bg_draw_obj);
     lv_obj_add_event_cb(rt->metric_bg_draw_obj, ui_home_metric_bg_draw_event, LV_EVENT_DRAW_MAIN, rt);
+    lv_obj_move_background(rt->metric_bg_draw_obj);
 
     for (uint8_t i = 0; i < visible_count; ++i) {
         ui_home_runtime_widgets_create_slot_card(parent,
@@ -1047,18 +1446,25 @@ static void ui_home_create_gauge_content(uint8_t tile_id, lv_obj_t *parent, uint
                                                  layouts[i].w,
                                                  layouts[i].h,
                                                  visible_count,
+                                                 layouts[i].x + (layouts[i].w / 2),
+                                                 &rt->metric_styles.slots[i],
+                                                 visible_items[i],
                                                  &rt->name_labels[i],
                                                  &rt->value_labels[i],
                                                  &rt->unit_labels[i]);
-        ui_home_runtime_widgets_apply_slot_typography(rt->name_labels[i],
-                                                      rt->value_labels[i],
-                                                      rt->unit_labels[i],
-                                                      visible_items[i],
-                                                      visible_count);
+        lv_obj_update_layout(parent);
         disp_item_sync_meta(rt->name_labels[i],
                             rt->unit_labels[i],
                             &rt->item_cache[i],
                             visible_items[i]);
+        if (!ui_home_runtime_widgets_is_dense_slot_count(visible_count)) {
+            ui_home_runtime_widgets_apply_slot_typography(rt->name_labels[i],
+                                                          rt->value_labels[i],
+                                                          rt->unit_labels[i],
+                                                          visible_items[i],
+                                                          visible_count,
+                                                          0);
+        }
     }
 }
 
@@ -1322,23 +1728,79 @@ static void ui_home_gforce_draw_event(lv_event_t *e)
     {
         lv_draw_line_dsc_t history_glow_dsc;
         lv_draw_line_dsc_t history_dsc;
-        lv_point_t history_points[UI_HOME_GFORCE_HISTORY_POINTS];
+        lv_point_t history_points[UI_HOME_GFORCE_POLYGON_MAX_POINTS];
+        float smoothed_radius[UI_HOME_GFORCE_HISTORY_BINS];
+        uint32_t history_point_count = 0u;
         bool has_history = false;
 
-        for (uint32_t i = 0; i < UI_HOME_GFORCE_HISTORY_POINTS; ++i) {
-            uint32_t bin_index = (i == UI_HOME_GFORCE_HISTORY_BINS) ? 0u : i;
-            float radius_norm = rt->gforce_plot_state.history_radius[bin_index];
-            float angle = (2.0f * UI_HOME_PI_F * (float)bin_index) / (float)UI_HOME_GFORCE_HISTORY_BINS;
-            float bin_radius = radius_norm * (float)rt->gforce_plot_radius;
+        for (uint32_t i = 0; i < UI_HOME_GFORCE_HISTORY_BINS; ++i) {
+            uint32_t prev_index = (i == 0u) ? (UI_HOME_GFORCE_HISTORY_BINS - 1u) : (i - 1u);
+            uint32_t next_index = (i + 1u) % UI_HOME_GFORCE_HISTORY_BINS;
 
-            history_points[i].x = (lv_coord_t)lroundf((float)center_x + (cosf(angle) * bin_radius));
-            history_points[i].y = (lv_coord_t)lroundf((float)center_y - (sinf(angle) * bin_radius));
-            if (radius_norm > 0.01f) {
+            smoothed_radius[i] = (rt->gforce_plot_state.history_radius[prev_index] +
+                                  (rt->gforce_plot_state.history_radius[i] * 4.0f) +
+                                  rt->gforce_plot_state.history_radius[next_index]) / 6.0f;
+        }
+
+        for (uint32_t point_index = 0; point_index < UI_HOME_GFORCE_POLYGON_MAX_POINTS; ++point_index) {
+            uint32_t start_bin = (point_index * UI_HOME_GFORCE_HISTORY_BINS) / UI_HOME_GFORCE_POLYGON_MAX_POINTS;
+            uint32_t end_bin = ((point_index + 1u) * UI_HOME_GFORCE_HISTORY_BINS) / UI_HOME_GFORCE_POLYGON_MAX_POINTS;
+            float sum_radius = 0.0f;
+            float max_radius = 0.0f;
+            float max_raw_radius = 0.0f;
+            float radius_norm;
+            float angle;
+            float effective_radius_norm;
+            float bin_radius;
+            uint32_t sample_count = 0u;
+
+            if (end_bin <= start_bin) {
+                end_bin = start_bin + 1u;
+            }
+            for (uint32_t bin_index = start_bin; bin_index < end_bin && bin_index < UI_HOME_GFORCE_HISTORY_BINS; ++bin_index) {
+                float sample = smoothed_radius[bin_index];
+                sum_radius += sample;
+                if (sample > max_radius) {
+                    max_radius = sample;
+                }
+                if (rt->gforce_plot_state.history_radius[bin_index] > max_raw_radius) {
+                    max_raw_radius = rt->gforce_plot_state.history_radius[bin_index];
+                }
+                ++sample_count;
+            }
+            if (sample_count == 0u) {
+                continue;
+            }
+
+            radius_norm = sum_radius / (float)sample_count;
+            if (max_radius > radius_norm) {
+                radius_norm = (max_radius * 0.35f) + (radius_norm * 0.65f);
+            }
+            if (max_raw_radius > radius_norm) {
+                radius_norm += (max_raw_radius - radius_norm) * 0.58f;
+            }
+            angle = (2.0f * UI_HOME_PI_F * (float)(start_bin + end_bin - 1u) * 0.5f) /
+                    (float)UI_HOME_GFORCE_HISTORY_BINS;
+
+            if (radius_norm > 0.02f) {
                 has_history = true;
+            }
+            effective_radius_norm = radius_norm;
+            if (effective_radius_norm < UI_HOME_GFORCE_POLYGON_MIN_RADIUS_NORM) {
+                effective_radius_norm = UI_HOME_GFORCE_POLYGON_MIN_RADIUS_NORM;
+            }
+
+            bin_radius = effective_radius_norm * (float)rt->gforce_plot_radius;
+            if (history_point_count < UI_HOME_GFORCE_POLYGON_MAX_POINTS) {
+                history_points[history_point_count].x =
+                    (lv_coord_t)lroundf((float)center_x + (cosf(angle) * bin_radius));
+                history_points[history_point_count].y =
+                    (lv_coord_t)lroundf((float)center_y - (sinf(angle) * bin_radius));
+                ++history_point_count;
             }
         }
 
-        if (has_history) {
+        if (has_history && history_point_count >= 3u) {
             lv_draw_line_dsc_init(&history_glow_dsc);
             history_glow_dsc.width = LV_MAX(2, axis_thickness * 2);
             history_glow_dsc.color = lv_color_hex(0xF7D24A);
@@ -1353,10 +1815,18 @@ static void ui_home_gforce_draw_event(lv_event_t *e)
             history_dsc.round_start = 1;
             history_dsc.round_end = 1;
 
-            for (uint32_t i = 0; i < UI_HOME_GFORCE_HISTORY_BINS; ++i) {
+            for (uint32_t i = 0; i + 1u < history_point_count; ++i) {
                 lv_draw_line(draw_ctx, &history_glow_dsc, &history_points[i], &history_points[i + 1u]);
                 lv_draw_line(draw_ctx, &history_dsc, &history_points[i], &history_points[i + 1u]);
             }
+            lv_draw_line(draw_ctx,
+                         &history_glow_dsc,
+                         &history_points[history_point_count - 1u],
+                         &history_points[0]);
+            lv_draw_line(draw_ctx,
+                         &history_dsc,
+                         &history_points[history_point_count - 1u],
+                         &history_points[0]);
         }
     }
 
@@ -1404,6 +1874,9 @@ static void ui_home_metric_bg_draw_event(lv_event_t *e)
     lv_draw_ctx_t *draw_ctx = lv_event_get_draw_ctx(e);
     lv_draw_line_dsc_t line_dsc;
     lv_obj_t *obj = lv_event_get_target(e);
+    lv_area_t coords;
+    lv_coord_t base_x;
+    lv_coord_t base_y;
     lv_coord_t line_thickness = ui_layout_px(1);
 
     if (lv_event_get_code(e) != LV_EVENT_DRAW_MAIN || rt == NULL || draw_ctx == NULL || obj == NULL) {
@@ -1422,6 +1895,9 @@ static void ui_home_metric_bg_draw_event(lv_event_t *e)
     line_dsc.opa = 168;
     line_dsc.round_start = 1;
     line_dsc.round_end = 1;
+    coords = obj->coords;
+    base_x = coords.x1;
+    base_y = coords.y1;
 
     for (uint8_t i = 0; i < rt->slot_count; ++i) {
         for (uint8_t j = (uint8_t)(i + 1u); j < rt->slot_count; ++j) {
@@ -1438,10 +1914,10 @@ static void ui_home_metric_bg_draw_event(lv_event_t *e)
                 lv_point_t p1;
                 lv_point_t p2;
 
-                p1.x = left->x + left->w + ((right->x - (left->x + left->w)) / 2);
-                p1.y = left->y;
+                p1.x = base_x + left->x + left->w + ((right->x - (left->x + left->w)) / 2);
+                p1.y = base_y + left->y;
                 p2.x = p1.x;
-                p2.y = left->y + left->h;
+                p2.y = base_y + left->y + left->h;
                 lv_draw_line(draw_ctx, &line_dsc, &p1, &p2);
             }
         }
@@ -1477,7 +1953,7 @@ static void ui_home_metric_bg_draw_event(lv_event_t *e)
             continue;
         }
 
-        divider_y = current_bottom + ((next_y - current_bottom) / 2);
+        divider_y = base_y + current_bottom + ((next_y - current_bottom) / 2);
         ui_round_shell_safe_span_for_band(divider_y,
                                           line_thickness,
                                           ui_safe_margin() + ui_layout_px(2),
@@ -1559,7 +2035,7 @@ static void ui_home_create_add_content(uint8_t tile_id, lv_obj_t *parent)
 /** 处理仪表页长按进入编辑模式。 */
 static void ui_home_gauge_long_pressed(lv_event_t *e)
 {
-    if (lv_event_get_code(e) != LV_EVENT_LONG_PRESSED) {
+    if (lv_event_get_code(e) != LV_EVENT_LONG_PRESSED || ui_home_interaction_blocked()) {
         return;
     }
     ui_home_enter_edit_mode((uint8_t)(uintptr_t)lv_event_get_user_data(e));
@@ -1568,7 +2044,7 @@ static void ui_home_gauge_long_pressed(lv_event_t *e)
 /** 处理编辑模式里的返回操作。 */
 static void ui_home_edit_back(lv_event_t *e)
 {
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED || ui_home_interaction_blocked()) {
         return;
     }
     ui_home_exit_edit_mode();
@@ -1579,7 +2055,8 @@ static void ui_home_edit_delete(lv_event_t *e)
 {
     static const char *btn_texts[] = {"Cancel", "Delete", ""};
 
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED || ui_ScreenPageHome == NULL || s_home_delete_msgbox != NULL) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED || ui_home_interaction_blocked() ||
+        ui_ScreenPageHome == NULL || s_home_delete_msgbox != NULL) {
         return;
     }
 
@@ -1601,7 +2078,8 @@ static void ui_home_edit_config(lv_event_t *e)
 {
     int8_t gauge_index;
 
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED || s_home_edit_page == UI_HOME_PAGE_MENU_ID) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED || ui_home_interaction_blocked() ||
+        s_home_edit_page == UI_HOME_PAGE_MENU_ID) {
         return;
     }
 
@@ -1824,12 +2302,6 @@ static void ui_home_mount_page(uint8_t page_id)
     }
 
     s_home_tile_mounted[page_id] = true;
-    ESP_LOGI(TAG,
-             "home mount done: page=%u kind=%d tile=%p root=%p",
-             (unsigned)page_id,
-             (int)s_home_tile_descs[page_id].kind,
-             (void *)s_home_tiles[page_id],
-             (void *)root);
 }
 
 /** 卸载某个首页页面的实际内容。 */
@@ -1851,17 +2323,12 @@ static void ui_home_unmount_page(uint8_t page_id)
 /** 让首页只保留当前页附近几个 tile 处于挂载状态。 */
 static void ui_home_sync_tile_mounts(uint8_t active_page)
 {
+    LV_UNUSED(active_page);
     for (uint8_t i = 0; i < s_home_tile_count; ++i) {
-        bool should_mount = (i == active_page) ||
-                            (active_page > 0u && i == (uint8_t)(active_page - 1u)) ||
-                            (active_page + 1u < s_home_tile_count && i == (uint8_t)(active_page + 1u));
-        if (should_mount) {
+        if (!s_home_tile_mounted[i]) {
             ui_home_mount_page(i);
-        } else {
-            ui_home_unmount_page(i);
         }
     }
-
 }
 
 static void ui_home_refresh_menu_tile(ui_home_tile_runtime_t *rt,
@@ -2048,7 +2515,7 @@ static void ui_home_refresh_gear_tile(ui_home_tile_runtime_t *rt)
     if (vehicle_profile_is_active_zc6()) {
         valid_gear = obd_data_get_actual_gear(&gear);
         if (!valid_gear) {
-            gear_text = "-";
+            gear_text = "N";
             if (!elm327_ble_is_connected()) {
                 status_text = "Connect OBD to read gear CAN";
                 rt->gear_status_wait_start_us = 0;
@@ -2137,6 +2604,9 @@ static void ui_home_refresh_metric_tile(ui_home_tile_runtime_t *rt,
 {
     disp_item_t visible_items[UI_DASHBOARD_MAX_SLOTS];
     uint8_t visible_count = ui_home_collect_visible_items(page, visible_items);
+    bool dense_layout = ui_home_runtime_widgets_is_dense_slot_count(rt->slot_count) &&
+                        (rt->slot_count == visible_count);
+    bool metric_layout_rebuilt = false;
 
     for (uint8_t i = 0; i < rt->slot_count && i < visible_count; ++i) {
         disp_item_t item = visible_items[i];
@@ -2144,13 +2614,28 @@ static void ui_home_refresh_metric_tile(ui_home_tile_runtime_t *rt,
         bool valid = false;
 
         if (rt->item_cache[i] != (uint8_t)item) {
-            ui_home_runtime_widgets_apply_slot_typography(rt->name_labels[i],
-                                                          rt->value_labels[i],
-                                                          rt->unit_labels[i],
-                                                          item,
-                                                          rt->slot_count);
+            disp_item_sync_meta(rt->name_labels[i], rt->unit_labels[i], &rt->item_cache[i], item);
+            if (dense_layout) {
+                if (!metric_layout_rebuilt) {
+                    ui_home_build_dense_metric_styles(rt->slot_count,
+                                                      rt->slot_layouts,
+                                                      visible_items,
+                                                      &rt->metric_styles);
+                    metric_layout_rebuilt = true;
+                }
+                ui_home_runtime_widgets_apply_dense_slot_style(rt->name_labels[i],
+                                                              rt->value_labels[i],
+                                                              rt->unit_labels[i],
+                                                              &rt->metric_styles.slots[i]);
+            } else {
+                ui_home_runtime_widgets_apply_slot_typography(rt->name_labels[i],
+                                                              rt->value_labels[i],
+                                                              rt->unit_labels[i],
+                                                              item,
+                                                              rt->slot_count,
+                                                              0);
+            }
         }
-        disp_item_sync_meta(rt->name_labels[i], rt->unit_labels[i], &rt->item_cache[i], item);
         if (sweep_ratio >= 0.0f) {
             value = disp_item_sweep_value(item, sweep_ratio);
             valid = true;
@@ -2232,16 +2717,25 @@ static void ui_home_runtime_refresh_tile(uint8_t tile_id)
 /** 刷新当前页及其相邻页，兼顾滑动时的预热显示。 */
 static void ui_home_runtime_refresh_visible_tiles(uint8_t active_page)
 {
+    s_home_refresh_epoch++;
     if (active_page >= s_home_tile_count) {
         return;
     }
 
-    if (active_page > 0u) {
-        ui_home_runtime_refresh_tile((uint8_t)(active_page - 1u));
-    }
-    ui_home_runtime_refresh_tile(active_page);
-    if ((uint8_t)(active_page + 1u) < s_home_tile_count) {
-        ui_home_runtime_refresh_tile((uint8_t)(active_page + 1u));
+    for (uint8_t page_id = 0; page_id < s_home_tile_count; ++page_id) {
+        switch (s_home_tile_activity[page_id]) {
+        case UI_HOME_PAGE_ACTIVE:
+            ui_home_runtime_refresh_tile(page_id);
+            break;
+        case UI_HOME_PAGE_WARM:
+            if ((s_home_refresh_epoch % 2u) == 0u) {
+                ui_home_runtime_refresh_tile(page_id);
+            }
+            break;
+        case UI_HOME_PAGE_SLEEP:
+        default:
+            break;
+        }
     }
 }
 
@@ -2273,6 +2767,7 @@ static void ui_home_pager_commit_handler(const ui_home_pager_commit_t *commit, v
 
     ui_home_page_switch_perf_commit(commit->to_page);
     s_home_active_page = commit->to_page;
+    ui_home_update_tile_activity(commit->to_page);
     mount_start_us = esp_timer_get_time();
     ui_home_sync_tile_mounts(commit->to_page);
     s_home_nav_perf.mount_us = esp_timer_get_time() - mount_start_us;
@@ -2363,14 +2858,6 @@ void ui_home_runtime_screen_init(void)
         }
     }
 
-    ESP_LOGI(TAG,
-             "home screen init: tile_count=%u active_page=%u screen=%p size=%dx%d",
-             (unsigned)s_home_tile_count,
-             (unsigned)s_home_active_page,
-             (void *)ui_ScreenPageHome,
-             (int)screen_width,
-             (int)screen_height);
-
     if (screen_width <= 0 || screen_height <= 0) {
         ESP_LOGE(TAG, "home screen init aborted: invalid screen size");
         return;
@@ -2392,7 +2879,6 @@ void ui_home_runtime_screen_init(void)
         if (s_home_tiles[i] != NULL) {
             lv_obj_add_flag(s_home_tiles[i], LV_OBJ_FLAG_EVENT_BUBBLE);
         }
-        ESP_LOGI(TAG, "home page bind: idx=%u obj=%p", (unsigned)i, (void *)s_home_tiles[i]);
     }
 
     ui_home_set_active_page(s_home_active_page, LV_ANIM_OFF);
@@ -2427,17 +2913,17 @@ uint8_t ui_home_runtime_page_from_default(uint8_t default_page)
 }
 
 /** 判断当前激活页是否依赖某个仪表项。 */
-bool ui_home_runtime_active_page_uses_item(disp_item_t item)
+static bool ui_home_page_uses_item(uint8_t page_id, disp_item_t item)
 {
     if (item >= DISP_ITEM_COUNT || ui_ScreenPageHome == NULL || lv_scr_act() != ui_ScreenPageHome) {
         return false;
     }
-    if (s_home_active_page >= s_home_tile_count || s_home_tile_descs[s_home_active_page].kind != UI_HOME_TILE_GAUGE) {
+    if (page_id >= s_home_tile_count || s_home_tile_descs[page_id].kind != UI_HOME_TILE_GAUGE) {
         return false;
     }
 
     const ui_dashboard_page_cfg_t *page =
-        ui_home_get_gauge_cfg((uint8_t)s_home_tile_descs[s_home_active_page].gauge_index);
+        ui_home_get_gauge_cfg((uint8_t)s_home_tile_descs[page_id].gauge_index);
     disp_item_t visible_items[UI_DASHBOARD_MAX_SLOTS];
     uint8_t visible_count;
     if (page == NULL) {
@@ -2455,18 +2941,18 @@ bool ui_home_runtime_active_page_uses_item(disp_item_t item)
 }
 
 /** 判断当前激活页是否属于某种页面类型。 */
-bool ui_home_runtime_active_page_uses_type(ui_dashboard_page_type_t page_type)
+static bool ui_home_page_uses_type(uint8_t page_id, ui_dashboard_page_type_t page_type)
 {
     const ui_dashboard_page_cfg_t *page;
 
     if (ui_ScreenPageHome == NULL || lv_scr_act() != ui_ScreenPageHome) {
         return false;
     }
-    if (s_home_active_page >= s_home_tile_count || s_home_tile_descs[s_home_active_page].kind != UI_HOME_TILE_GAUGE) {
+    if (page_id >= s_home_tile_count || s_home_tile_descs[page_id].kind != UI_HOME_TILE_GAUGE) {
         return false;
     }
 
-    page = ui_home_get_gauge_cfg((uint8_t)s_home_tile_descs[s_home_active_page].gauge_index);
+    page = ui_home_get_gauge_cfg((uint8_t)s_home_tile_descs[page_id].gauge_index);
     if (page == NULL) {
         return false;
     }
@@ -2475,20 +2961,65 @@ bool ui_home_runtime_active_page_uses_type(ui_dashboard_page_type_t page_type)
 }
 
 /** 判断当前激活的档位页是否启用了 RPM ring。 */
-bool ui_home_runtime_active_page_gear_rpm_ring_enabled(void)
+static bool ui_home_page_gear_rpm_ring_enabled(uint8_t page_id)
 {
     const ui_dashboard_page_cfg_t *page;
 
-    if (!ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_GEAR)) {
+    if (!ui_home_page_uses_type(page_id, UI_DASHBOARD_PAGE_TYPE_GEAR)) {
         return false;
     }
 
-    page = ui_home_get_gauge_cfg((uint8_t)s_home_tile_descs[s_home_active_page].gauge_index);
+    page = ui_home_get_gauge_cfg((uint8_t)s_home_tile_descs[page_id].gauge_index);
     if (page == NULL) {
         return false;
     }
 
     return ui_dashboard_page_is_gear_rpm_ring_enabled(page);
+}
+
+bool ui_home_runtime_active_page_uses_item(disp_item_t item)
+{
+    return ui_home_page_uses_item(s_home_active_page, item);
+}
+
+bool ui_home_runtime_active_or_warm_page_uses_item(disp_item_t item)
+{
+    if (item >= DISP_ITEM_COUNT || ui_ScreenPageHome == NULL || lv_scr_act() != ui_ScreenPageHome) {
+        return false;
+    }
+
+    for (uint8_t page_id = 0; page_id < s_home_tile_count; ++page_id) {
+        if (s_home_tile_activity[page_id] != UI_HOME_PAGE_SLEEP &&
+            ui_home_page_uses_item(page_id, item)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ui_home_runtime_active_page_uses_type(ui_dashboard_page_type_t page_type)
+{
+    return ui_home_page_uses_type(s_home_active_page, page_type);
+}
+
+bool ui_home_runtime_active_page_gear_rpm_ring_enabled(void)
+{
+    return ui_home_page_gear_rpm_ring_enabled(s_home_active_page);
+}
+
+bool ui_home_runtime_active_or_warm_page_gear_rpm_ring_enabled(void)
+{
+    if (ui_ScreenPageHome == NULL || lv_scr_act() != ui_ScreenPageHome) {
+        return false;
+    }
+
+    for (uint8_t page_id = 0; page_id < s_home_tile_count; ++page_id) {
+        if (s_home_tile_activity[page_id] != UI_HOME_PAGE_SLEEP &&
+            ui_home_page_gear_rpm_ring_enabled(page_id)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /** 重置首页运行时状态，并准备下次按指定初始页启动。 */
