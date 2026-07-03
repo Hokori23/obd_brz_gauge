@@ -63,6 +63,10 @@ $tests = @(
         Output = Join-Path $outputDir "test_obd_poll_schedule_logic.o"
     },
     @{
+        Source = Join-Path $PSScriptRoot "..\tests\dashboard\test_ui_home_pager_logic.c"
+        Output = Join-Path $outputDir "test_ui_home_pager_logic.o"
+    },
+    @{
         Source = Join-Path $PSScriptRoot "..\tests\dashboard\test_zc6_gforce_monitor_decode.c"
         Output = Join-Path $outputDir "test_zc6_gforce_monitor_decode.o"
     }
@@ -209,6 +213,11 @@ if ($LASTEXITCODE -ne 0) {
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_ui_home_refresh_cadence_contract.ps1")
 if ($LASTEXITCODE -ne 0) {
     throw "ui home refresh cadence contract checks failed"
+}
+
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_ui_home_pager_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "ui home pager contract checks failed"
 }
 
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_racechrono_active_channel_contract.ps1")

@@ -82,4 +82,10 @@ Before publishing the repository, it is worth adding:
 - The exact OBD adapter model used for testing
 - A note describing which values are based on generic OBD PIDs and which are vehicle-specific assumptions
 
+## Research Notes
+
+- [BRZ ZC6 open CAN and diagnostic data survey](./ZC6_CAN_OPEN_DATA_SURVEY.zh-CN.md)
+- [BRZ ZD8 protocol quick guide](./BRZ_ZD8_PROTOCOL_GUIDE.md)
+- [Honda Civic Type R FL5 open CAN / DBC survey](./FL5_CAN_OPEN_DATA_SURVEY.zh-CN.md)
+
 Chinese documentation is available at [docs/README.zh-CN.md](README.zh-CN.md).

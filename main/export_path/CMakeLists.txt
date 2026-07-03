@@ -7,6 +7,7 @@ SET(SOURCES
     ui_dashboard_config.c
     ui_font_profile.c
     ui_helpers.c
+    ui_home_pager.c
     ui_home_runtime.c
     ui_legacy_runtime.c
     ui_platform.c

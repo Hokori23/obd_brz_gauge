@@ -6,6 +6,7 @@
 #include "ui_helpers.h"
 #include "ui_layout.h"
 #include "ui_home_runtime_widgets.h"
+#include "ui_home_pager.h"
 #include "ui_round_shell.h"
 #include "ui_runtime_common.h"
 
@@ -25,7 +26,6 @@
 #include "esp_timer.h"
 
 #define UI_NAV_ANIM_MS 0
-#define UI_HOME_MAX_TILE_COUNT (1u + UI_DASHBOARD_MAX_PAGES + 1u)
 #define UI_HOME_GFORCE_HISTORY_BINS 48
 #define UI_HOME_GFORCE_HISTORY_POINTS (UI_HOME_GFORCE_HISTORY_BINS + 1)
 #define UI_HOME_PI_F 3.14159265f
@@ -122,7 +122,7 @@ typedef struct {
 
 lv_obj_t *ui_ScreenPageHome = NULL;
 
-static lv_obj_t *s_home_tileview = NULL;
+static ui_home_pager_t s_home_pager;
 static lv_obj_t *s_home_tiles[UI_HOME_MAX_TILE_COUNT];
 static lv_obj_t *s_home_content_roots[UI_HOME_MAX_TILE_COUNT];
 static bool s_home_tile_mounted[UI_HOME_MAX_TILE_COUNT];
@@ -142,8 +142,6 @@ static ui_home_nav_perf_trace_t s_home_nav_perf = {0};
 
 static void ui_home_load(lv_scr_load_anim_t anim, uint8_t page_id);
 static void ui_home_add_page(void);
-static void ui_home_tileview_value_changed(lv_event_t *e);
-static void ui_home_tileview_gesture(lv_event_t *e);
 static void ui_home_sync_tile_mounts(uint8_t active_page);
 static void ui_home_reset_tile_effect_cache(uint8_t page_id);
 static void ui_home_reset_screen_state(void);
@@ -177,8 +175,9 @@ static uint32_t ui_home_refresh_period_ms_for_page(uint8_t page_id);
 static void ui_home_refresh_timer_apply_profile(uint8_t page_id);
 static void ui_home_runtime_refresh_tile(uint8_t tile_id);
 static void ui_home_runtime_refresh_visible_tiles(uint8_t active_page);
-static void ui_home_page_switch_scroll_begin(lv_event_t *e);
-static void ui_home_page_switch_scroll_end(lv_event_t *e);
+static void ui_home_pager_drag_begin_handler(uint8_t from_page, void *user);
+static void ui_home_pager_commit_handler(const ui_home_pager_commit_t *commit, void *user);
+static void ui_home_pager_vertical_handler(lv_dir_t dir, uint8_t active_page, void *user);
 static void ui_home_page_switch_perf_finish(lv_timer_t *timer);
 static void ui_home_page_switch_perf_schedule_finish(uint32_t delay_ms);
 static void ui_home_page_switch_perf_begin(uint8_t from_page);
@@ -541,17 +540,17 @@ static void ui_home_set_active_page(uint8_t page_id, lv_anim_enable_t anim_en)
         page_id = UI_HOME_PAGE_MENU_ID;
     }
 
-    if (s_home_tileview != NULL &&
+    if (ui_home_pager_root(&s_home_pager) != NULL &&
         s_home_active_page == page_id &&
-        lv_tileview_get_tile_act(s_home_tileview) == s_home_tiles[page_id]) {
+        ui_home_pager_active_page(&s_home_pager) == page_id) {
         return;
     }
 
     s_home_active_page = page_id;
     ui_home_sync_tile_mounts(page_id);
     ui_home_refresh_timer_apply_profile(page_id);
-    if (s_home_tileview != NULL) {
-        lv_obj_set_tile_id(s_home_tileview, page_id, 0, anim_en);
+    if (ui_home_pager_root(&s_home_pager) != NULL) {
+        ui_home_pager_set_active_page(&s_home_pager, page_id, anim_en != LV_ANIM_OFF);
     }
     aux_sensor_demand_refresh();
 }
@@ -563,6 +562,7 @@ static lv_obj_t *ui_home_create_content_root(lv_obj_t *tile)
     lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
     lv_obj_center(root);
     lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(root, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_update_layout(root);
     lv_obj_set_style_transform_pivot_x(root, lv_obj_get_width(root) / 2, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_transform_pivot_y(root, lv_obj_get_height(root) / 2, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -623,6 +623,7 @@ static void ui_home_add_page_click(lv_event_t *e)
 void ui_home_runtime_rebuild_and_load(uint8_t page_id, lv_scr_load_anim_t anim)
 {
     if (ui_ScreenPageHome != NULL) {
+        ui_home_pager_deinit(&s_home_pager);
         if (lv_scr_act() == ui_ScreenPageHome) {
             s_home_screen_pending_delete = ui_ScreenPageHome;
             lv_obj_add_event_cb(ui_ScreenPageHome,
@@ -633,7 +634,6 @@ void ui_home_runtime_rebuild_and_load(uint8_t page_id, lv_scr_load_anim_t anim)
             lv_obj_del(ui_ScreenPageHome);
         }
         ui_ScreenPageHome = NULL;
-        s_home_tileview = NULL;
     }
 
     s_home_edit_mode = false;
@@ -1482,9 +1482,7 @@ static void ui_home_enter_edit_mode(uint8_t page_id)
     s_home_edit_page = page_id;
     s_home_edit_target_root = rt->root;
 
-    if (s_home_tileview != NULL) {
-        lv_obj_clear_flag(s_home_tileview, LV_OBJ_FLAG_SCROLLABLE);
-    }
+    ui_home_pager_set_locked(&s_home_pager, true);
 
     lv_obj_set_style_transform_zoom(rt->root, (lv_coord_t)(256 * 12 / 10), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_translate_x(rt->root, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -1575,9 +1573,7 @@ static void ui_home_exit_edit_mode(void)
         lv_obj_set_style_opa(s_home_edit_target_root, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
     }
 
-    if (s_home_tileview != NULL) {
-        lv_obj_add_flag(s_home_tileview, LV_OBJ_FLAG_SCROLLABLE);
-    }
+    ui_home_pager_set_locked(&s_home_pager, false);
 
     s_home_edit_mode = false;
     s_home_edit_page = UI_HOME_PAGE_MENU_ID;
@@ -2066,73 +2062,60 @@ void ui_home_runtime_refresh_active_tile(void)
     ui_home_runtime_refresh_tile(s_home_active_page);
 }
 
-static void ui_home_page_switch_scroll_begin(lv_event_t *e)
+static void ui_home_pager_commit_handler(const ui_home_pager_commit_t *commit, void *user)
 {
-    if (lv_event_get_target(e) != s_home_tileview || s_home_edit_mode) {
+    int64_t mount_start_us;
+    int64_t refresh_begin_us;
+
+    LV_UNUSED(user);
+    if (commit == NULL) {
         return;
     }
 
-    ui_home_page_switch_perf_begin(s_home_active_page);
-}
-
-static void ui_home_page_switch_scroll_end(lv_event_t *e)
-{
-    if (lv_event_get_target(e) != s_home_tileview) {
-        return;
-    }
-
-    if (s_home_nav_perf.active && !s_home_nav_perf.target_committed) {
+    if (!commit->changed) {
         ui_home_page_switch_perf_cancel();
         return;
     }
 
-    if (s_home_nav_perf.active && s_home_nav_perf.target_committed) {
-        ui_home_page_switch_perf_schedule_finish(120u);
+    if (!s_home_nav_perf.active) {
+        ui_home_page_switch_perf_begin(commit->from_page);
     }
+
+    ui_home_page_switch_perf_commit(commit->to_page);
+    s_home_active_page = commit->to_page;
+    mount_start_us = esp_timer_get_time();
+    ui_home_sync_tile_mounts(commit->to_page);
+    s_home_nav_perf.mount_us = esp_timer_get_time() - mount_start_us;
+
+    refresh_begin_us = esp_timer_get_time();
+    ui_home_refresh_timer_apply_profile(commit->to_page);
+    aux_sensor_demand_refresh();
+    s_home_nav_perf.refresh_us = esp_timer_get_time() - refresh_begin_us;
 }
 
-static void ui_home_tileview_value_changed(lv_event_t *e)
+static void ui_home_pager_drag_begin_handler(uint8_t from_page, void *user)
 {
-    if (lv_event_get_target(e) != s_home_tileview) {
+    LV_UNUSED(user);
+    if (s_home_edit_mode || s_home_nav_perf.active) {
         return;
     }
 
-    lv_obj_t *active_tile = lv_tileview_get_tile_act(s_home_tileview);
-    for (uint8_t i = 0; i < s_home_tile_count; ++i) {
-        if (s_home_tiles[i] == active_tile) {
-            if (s_home_active_page != i) {
-                const int64_t mount_start_us = esp_timer_get_time();
-
-                ui_home_page_switch_perf_commit(i);
-                s_home_active_page = i;
-                ui_home_sync_tile_mounts(i);
-                s_home_nav_perf.mount_us = esp_timer_get_time() - mount_start_us;
-                {
-                    const int64_t refresh_begin_us = esp_timer_get_time();
-                    ui_home_refresh_timer_apply_profile(i);
-                    aux_sensor_demand_refresh();
-                    s_home_nav_perf.refresh_us = esp_timer_get_time() - refresh_begin_us;
-                }
-            }
-            break;
-        }
-    }
+    /*
+     * Start perf tracing and suspend the refresh timer as soon as the gesture
+     * is confirmed horizontal, so drag-time work is captured instead of only
+     * the release animation tail.
+     */
+    ui_home_page_switch_perf_begin(from_page);
 }
 
-static void ui_home_tileview_gesture(lv_event_t *e)
+static void ui_home_pager_vertical_handler(lv_dir_t dir, uint8_t active_page, void *user)
 {
-    LV_UNUSED(e);
-    if (s_home_edit_mode) {
+    LV_UNUSED(user);
+    if (s_home_edit_mode || active_page != UI_HOME_PAGE_MENU_ID) {
         return;
     }
 
-    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-    if (dir == LV_DIR_TOP || dir == LV_DIR_BOTTOM) {
-        lv_indev_wait_release(lv_indev_get_act());
-        if (s_home_active_page == UI_HOME_PAGE_MENU_ID) {
-            ui_home_open_menu_overlay(dir);
-        }
-    }
+    ui_home_open_menu_overlay(dir);
 }
 
 static void ui_home_open_menu_overlay(lv_dir_t dir)
@@ -2144,18 +2127,12 @@ static void ui_home_open_menu_overlay(lv_dir_t dir)
     }
 }
 
-static lv_obj_t *ui_home_create_tile(lv_obj_t *parent, uint8_t col, lv_dir_t dir)
-{
-    lv_obj_t *tile = lv_tileview_add_tile(parent, col, 0, dir);
-    lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_opa(tile, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(tile, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_all(tile, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-    return tile;
-}
-
 void ui_home_runtime_screen_init(void)
 {
+    ui_home_pager_config_t pager_cfg;
+    lv_coord_t screen_width;
+    lv_coord_t screen_height;
+
     if (ui_ScreenPageHome != NULL) {
         return;
     }
@@ -2167,29 +2144,26 @@ void ui_home_runtime_screen_init(void)
     ui_round_screen_apply_base(ui_ScreenPageHome, lv_color_hex(0x000000));
     lv_obj_set_style_border_width(ui_ScreenPageHome, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_outline_width(ui_ScreenPageHome, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_update_layout(ui_ScreenPageHome);
 
-    s_home_tileview = lv_tileview_create(ui_ScreenPageHome);
-    lv_obj_set_size(s_home_tileview, LV_PCT(100), LV_PCT(100));
-    lv_obj_center(s_home_tileview);
-    lv_obj_set_style_bg_opa(s_home_tileview, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(s_home_tileview, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_all(s_home_tileview, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_scrollbar_mode(s_home_tileview, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_clear_flag(s_home_tileview, LV_OBJ_FLAG_SCROLL_ELASTIC);
-    lv_obj_add_event_cb(s_home_tileview, ui_home_tileview_value_changed, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_event_cb(s_home_tileview, ui_home_tileview_gesture, LV_EVENT_GESTURE, NULL);
-    lv_obj_add_event_cb(s_home_tileview, ui_home_page_switch_scroll_begin, LV_EVENT_SCROLL_BEGIN, NULL);
-    lv_obj_add_event_cb(s_home_tileview, ui_home_page_switch_scroll_end, LV_EVENT_SCROLL_END, NULL);
+    screen_width = lv_obj_get_width(ui_ScreenPageHome);
+    screen_height = lv_obj_get_height(ui_ScreenPageHome);
+    pager_cfg.parent = ui_ScreenPageHome;
+    pager_cfg.width = screen_width;
+    pager_cfg.height = screen_height;
+    pager_cfg.page_count = s_home_tile_count;
+    pager_cfg.initial_page = s_home_active_page;
+    pager_cfg.drag_begin_cb = ui_home_pager_drag_begin_handler;
+    pager_cfg.commit_cb = ui_home_pager_commit_handler;
+    pager_cfg.vertical_cb = ui_home_pager_vertical_handler;
+    pager_cfg.user = NULL;
+    ui_home_pager_init(&s_home_pager, &pager_cfg);
 
     for (uint8_t i = 0; i < s_home_tile_count; ++i) {
-        lv_dir_t dir = 0;
-        if (i > 0u) {
-            dir |= LV_DIR_LEFT;
+        s_home_tiles[i] = ui_home_pager_page(&s_home_pager, i);
+        if (s_home_tiles[i] != NULL) {
+            lv_obj_add_flag(s_home_tiles[i], LV_OBJ_FLAG_EVENT_BUBBLE);
         }
-        if ((uint8_t)(i + 1u) < s_home_tile_count) {
-            dir |= LV_DIR_RIGHT;
-        }
-        s_home_tiles[i] = ui_home_create_tile(s_home_tileview, i, dir);
     }
 
     ui_home_set_active_page(s_home_active_page, LV_ANIM_OFF);
@@ -2288,8 +2262,8 @@ void ui_home_runtime_reset(uint8_t initial_page_id)
         lv_timer_del(s_home_refresh_timer);
         s_home_refresh_timer = NULL;
     }
+    ui_home_pager_deinit(&s_home_pager);
     ui_ScreenPageHome = NULL;
-    s_home_tileview = NULL;
     s_home_tile_count = 0;
     s_home_active_page = initial_page_id;
     s_home_edit_mode = false;

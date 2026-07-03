@@ -71,6 +71,12 @@ idf.py -p PORT flash monitor
 - [第一阶段：开发验证与学习计划](./PHASE1_DEVELOPMENT_PLAN.zh-CN.md)
 - [第二阶段：产品化与量产准备](./PHASE2_PRODUCTION_PLAN.zh-CN.md)
 
+## 调研笔记
+
+- [BRZ ZC6 开源 CAN / 诊断数据调研](./ZC6_CAN_OPEN_DATA_SURVEY.zh-CN.md)
+- [BRZ ZD8 协议与适配指南](./BRZ_ZD8_PROTOCOL_GUIDE.md)
+- [Honda Civic Type R FL5 开源 CAN / DBC 资料调研](./FL5_CAN_OPEN_DATA_SURVEY.zh-CN.md)
+
 ## 已知限制
 
 - 当前只验证了 Subaru BRZ ZC6 的数据读取情况

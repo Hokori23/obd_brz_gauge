@@ -12,6 +12,10 @@ if ($homeRuntime -notmatch '(?s)static void ui_home_open_menu_overlay\(lv_dir_t 
     throw "Home navigation workflow must route vertical overlay gestures to both BLE scan and settings screens"
 }
 
+if ($homeRuntime -match 'lv_tileview_create\(ui_ScreenPageHome\)') {
+    throw "Home navigation workflow must replace the home tileview with the dedicated pager container"
+}
+
 if ($bleScan -notmatch '(?s)static void start_scan\(void\).*elm327_ble_scan_only_start\(15,\s*scan_result_cb\);') {
     throw "BLE scan workflow must start a background scan when the scan screen is entered"
 }
