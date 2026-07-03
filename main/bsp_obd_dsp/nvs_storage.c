@@ -155,6 +155,8 @@ uint8_t nvs_cfg_get_obd_poll_mode(const nvs_user_cfg_t *cfg)
 uint16_t nvs_cfg_get_obd_poll_slot_delay_ms(const nvs_user_cfg_t *cfg)
 {
     switch (nvs_cfg_get_obd_poll_mode(cfg)) {
+    case NVS_OBD_POLL_MODE_TURBO:
+        return 40u;
     case NVS_OBD_POLL_MODE_FAST:
         return 60u;
     case NVS_OBD_POLL_MODE_NORMAL:

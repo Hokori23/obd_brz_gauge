@@ -686,7 +686,7 @@ static void ui_settings_build_dashboard_page(lv_obj_t *tile, lv_coord_t content_
     row = ui_settings_create_inline_row(panel, "OBD POLL", label_w, ui_layout_px(40));
     s_roller_obd_poll = ui_settings_create_inline_roller(row,
                                                          roller_w,
-                                                         "NORMAL\nFAST",
+                                                         "NORMAL\nFAST\nTURBO",
                                                          nvs_cfg_get_obd_poll_mode(cfg),
                                                          on_obd_poll_roller_change,
                                                          LV_EVENT_VALUE_CHANGED);
