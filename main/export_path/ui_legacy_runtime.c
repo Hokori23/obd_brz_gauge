@@ -17,7 +17,7 @@ typedef struct {
 #define SWEEP_STEPS_UP   6
 #define SWEEP_STEPS_DOWN 6
 #define SWEEP_TOTAL      (SWEEP_STEPS_UP + SWEEP_STEPS_DOWN)
-#define UI_VALUE_DEBUG_MOCK_ENABLED 1
+#define UI_VALUE_DEBUG_MOCK_ENABLED 0
 
 static int s_sweep_step = 0;
 static bool s_sweep_pending = false;

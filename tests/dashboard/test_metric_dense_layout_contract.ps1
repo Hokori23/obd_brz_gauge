@@ -75,6 +75,14 @@ if ($widgets -notmatch 'ui_home_widgets_metric_resolve_gaps' -or
     throw "dense metric vertical gaps must scale from resolved value font height, not slot-specific single-row branches"
 }
 
+if ($widgets -notmatch 'ui_home_widgets_metric_value_inset_x\(uint8_t slot_count, bool allow_value_span_expand\)' -or
+    $widgets -notmatch 'if \(slot_count == 3u && allow_value_span_expand\)\s*\{\s*return ui_layout_px\(10\);' -or
+    $widgets -notmatch 'if \(slot_count >= 5u\)\s*\{\s*return ui_layout_px\([0-9]+\);' -or
+    $widgets -notmatch 'value_rect\.x = \(lv_coord_t\)\(value_rect\.x \+ inset_x\)' -or
+    $widgets -notmatch 'value_rect\.w = \(lv_coord_t\)\(value_rect\.w - \(inset_x \* 2\)\)') {
+    throw "dense metric value rect must support dedicated horizontal insets before font fitting"
+}
+
 if ($widgets -match 'ui_home_widgets_metric_label_value_gap\(' -or
     $widgets -match 'ui_home_widgets_metric_value_unit_gap\(') {
     throw "dense metric gap callers must use the floor helpers or resolved-gap helper; old gap names must not remain"
@@ -92,6 +100,12 @@ if ($widgets -notmatch 'axis_aligned_metadata = \(slot_count <= 2u\)' -or
 
 if ($widgets -notmatch '(?s)if \(slot_count <= 2u\)\s*\{.*?lv_obj_set_x\(name_label,\s*\(lv_coord_t\)\(value_center_x - \(value_width / 2\)\)\).*?lv_obj_set_x\(unit_label,\s*\(lv_coord_t\)\(value_center_x - \(value_width / 2\)\)\).*?LV_TEXT_ALIGN_CENTER') {
     throw "1/2-slot typography refresh must preserve label/unit/value axis alignment"
+}
+
+if ($widgets -notmatch 'axis_unit_gap_y = \(slot_count == 2u\) \? ui_layout_px\(5\) : ui_layout_px\(10\)' -or
+    $widgets -notmatch 'value_label_y \+ value_line_h \+ axis_unit_gap_y' -or
+    $widgets -notmatch 'lv_obj_set_y\(unit_label,\s*\(lv_coord_t\)\(lv_obj_get_y\(value_label\) \+ value_line_h \+ axis_unit_gap_y\)\)') {
+    throw "1/2-slot unit labels must keep label/value fixed while letting the 2-slot unit sit 5 px below the value"
 }
 
 if ($widgets -match 'value_host|create_legacy_slot_card') {
@@ -147,6 +161,16 @@ if ($homeRuntime -notmatch 'ui_home_apply_metric_column_anchor' -or
 if ($homeRuntime -notmatch 'ui_home_metric_column_preferred_center' -or
     $homeRuntime -match 'ui_center_x\(\) [-+] ui_layout_px\(8\)') {
     throw "dense metric column anchors must prefer the actual column centers, not a near-center fallback"
+}
+
+if ($homeRuntime -notmatch 'if \(apply_row_nudges && slot_count == 4u && row_count == 2u\)' -or
+    $homeRuntime -notmatch 'row_y = \(lv_coord_t\)\(row_y \+ \(\(row == 0u\) \? ui_layout_px\([0-9]+\) : -ui_layout_px\([0-9]+\)\)\);') {
+    throw "4-slot metric pages must support explicit row-level Y nudges toward the center"
+}
+
+if ($homeRuntime -notmatch 'if \(apply_row_nudges && slot_count == 3u && row_count == 2u && row == 1u\)' -or
+    $homeRuntime -notmatch 'row_y = \(lv_coord_t\)\(row_y - ui_layout_px\(5\)\);') {
+    throw "3-slot metric pages must support a bottom-row Y nudge toward the center"
 }
 
 if ($homeRuntime -notmatch 'dense_metric_layout = ui_home_runtime_widgets_is_dense_slot_count\(slot_count\)' -or

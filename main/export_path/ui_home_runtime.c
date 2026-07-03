@@ -44,7 +44,8 @@
 #define UI_HOME_GEAR_RING_MAX_SEGMENTS 99u
 #define UI_HOME_GEAR_RING_GAP_DEG 3.0f
 #define UI_HOME_GEAR_BLINK_PERIOD_US 250000LL
-#define UI_HOME_METRIC_LAYOUT_DEBUG 1
+#define UI_HOME_METRIC_LAYOUT_DEBUG 0
+#define UI_HOME_PAGE_SWITCH_PERF_LOG 0
 #define UI_HOME_METRIC_LAYOUT_LOG_BUF_LEN 256u
 
 static const char *TAG = "ui_home";
@@ -106,6 +107,7 @@ typedef struct {
     uint8_t item_cache[UI_DASHBOARD_MAX_SLOTS];
     uint8_t slot_count;
     ui_home_slot_layout_t slot_layouts[UI_DASHBOARD_MAX_SLOTS];
+    ui_home_slot_layout_t metric_bg_layouts[UI_DASHBOARD_MAX_SLOTS];
     ui_home_metric_layout_style_t metric_styles;
     lv_obj_t *menu_vehicle_label;
     lv_obj_t *menu_ble_label;
@@ -169,6 +171,7 @@ static uint8_t ui_home_collect_visible_items(const ui_dashboard_page_cfg_t *page
                                              disp_item_t items[UI_DASHBOARD_MAX_SLOTS]);
 static void ui_home_build_gauge_layout(lv_obj_t *parent,
                                        uint8_t slot_count,
+                                       bool apply_row_nudges,
                                        ui_home_slot_layout_t layouts[UI_DASHBOARD_MAX_SLOTS]);
 static void ui_home_build_dense_metric_styles(uint8_t slot_count,
                                               const ui_home_slot_layout_t layouts[UI_DASHBOARD_MAX_SLOTS],
@@ -492,7 +495,7 @@ static void ui_home_page_switch_perf_finish(lv_timer_t *timer)
         return;
     }
 
-    if (app_lvgl_perf_trace_end(&stats)) {
+    if (app_lvgl_perf_trace_end(&stats) && UI_HOME_PAGE_SWITCH_PERF_LOG) {
         ESP_LOGI("ui_home_perf",
                  "nav %" PRIu8 "->%" PRIu8 " total=%" PRIu32 "ms commit=%" PRIi64
                  "ms mount=%" PRIi64 "ms refresh=%" PRIi64 "ms settle=%" PRIu32
@@ -933,6 +936,7 @@ static void ui_home_create_menu_content(uint8_t tile_id, lv_obj_t *parent)
 
 static void ui_home_build_gauge_layout(lv_obj_t *parent,
                                        uint8_t slot_count,
+                                       bool apply_row_nudges,
                                        ui_home_slot_layout_t layouts[UI_DASHBOARD_MAX_SLOTS])
 {
     lv_coord_t h;
@@ -1064,24 +1068,36 @@ static void ui_home_build_gauge_layout(lv_obj_t *parent,
         lv_coord_t span_right;
         lv_coord_t span_w;
         lv_coord_t row_h = row_heights[row];
+        lv_coord_t row_y = current_y;
+
+        // 4槽微调
+        if (apply_row_nudges && slot_count == 4u && row_count == 2u) {
+            // 上排向下15px
+            // 下排向上15px
+            row_y = (lv_coord_t)(row_y + ((row == 0u) ? ui_layout_px(15) : -ui_layout_px(15)));
+        }
+
+        if (apply_row_nudges && slot_count == 3u && row_count == 2u && row == 1u) {
+            row_y = (lv_coord_t)(row_y - ui_layout_px(5));
+        }
 
         if (dense_metric_layout) {
             span_left = grid_left;
             span_right = grid_right;
         } else {
-            ui_round_shell_safe_span_for_band(current_y, row_h, content_inset, &span_left, &span_right);
+            ui_round_shell_safe_span_for_band(row_y, row_h, content_inset, &span_left, &span_right);
         }
         span_w = span_right - span_left;
 
         if (row_slot_counts[row] == 1u) {
-            layouts[slot_index++] = (ui_home_slot_layout_t){span_left, current_y, span_w, row_h};
+            layouts[slot_index++] = (ui_home_slot_layout_t){span_left, row_y, span_w, row_h};
         } else {
             lv_coord_t card_w = (lv_coord_t)((span_w - col_gap - line_thickness) / 2);
             lv_coord_t left_x = span_left;
             lv_coord_t right_x = span_right - card_w;
 
-            layouts[slot_index++] = (ui_home_slot_layout_t){left_x, current_y, card_w, row_h};
-            layouts[slot_index++] = (ui_home_slot_layout_t){right_x, current_y, card_w, row_h};
+            layouts[slot_index++] = (ui_home_slot_layout_t){left_x, row_y, card_w, row_h};
+            layouts[slot_index++] = (ui_home_slot_layout_t){right_x, row_y, card_w, row_h};
         }
 
         current_y = (lv_coord_t)(current_y + row_h + row_gap + line_thickness);
@@ -1430,7 +1446,8 @@ static void ui_home_create_gauge_content(uint8_t tile_id, lv_obj_t *parent, uint
         return;
     }
 
-    ui_home_build_gauge_layout(parent, visible_count, layouts);
+    ui_home_build_gauge_layout(parent, visible_count, true, layouts);
+    ui_home_build_gauge_layout(parent, visible_count, false, rt->metric_bg_layouts);
     ui_home_build_dense_metric_styles(visible_count, layouts, visible_items, &rt->metric_styles);
     memcpy(rt->slot_layouts, layouts, sizeof(layouts));
     rt->metric_bg_draw_obj = lv_obj_create(parent);
@@ -1903,8 +1920,8 @@ static void ui_home_metric_bg_draw_event(lv_event_t *e)
 
     for (uint8_t i = 0; i < rt->slot_count; ++i) {
         for (uint8_t j = (uint8_t)(i + 1u); j < rt->slot_count; ++j) {
-            const ui_home_slot_layout_t *a = &rt->slot_layouts[i];
-            const ui_home_slot_layout_t *b = &rt->slot_layouts[j];
+            const ui_home_slot_layout_t *a = &rt->metric_bg_layouts[i];
+            const ui_home_slot_layout_t *b = &rt->metric_bg_layouts[j];
 
             if (a->w <= 0 || a->h <= 0 || b->w <= 0 || b->h <= 0) {
                 continue;
@@ -1935,18 +1952,18 @@ static void ui_home_metric_bg_draw_event(lv_event_t *e)
         lv_point_t p1;
         lv_point_t p2;
 
-        if (rt->slot_layouts[row_end].w <= 0 || rt->slot_layouts[row_end].h <= 0) {
+        if (rt->metric_bg_layouts[row_end].w <= 0 || rt->metric_bg_layouts[row_end].h <= 0) {
             continue;
         }
 
-        current_bottom = rt->slot_layouts[row_end].y + rt->slot_layouts[row_end].h;
+        current_bottom = rt->metric_bg_layouts[row_end].y + rt->metric_bg_layouts[row_end].h;
         for (uint8_t i = 0; i < rt->slot_count; ++i) {
-            if (rt->slot_layouts[i].w <= 0 || rt->slot_layouts[i].h <= 0) {
+            if (rt->metric_bg_layouts[i].w <= 0 || rt->metric_bg_layouts[i].h <= 0) {
                 continue;
             }
-            if (rt->slot_layouts[i].y > rt->slot_layouts[row_end].y) {
-                if (!has_lower || rt->slot_layouts[i].y < next_y) {
-                    next_y = rt->slot_layouts[i].y;
+            if (rt->metric_bg_layouts[i].y > rt->metric_bg_layouts[row_end].y) {
+                if (!has_lower || rt->metric_bg_layouts[i].y < next_y) {
+                    next_y = rt->metric_bg_layouts[i].y;
                     has_lower = true;
                 }
             }
@@ -1968,7 +1985,7 @@ static void ui_home_metric_bg_draw_event(lv_event_t *e)
         lv_draw_line(draw_ctx, &line_dsc, &p1, &p2);
 
         while ((uint8_t)(row_end + 1u) < rt->slot_count &&
-               rt->slot_layouts[row_end + 1u].y == rt->slot_layouts[row_end].y) {
+               rt->metric_bg_layouts[row_end + 1u].y == rt->metric_bg_layouts[row_end].y) {
             ++row_end;
         }
     }

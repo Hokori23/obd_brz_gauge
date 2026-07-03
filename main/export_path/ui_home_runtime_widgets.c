@@ -301,7 +301,7 @@ static int16_t ui_home_widgets_slot_name_font(uint8_t slot_count)
 static int16_t ui_home_widgets_slot_unit_font(uint8_t slot_count)
 {
     if (slot_count == 3u) {
-        return 16;
+        return 17;
     }
     if (slot_count == 4u) {
         return 14;
@@ -313,10 +313,10 @@ static int16_t ui_home_widgets_slot_unit_font(uint8_t slot_count)
         return 12;
     }
     if (slot_count == 1u) {
-        return 22;
+        return 24;
     }
     if (slot_count <= 2u) {
-        return 20;
+        return 22;
     }
     return 16;
 }
@@ -354,6 +354,7 @@ static lv_coord_t ui_home_widgets_metric_block_pad_y(lv_coord_t slot_h, uint8_t 
 {
     LV_UNUSED(slot_count);
 
+    // Shared top/bottom inset for dense metric blocks. This trims edge clipping only.
     return LV_MAX(ui_layout_px(2), slot_h * 3 / 100);
 }
 
@@ -361,6 +362,7 @@ static lv_coord_t ui_home_widgets_metric_block_pad_x(uint8_t slot_count)
 {
     LV_UNUSED(slot_count);
 
+    // Shared left/right inset for dense metric blocks.
     return ui_layout_px(4);
 }
 
@@ -411,6 +413,19 @@ static lv_coord_t ui_home_widgets_metric_value_fit_padding(uint8_t slot_count)
         return ui_layout_px(5);
     }
     return ui_layout_px(4);
+}
+
+static lv_coord_t ui_home_widgets_metric_value_inset_x(uint8_t slot_count, bool allow_value_span_expand)
+{
+    // Layout-level value rect inset. Adjust this when a template needs extra side breathing room
+    // before font fitting; keep the font helper itself template-agnostic.
+    if (slot_count == 3u && allow_value_span_expand) {
+        return ui_layout_px(10);
+    }
+    if (slot_count >= 5u) {
+        return ui_layout_px(5);
+    }
+    return 0;
 }
 
 static bool ui_home_widgets_pick_value_fit(disp_item_t item,
@@ -524,6 +539,14 @@ void ui_home_runtime_widgets_build_dense_slot_style(lv_coord_t x,
     value_rect = content_rect;
     value_rect.y = content_rect.y + name_h + label_gap;
     value_rect.h = content_rect.h - name_h - unit_h - label_gap - unit_gap;
+    {
+        lv_coord_t inset_x = ui_home_widgets_metric_value_inset_x(slot_count, allow_value_span_expand);
+
+        if ((inset_x * 2) < value_rect.w) {
+            value_rect.x = (lv_coord_t)(value_rect.x + inset_x);
+            value_rect.w = (lv_coord_t)(value_rect.w - (inset_x * 2));
+        }
+    }
     if (value_rect.h < ui_layout_px(20)) {
         value_rect.h = ui_layout_px(20);
     }
@@ -535,6 +558,14 @@ void ui_home_runtime_widgets_build_dense_slot_style(lv_coord_t x,
                                         &unit_gap);
     value_rect.y = content_rect.y + name_h + label_gap;
     value_rect.h = content_rect.h - name_h - unit_h - label_gap - unit_gap;
+    {
+        lv_coord_t inset_x = ui_home_widgets_metric_value_inset_x(slot_count, allow_value_span_expand);
+
+        if ((inset_x * 2) < value_rect.w) {
+            value_rect.x = (lv_coord_t)(value_rect.x + inset_x);
+            value_rect.w = (lv_coord_t)(value_rect.w - (inset_x * 2));
+        }
+    }
     if (value_rect.h < ui_layout_px(20)) {
         value_rect.h = ui_layout_px(20);
     }
@@ -618,6 +649,7 @@ static void ui_home_runtime_widgets_create_box_slot_card(lv_obj_t *parent,
     lv_coord_t value_label_y;
     lv_coord_t value_line_h;
     lv_coord_t unit_line_h;
+    lv_coord_t axis_unit_gap_y;
     ui_home_metric_rect_t value_rect;
     lv_obj_t *panel;
     lv_obj_t *name;
@@ -659,6 +691,7 @@ static void ui_home_runtime_widgets_create_box_slot_card(lv_obj_t *parent,
     value_font = ui_home_widgets_value_font_for_rect(item, value_rect);
     value_line_h = ui_home_widgets_exact_font_line_height(value_font, ui_layout_px(40));
     unit_line_h = ui_home_widgets_font_line_height(unit_font, ui_layout_px(16));
+    axis_unit_gap_y = (slot_count == 2u) ? ui_layout_px(5) : ui_layout_px(10);
     metadata_center_x = value_band_x + (value_band_w / 2);
     metadata_w = axis_aligned_metadata ? value_width : text_width;
     metadata_x = metadata_center_x - (metadata_w / 2);
@@ -717,7 +750,9 @@ static void ui_home_runtime_widgets_create_box_slot_card(lv_obj_t *parent,
                    axis_aligned_metadata
                        ? (lv_coord_t)(metadata_x - panel_frame_x)
                        : (lv_coord_t)(x + w - unit_inset_x - text_width - panel_frame_x),
-                   (lv_coord_t)(h - unit_inset_y - unit_line_h));
+                   axis_aligned_metadata
+                       ? (lv_coord_t)(value_label_y + value_line_h + axis_unit_gap_y)
+                       : (lv_coord_t)(h - unit_inset_y - unit_line_h));
 
     *name_out = name;
     *value_out = value;
@@ -861,6 +896,8 @@ void ui_home_runtime_widgets_apply_slot_typography(lv_obj_t *name_label,
     int16_t name_font;
     int16_t unit_font;
     int16_t value_font;
+    lv_coord_t value_line_h;
+    lv_coord_t axis_unit_gap_y;
 
     if (name_label == NULL || value_label == NULL || unit_label == NULL) {
         return;
@@ -897,6 +934,8 @@ void ui_home_runtime_widgets_apply_slot_typography(lv_obj_t *name_label,
         value_rect.w = value_width;
         value_font = ui_home_widgets_value_font_for_rect(item, value_rect);
     }
+    value_line_h = ui_home_widgets_exact_font_line_height(value_font, ui_layout_px(40));
+    axis_unit_gap_y = (slot_count == 2u) ? ui_layout_px(5) : ui_layout_px(10);
 
     value_center_x = (lv_coord_t)(lv_obj_get_x(value_label) + (lv_obj_get_width(value_label) / 2));
     lv_obj_set_width(value_label, value_width);
@@ -912,6 +951,10 @@ void ui_home_runtime_widgets_apply_slot_typography(lv_obj_t *name_label,
     lv_obj_set_style_text_font(name_label, ui_font_typoder(name_font), LV_PART_MAIN);
     lv_obj_set_style_text_font(unit_label, ui_font_typoder(unit_font), LV_PART_MAIN);
     lv_obj_set_style_text_font(value_label, ui_font_typoder_exact(value_font), LV_PART_MAIN);
+    if (slot_count <= 2u) {
+        lv_obj_set_y(unit_label,
+                     (lv_coord_t)(lv_obj_get_y(value_label) + value_line_h + axis_unit_gap_y));
+    }
 }
 
 void ui_home_runtime_widgets_apply_dense_slot_style(lv_obj_t *name_label,

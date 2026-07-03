@@ -15,6 +15,17 @@ if ($homeRuntime -notmatch 'lv_obj_add_event_cb\(rt->metric_bg_draw_obj,\s*ui_ho
     throw "ui_home_runtime.c must bind the metric background draw object to the draw-main callback"
 }
 
+if ($homeRuntime -notmatch 'ui_home_build_gauge_layout\(parent,\s*visible_count,\s*true,\s*layouts\)' -or
+    $homeRuntime -notmatch 'ui_home_build_gauge_layout\(parent,\s*visible_count,\s*false,\s*rt->metric_bg_layouts\)') {
+    throw "metric pages must build separate foreground and background layouts so row nudges do not drag divider lines"
+}
+
+if ($homeRuntime -notmatch 'const ui_home_slot_layout_t \*a = &rt->metric_bg_layouts\[i\]' -or
+    $homeRuntime -notmatch 'const ui_home_slot_layout_t \*b = &rt->metric_bg_layouts\[j\]' -or
+    $homeRuntime -notmatch 'current_bottom = rt->metric_bg_layouts\[row_end\]\.y \+ rt->metric_bg_layouts\[row_end\]\.h') {
+    throw "metric background draw must consume the base background layouts instead of the nudged slot card layouts"
+}
+
 if ($homeRuntime -match 'ui_round_shell_create_divider\(parent,\s*divider_x') {
     throw "ui_home_build_gauge_layout() must no longer create per-divider objects for metric backgrounds"
 }
