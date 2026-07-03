@@ -61,6 +61,7 @@ static const char *s_settings_page_titles[UI_SETTINGS_PAGE_COUNT] = {
     "OBD",
 };
 
+/** 清空设置页里各个控件的静态引用。 */
 static void ui_settings_reset_control_refs(void)
 {
     s_roller_page = NULL;
@@ -76,6 +77,7 @@ static void ui_settings_reset_control_refs(void)
     s_label_bright_val = NULL;
 }
 
+/** 重置设置页的全局状态缓存。 */
 static void ui_settings_screen_reset_state(void)
 {
     ui_ScreenPageSettings = NULL;
@@ -92,12 +94,14 @@ static void ui_settings_screen_reset_state(void)
     s_settings_pending_reboot_value = 0u;
 }
 
+/** 在设置页销毁时清理静态状态。 */
 static void ui_settings_screen_deleted(lv_event_t *e)
 {
     LV_UNUSED(e);
     ui_settings_screen_reset_state();
 }
 
+/** 给设置页滚轮应用统一主题。 */
 static void ui_settings_apply_roller_theme(lv_obj_t *roller, uint16_t radius)
 {
     if (roller == NULL) {
@@ -108,17 +112,20 @@ static void ui_settings_apply_roller_theme(lv_obj_t *roller, uint16_t radius)
 }
 
 #if CONFIG_OBD_BOARD_WS_175_AMOLED
+/** 返回显示旋转滚轮的选项文本。 */
 static const char *ui_settings_rotation_options(void)
 {
     return "NORMAL\nROTATE 180";
 }
 
+/** 把旋转滚轮索引转换成配置里的旋转模式。 */
 static uint8_t ui_settings_rotation_mode_from_roller_index(uint16_t selected_index)
 {
     return (selected_index == 0u) ? NVS_DISPLAY_ROTATION_MODE_NORMAL
                                   : NVS_DISPLAY_ROTATION_MODE_180;
 }
 
+/** 把旋转模式转换成滚轮索引。 */
 static uint16_t ui_settings_rotation_roller_index_from_mode(uint8_t mode)
 {
     const nvs_user_cfg_t *cfg = nvs_cfg_get();
@@ -136,6 +143,7 @@ static uint16_t ui_settings_rotation_roller_index_from_mode(uint8_t mode)
 }
 #endif
 
+/** 根据当前页面更新设置页标题。 */
 static void ui_settings_set_header(ui_settings_page_t page)
 {
     if (page >= UI_SETTINGS_PAGE_COUNT) {
@@ -147,6 +155,7 @@ static void ui_settings_set_header(ui_settings_page_t page)
     }
 }
 
+/** 刷新底部分页指示点的状态。 */
 static void ui_settings_update_page_dots(void)
 {
     for (uint8_t i = 0; i < UI_SETTINGS_PAGE_COUNT; ++i) {
@@ -166,6 +175,7 @@ static void ui_settings_update_page_dots(void)
     }
 }
 
+/** 关闭设置页并返回首页。 */
 static void ui_settings_close_to_home(void)
 {
     if (s_settings_requires_home_rebuild) {
@@ -175,6 +185,11 @@ static void ui_settings_close_to_home(void)
     }
 }
 
+/**
+ * 处理需要重启才能生效的确认弹窗
+ *
+ * 用户确认时写入配置并重启，取消时回滚滚轮显示。
+ */
 static void ui_settings_reboot_confirm_event(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
@@ -224,6 +239,7 @@ static void ui_settings_reboot_confirm_event(lv_event_t *e)
     lv_obj_del(msgbox);
 }
 
+/** 弹出需要重启才能应用的确认框。 */
 static void ui_settings_show_reboot_confirm(ui_settings_reboot_target_t target,
                                             uint8_t pending_value,
                                             const char *title,
@@ -249,6 +265,7 @@ static void ui_settings_show_reboot_confirm(ui_settings_reboot_target_t target,
     lv_obj_add_event_cb(s_settings_reboot_msgbox, ui_settings_reboot_confirm_event, LV_EVENT_DELETE, NULL);
 }
 
+/** 处理默认启动页滚轮变化。 */
 static void on_page_roller_change(lv_event_t *e)
 {
     LV_UNUSED(e);
@@ -257,6 +274,7 @@ static void on_page_roller_change(lv_event_t *e)
     nvs_cfg_set(&cfg);
 }
 
+/** 处理亮度滑块变化。 */
 static void on_bright_slider_change(lv_event_t *e)
 {
     int32_t val = lv_slider_get_value(s_slider_bright);
@@ -275,11 +293,13 @@ static void on_bright_slider_change(lv_event_t *e)
 }
 
 #if CONFIG_OBD_BOARD_WS_175_AMOLED
+/** 预留旋转滚轮值变化回调，保持事件链完整。 */
 static void on_rotation_roller_change(lv_event_t *e)
 {
     LV_UNUSED(e);
 }
 
+/** 在旋转滚轮释放后判断是否需要弹出重启确认。 */
 static void on_rotation_roller_released(lv_event_t *e)
 {
     LV_UNUSED(e);
@@ -304,6 +324,7 @@ static void on_rotation_roller_released(lv_event_t *e)
 }
 #endif
 
+/** 处理车型滚轮变化。 */
 static void on_vehicle_roller_change(lv_event_t *e)
 {
     uint8_t selected = (uint8_t)lv_roller_get_selected(s_roller_vehicle);
@@ -316,6 +337,7 @@ static void on_vehicle_roller_change(lv_event_t *e)
     s_settings_requires_home_rebuild = true;
 }
 
+/** 在协议滚轮释放后判断是否需要弹出重启确认。 */
 static void on_protocol_roller_released(lv_event_t *e)
 {
     LV_UNUSED(e);
@@ -334,6 +356,7 @@ static void on_protocol_roller_released(lv_event_t *e)
                                     "Protocol change requires reboot.");
 }
 
+/** 处理设置页里的上滑返回手势。 */
 static void ui_settings_gesture_event(lv_event_t *e)
 {
     lv_dir_t dir;
@@ -351,6 +374,7 @@ static void ui_settings_gesture_event(lv_event_t *e)
     ui_settings_close_to_home();
 }
 
+/** 处理横向 tileview 切页后的标题和页点同步。 */
 static void ui_settings_tileview_value_changed(lv_event_t *e)
 {
     if (lv_event_get_target(e) != s_settings_tileview) {
@@ -368,6 +392,7 @@ static void ui_settings_tileview_value_changed(lv_event_t *e)
     }
 }
 
+/** 处理底部分页点点击跳转。 */
 static void ui_settings_page_dot_click(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED || s_settings_tileview == NULL) {
@@ -382,6 +407,7 @@ static void ui_settings_page_dot_click(lv_event_t *e)
     lv_obj_set_tile_id(s_settings_tileview, (uint8_t)page, 0, LV_ANIM_ON);
 }
 
+/** 给设置面板应用统一卡片样式。 */
 static void ui_settings_style_panel(lv_obj_t *panel, lv_coord_t radius)
 {
     lv_obj_set_style_radius(panel, radius, LV_PART_MAIN);
@@ -393,6 +419,7 @@ static void ui_settings_style_panel(lv_obj_t *panel, lv_coord_t radius)
     lv_obj_set_style_pad_all(panel, ui_layout_px(10), LV_PART_MAIN);
 }
 
+/** 为每个设置子页创建根容器。 */
 static lv_obj_t *ui_settings_create_page_root(lv_obj_t *tile)
 {
     lv_obj_t *root = lv_obj_create(tile);
@@ -410,6 +437,7 @@ static lv_obj_t *ui_settings_create_page_root(lv_obj_t *tile)
     return root;
 }
 
+/** 创建一块统一样式的设置内容面板。 */
 static lv_obj_t *ui_settings_create_content_panel(lv_obj_t *parent,
                                                   lv_coord_t width,
                                                   lv_coord_t min_height,
@@ -429,6 +457,7 @@ static lv_obj_t *ui_settings_create_content_panel(lv_obj_t *parent,
     return panel;
 }
 
+/** 给面板添加标题和可选副标题。 */
 static void ui_settings_add_panel_title(lv_obj_t *panel, const char *title, const char *subtitle)
 {
     lv_obj_t *title_label = lv_label_create(panel);
@@ -450,6 +479,7 @@ static void ui_settings_add_panel_title(lv_obj_t *panel, const char *title, cons
     }
 }
 
+/** 创建一行左右布局的设置项。 */
 static lv_obj_t *ui_settings_create_inline_row(lv_obj_t *parent,
                                                const char *label_text,
                                                lv_coord_t label_width,
@@ -478,6 +508,7 @@ static lv_obj_t *ui_settings_create_inline_row(lv_obj_t *parent,
     return row;
 }
 
+/** 在设置行里创建统一样式的滚轮控件。 */
 static lv_obj_t *ui_settings_create_inline_roller(lv_obj_t *row,
                                                   lv_coord_t width,
                                                   const char *options,
@@ -499,6 +530,7 @@ static lv_obj_t *ui_settings_create_inline_roller(lv_obj_t *row,
     return roller;
 }
 
+/** 处理 OBD 轮询模式滚轮变化。 */
 static void on_obd_poll_roller_change(lv_event_t *e)
 {
     LV_UNUSED(e);
@@ -507,6 +539,7 @@ static void on_obd_poll_roller_change(lv_event_t *e)
     nvs_cfg_set(&cfg);
 }
 
+/** 处理 RaceChrono 开关滚轮变化。 */
 static void on_racechrono_roller_change(lv_event_t *e)
 {
     LV_UNUSED(e);
@@ -515,6 +548,7 @@ static void on_racechrono_roller_change(lv_event_t *e)
     nvs_cfg_set(&cfg);
 }
 
+/** 处理油压模式滚轮变化。 */
 static void on_oil_pressure_roller_change(lv_event_t *e)
 {
     LV_UNUSED(e);
@@ -524,6 +558,7 @@ static void on_oil_pressure_roller_change(lv_event_t *e)
     aux_sensor_demand_refresh();
 }
 
+/** 构建显示设置页。 */
 static void ui_settings_build_display_page(lv_obj_t *tile, lv_coord_t content_w)
 {
     const nvs_user_cfg_t *cfg = nvs_cfg_get();
@@ -568,6 +603,7 @@ static void ui_settings_build_display_page(lv_obj_t *tile, lv_coord_t content_w)
 #endif
 }
 
+/** 构建仪表配置相关设置页。 */
 static void ui_settings_build_dashboard_page(lv_obj_t *tile, lv_coord_t content_w)
 {
     const nvs_user_cfg_t *cfg = nvs_cfg_get();
@@ -627,6 +663,7 @@ static void ui_settings_build_dashboard_page(lv_obj_t *tile, lv_coord_t content_
                                                              LV_EVENT_VALUE_CHANGED);
 }
 
+/** 构建车型设置页。 */
 static void ui_settings_build_vehicle_page(lv_obj_t *tile, lv_coord_t content_w)
 {
     const nvs_user_cfg_t *cfg = nvs_cfg_get();
@@ -656,6 +693,7 @@ static void ui_settings_build_vehicle_page(lv_obj_t *tile, lv_coord_t content_w)
                                                         LV_EVENT_VALUE_CHANGED);
 }
 
+/** 构建 OBD 协议设置页。 */
 static void ui_settings_build_obd_page(lv_obj_t *tile, lv_coord_t content_w)
 {
     const nvs_user_cfg_t *cfg = nvs_cfg_get();
@@ -673,6 +711,7 @@ static void ui_settings_build_obd_page(lv_obj_t *tile, lv_coord_t content_w)
     lv_obj_add_event_cb(s_roller_protocol, on_protocol_roller_released, LV_EVENT_RELEASED, NULL);
 }
 
+/** 按顺序重建所有设置子页内容。 */
 static void ui_settings_build_pages(lv_coord_t content_w)
 {
     ui_settings_reset_control_refs();
@@ -702,6 +741,11 @@ static void ui_settings_build_pages(lv_coord_t content_w)
     }
 }
 
+/**
+ * 准备设置页的 tileview 容器
+ *
+ * 先根据圆屏安全区域计算内容宽度，再创建可横向切换的页面容器。
+ */
 static void ui_settings_prepare_tileview(lv_coord_t *content_width_out)
 {
     lv_coord_t safe_margin = ui_safe_margin();
@@ -773,6 +817,11 @@ static void ui_settings_prepare_tileview(lv_coord_t *content_width_out)
     }
 }
 
+/**
+ * 初始化设置页主界面
+ *
+ * 创建标题、分页点和 tileview，并装配各个设置子页。
+ */
 void ui_ScreenPageSettings_screen_init(void)
 {
     ui_settings_layout_t layout;

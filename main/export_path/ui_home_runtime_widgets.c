@@ -4,6 +4,7 @@
 #include "ui_layout.h"
 #include "ui_round_shell.h"
 
+/** 返回某个仪表项用于估算字号的样本文本。 */
 static const char *ui_home_widgets_value_sample_text(disp_item_t item)
 {
     switch (item) {
@@ -30,6 +31,7 @@ static const char *ui_home_widgets_value_sample_text(disp_item_t item)
     }
 }
 
+/** 根据槽位高度和数量推算数值文本可占用的高度上限。 */
 static lv_coord_t ui_home_widgets_value_height_limit(lv_coord_t slot_h, uint8_t slot_count)
 {
     if (slot_h < ui_layout_px(48)) {
@@ -48,6 +50,7 @@ static lv_coord_t ui_home_widgets_value_height_limit(lv_coord_t slot_h, uint8_t 
     return slot_h * 52 / 100;
 }
 
+/** 判断某个字体在给定宽高约束内能否放下样本文本。 */
 static bool ui_home_widgets_font_fits_text(const lv_font_t *font,
                                            const char *sample_text,
                                            lv_coord_t max_width,
@@ -69,6 +72,7 @@ static bool ui_home_widgets_font_fits_text(const lv_font_t *font,
     return (size.x <= max_width) && (size.y <= max_height);
 }
 
+/** 计算圆屏裁切下某个面板左侧需要额外避开的安全边距。 */
 static lv_coord_t ui_home_widgets_circular_safe_left(lv_coord_t panel_x, lv_coord_t panel_y)
 {
     lv_coord_t circle_left = ui_round_shell_circle_left_at_y(panel_y);
@@ -80,6 +84,7 @@ static lv_coord_t ui_home_widgets_circular_safe_left(lv_coord_t panel_x, lv_coor
     return 0;
 }
 
+/** 计算圆屏裁切下某个面板右侧需要额外避开的安全边距。 */
 static lv_coord_t ui_home_widgets_circular_safe_right(lv_coord_t panel_right, lv_coord_t panel_y)
 {
     lv_coord_t circle_right = ui_round_shell_circle_right_at_y(panel_y);
@@ -91,6 +96,11 @@ static lv_coord_t ui_home_widgets_circular_safe_right(lv_coord_t panel_right, lv
     return 0;
 }
 
+/**
+ * 计算数值文本可安全使用的宽度
+ *
+ * 核心职责：结合圆屏边缘和槽位数量，为中间大数字预留不被裁切的宽度
+ */
 static lv_coord_t ui_home_widgets_value_safe_width(lv_coord_t panel_x,
                                                    lv_coord_t panel_y,
                                                    lv_coord_t panel_w,
@@ -116,6 +126,11 @@ static lv_coord_t ui_home_widgets_value_safe_width(lv_coord_t panel_x,
     return LV_MAX(panel_w - (edge_pad * 2), ui_layout_px(56));
 }
 
+/**
+ * 计算数值标签宿主容器的横向边界
+ *
+ * 核心职责：让数值标签尽量待在圆屏安全带里，并避开中轴附近的拥挤区域
+ */
 static void ui_home_widgets_value_host_bounds(lv_coord_t panel_x,
                                               lv_coord_t panel_y,
                                               lv_coord_t panel_w,
@@ -175,6 +190,7 @@ static void ui_home_widgets_value_host_bounds(lv_coord_t panel_x,
     }
 }
 
+/** 根据槽位数量返回标题标签建议字号。 */
 static int16_t ui_home_widgets_slot_name_font(uint8_t slot_count)
 {
     if (slot_count == 1u) {
@@ -189,6 +205,7 @@ static int16_t ui_home_widgets_slot_name_font(uint8_t slot_count)
     return 16;
 }
 
+/** 根据槽位数量返回单位标签建议字号。 */
 static int16_t ui_home_widgets_slot_unit_font(uint8_t slot_count)
 {
     if (slot_count == 1u) {
@@ -200,6 +217,11 @@ static int16_t ui_home_widgets_slot_unit_font(uint8_t slot_count)
     return 16;
 }
 
+/**
+ * 为数值标签选择最合适的字号
+ *
+ * 核心职责：从候选字号里挑出既够大又不会超出槽位可视区域的结果
+ */
 static int16_t ui_home_widgets_slot_value_font(lv_coord_t text_width,
                                                lv_coord_t slot_h,
                                                disp_item_t item,
@@ -238,6 +260,7 @@ static int16_t ui_home_widgets_slot_value_font(lv_coord_t text_width,
     return 16;
 }
 
+/** 创建首页菜单区域使用的中心卡片。 */
 lv_obj_t *ui_home_runtime_widgets_create_menu_card(lv_obj_t *parent,
                                                    lv_coord_t width,
                                                    lv_coord_t min_height,
@@ -252,6 +275,7 @@ lv_obj_t *ui_home_runtime_widgets_create_menu_card(lv_obj_t *parent,
                                              lv_color_hex(0x2F2F2F));
 }
 
+/** 给“新增页面”按钮应用统一视觉主题。 */
 void ui_home_runtime_widgets_apply_add_button_theme(lv_obj_t *btn, lv_coord_t size)
 {
     if (btn == NULL) {
@@ -266,6 +290,11 @@ void ui_home_runtime_widgets_apply_add_button_theme(lv_obj_t *btn, lv_coord_t si
     lv_obj_set_style_shadow_width(btn, 0, LV_PART_MAIN);
 }
 
+/**
+ * 按槽位空间为名称、数值、单位应用合适排版
+ *
+ * 核心职责：重新计算宽度和字号，让不同页型下的指标卡都能稳定显示
+ */
 void ui_home_runtime_widgets_apply_slot_typography(lv_obj_t *name_label,
                                                    lv_obj_t *value_label,
                                                    lv_obj_t *unit_label,
@@ -311,6 +340,11 @@ void ui_home_runtime_widgets_apply_slot_typography(lv_obj_t *name_label,
     lv_obj_set_style_text_font(value_label, ui_font_typoder(value_font), LV_PART_MAIN);
 }
 
+/**
+ * 创建一个仪表槽位卡片
+ *
+ * 核心职责：搭建名称、数值、单位三段式结构，并按圆屏空间完成初始布局
+ */
 void ui_home_runtime_widgets_create_slot_card(lv_obj_t *parent,
                                               lv_coord_t x,
                                               lv_coord_t y,

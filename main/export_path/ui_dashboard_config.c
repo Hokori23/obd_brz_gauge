@@ -39,6 +39,7 @@ static uint8_t s_dashboard_cfg_supported_item_count = 0;
 static uint8_t s_dashboard_cfg_active_slot_index = 0;
 static bool s_dashboard_cfg_refreshing = false;
 
+/** 重建当前车型可用的仪表项列表。 */
 static void ui_dashboard_config_rebuild_supported_items(void)
 {
     uint8_t vehicle_profile_idx = nvs_cfg_get()->vehicle_profile_idx;
@@ -57,6 +58,7 @@ static void ui_dashboard_config_rebuild_supported_items(void)
     }
 }
 
+/** 返回可用仪表项里的默认兜底项。 */
 static uint8_t ui_dashboard_config_default_supported_item(void)
 {
     for (uint8_t i = 0; i < s_dashboard_cfg_supported_item_count; ++i) {
@@ -68,6 +70,7 @@ static uint8_t ui_dashboard_config_default_supported_item(void)
     return s_dashboard_cfg_supported_items[0];
 }
 
+/** 把仪表项映射成当前滚轮里的选中索引。 */
 static uint16_t ui_dashboard_config_selected_index_for_item(uint8_t item)
 {
     for (uint16_t i = 0; i < s_dashboard_cfg_supported_item_count; ++i) {
@@ -79,6 +82,7 @@ static uint16_t ui_dashboard_config_selected_index_for_item(uint8_t item)
     return 0;
 }
 
+/** 统一处理仪表页配置界面的页面切换动画。 */
 static void ui_dashboard_config_screen_change_with_anim(lv_obj_t **target_scr,
                                                         lv_scr_load_anim_t anim,
                                                         void (*target_init)(void))
@@ -86,6 +90,7 @@ static void ui_dashboard_config_screen_change_with_anim(lv_obj_t **target_scr,
     _ui_screen_change(target_scr, anim, 200, 0, target_init);
 }
 
+/** 计算关闭配置页后应该返回的首页页面 ID。 */
 static uint8_t ui_dashboard_config_get_return_page_id(void)
 {
     const ui_dashboard_cfg_t *dashboard = &nvs_cfg_get()->dashboard_cfg;
@@ -100,6 +105,7 @@ static uint8_t ui_dashboard_config_get_return_page_id(void)
     return UI_HOME_PAGE_MENU_ID;
 }
 
+/** 读取指定仪表页对应的配置。 */
 static const ui_dashboard_page_cfg_t *ui_dashboard_config_get_page_cfg(uint8_t gauge_index)
 {
     const ui_dashboard_cfg_t *dashboard = &nvs_cfg_get()->dashboard_cfg;
@@ -109,6 +115,7 @@ static const ui_dashboard_page_cfg_t *ui_dashboard_config_get_page_cfg(uint8_t g
     return &dashboard->pages[gauge_index];
 }
 
+/** 读取当前界面上选中的仪表页类型。 */
 static ui_dashboard_page_type_t ui_dashboard_config_selected_page_type(void)
 {
     ui_dashboard_page_type_t page_type = UI_DASHBOARD_PAGE_TYPE_METRIC;
@@ -123,6 +130,7 @@ static ui_dashboard_page_type_t ui_dashboard_config_selected_page_type(void)
     return page_type;
 }
 
+/** 生成档位页红线或最大转速滚轮的选项字符串。 */
 static void ui_dashboard_config_build_gear_rpm_options(char *buf,
                                                        size_t buf_len,
                                                        uint16_t start_rpm)
@@ -142,6 +150,7 @@ static void ui_dashboard_config_build_gear_rpm_options(char *buf,
     }
 }
 
+/** 同步切换按钮的选中状态。 */
 static void ui_dashboard_config_set_toggle_checked(lv_obj_t *btn, bool checked)
 {
     if (btn == NULL) {
@@ -155,12 +164,14 @@ static void ui_dashboard_config_set_toggle_checked(lv_obj_t *btn, bool checked)
     }
 }
 
+/** 按当前开关值同步档位页 RPM ring 的双按钮状态。 */
 static void ui_dashboard_config_sync_gear_toggle(bool enabled)
 {
     ui_dashboard_config_set_toggle_checked(s_dashboard_cfg_rpm_toggle_off_btn, !enabled);
     ui_dashboard_config_set_toggle_checked(s_dashboard_cfg_rpm_toggle_on_btn, enabled);
 }
 
+/** 读取当前界面上选中的档位分段转速步进。 */
 static uint16_t ui_dashboard_config_selected_gear_gap_rpm(void)
 {
     static const uint16_t s_gap_options[] = {100u, 200u, 500u, 800u, 1000u, 2000u};
@@ -176,6 +187,11 @@ static uint16_t ui_dashboard_config_selected_gear_gap_rpm(void)
     return s_gap_options[idx];
 }
 
+/**
+ * 刷新配置页的行布局和当前值
+ *
+ * 根据页面类型切换不同控件的显隐、文案和滚轮选项。
+ */
 static void ui_dashboard_config_refresh_rows(void)
 {
     char slot_options[32] = {0};
@@ -362,6 +378,7 @@ static void ui_dashboard_config_refresh_rows(void)
     s_dashboard_cfg_refreshing = false;
 }
 
+/** 处理页面类型滚轮变化。 */
 static void ui_dashboard_config_type_changed(lv_event_t *e)
 {
     nvs_user_cfg_t cfg;
@@ -383,6 +400,7 @@ static void ui_dashboard_config_type_changed(lv_event_t *e)
     aux_sensor_demand_refresh();
 }
 
+/** 处理槽位数量或档位页红线滚轮变化。 */
 static void ui_dashboard_config_slot_count_changed(lv_event_t *e)
 {
     nvs_user_cfg_t cfg;
@@ -428,6 +446,7 @@ static void ui_dashboard_config_slot_count_changed(lv_event_t *e)
     aux_sensor_demand_refresh();
 }
 
+/** 处理编辑槽位索引或档位页最大转速滚轮变化。 */
 static void ui_dashboard_config_slot_edit_changed(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) {
@@ -461,6 +480,7 @@ static void ui_dashboard_config_slot_edit_changed(lv_event_t *e)
     ui_dashboard_config_refresh_rows();
 }
 
+/** 处理某个槽位的仪表项选择变化。 */
 static void ui_dashboard_config_slot_item_changed(lv_event_t *e)
 {
     nvs_user_cfg_t cfg;
@@ -487,6 +507,7 @@ static void ui_dashboard_config_slot_item_changed(lv_event_t *e)
     aux_sensor_demand_refresh();
 }
 
+/** 处理档位页分段转速步进变化。 */
 static void ui_dashboard_config_gear_gap_changed(lv_event_t *e)
 {
     nvs_user_cfg_t cfg;
@@ -506,6 +527,7 @@ static void ui_dashboard_config_gear_gap_changed(lv_event_t *e)
     ui_dashboard_config_refresh_rows();
 }
 
+/** 处理档位页 RPM ring 开关点击。 */
 static void ui_dashboard_config_rpm_toggle_clicked(lv_event_t *e)
 {
     nvs_user_cfg_t cfg;
@@ -529,11 +551,13 @@ static void ui_dashboard_config_rpm_toggle_clicked(lv_event_t *e)
     aux_sensor_demand_refresh();
 }
 
+/** 关闭配置页并回到对应首页页面。 */
 static void ui_dashboard_config_close_to_home(lv_scr_load_anim_t anim)
 {
     ui_home_runtime_rebuild_and_load(ui_dashboard_config_get_return_page_id(), anim);
 }
 
+/** 处理错误兜底页面里的返回按钮。 */
 static void ui_dashboard_config_error_back(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
@@ -543,6 +567,7 @@ static void ui_dashboard_config_error_back(lv_event_t *e)
     ui_dashboard_config_close_to_home(LV_SCR_LOAD_ANIM_NONE);
 }
 
+/** 创建一行统一样式的配置容器。 */
 static lv_obj_t *ui_dashboard_config_create_row(lv_obj_t *parent, lv_coord_t height)
 {
     lv_obj_t *row = lv_obj_create(parent);
@@ -561,6 +586,7 @@ static lv_obj_t *ui_dashboard_config_create_row(lv_obj_t *parent, lv_coord_t hei
     return row;
 }
 
+/** 处理配置页里的手势返回。 */
 static void ui_dashboard_config_gesture_event(lv_event_t *e)
 {
     lv_dir_t dir;
@@ -578,12 +604,14 @@ static void ui_dashboard_config_gesture_event(lv_event_t *e)
     ui_dashboard_config_close_to_home(LV_SCR_LOAD_ANIM_NONE);
 }
 
+/** 在配置页销毁时清理全局引用。 */
 static void ui_dashboard_config_deleted(lv_event_t *e)
 {
     LV_UNUSED(e);
     ui_dashboard_config_reset();
 }
 
+/** 为配置页滚轮应用统一主题样式。 */
 static void ui_dashboard_config_apply_roller_style(lv_obj_t *roller,
                                                    lv_coord_t radius,
                                                    lv_coord_t min_height,
@@ -592,6 +620,11 @@ static void ui_dashboard_config_apply_roller_style(lv_obj_t *roller,
     ui_round_shell_apply_dark_roller_preset(roller, radius, min_height, font_size);
 }
 
+/**
+ * 初始化仪表页配置界面
+ *
+ * 创建完整的配置页面，并按当前仪表页类型装配对应控件。
+ */
 static void ui_dashboard_config_screen_init(void)
 {
     const char *type_options = "METRIC\nGEAR\nG-OBD\nG-ESP32";
@@ -893,6 +926,7 @@ static void ui_dashboard_config_screen_init(void)
     aux_sensor_demand_refresh();
 }
 
+/** 打开指定仪表页的配置界面。 */
 void ui_dashboard_config_open(uint8_t gauge_index)
 {
     s_dashboard_config_gauge_index = gauge_index;
@@ -901,6 +935,7 @@ void ui_dashboard_config_open(uint8_t gauge_index)
                                                 ui_dashboard_config_screen_init);
 }
 
+/** 重置仪表页配置界面的静态状态缓存。 */
 void ui_dashboard_config_reset(void)
 {
     s_dashboard_config_screen = NULL;

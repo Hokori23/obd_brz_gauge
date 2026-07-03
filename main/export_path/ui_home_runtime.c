@@ -210,6 +210,7 @@ static float ui_home_clampf(float value, float min_value, float max_value);
 static void ui_home_gforce_update_plot(ui_home_tile_runtime_t *rt, float lat_g, float lon_g);
 static void ui_home_make_passive_obj(lv_obj_t *obj);
 
+/** 统一处理首页相关页面的切换动画。 */
 static void ui_home_screen_change_with_anim(lv_obj_t **target_scr,
                                             lv_scr_load_anim_t anim,
                                             void (*target_init)(void))
@@ -217,11 +218,13 @@ static void ui_home_screen_change_with_anim(lv_obj_t **target_scr,
     _ui_screen_change(target_scr, anim, UI_NAV_ANIM_MS, 0, target_init);
 }
 
+/** 从首页沿纵向导航到其他整页界面。 */
 static void ui_home_nav_vertical(lv_scr_load_anim_t anim, lv_obj_t **target_scr, void (*target_init)(void))
 {
     ui_home_screen_change_with_anim(target_scr, anim, target_init);
 }
 
+/** 把配置里的默认页索引转换成首页运行时页面 ID。 */
 static uint8_t ui_home_page_from_default_page(uint8_t default_page)
 {
     uint8_t page_count = nvs_cfg_get()->dashboard_cfg.gauge_page_count;
@@ -237,6 +240,7 @@ static uint8_t ui_home_page_from_default_page(uint8_t default_page)
     return default_page;
 }
 
+/** 为新建仪表页填充默认配置。 */
 static void ui_dashboard_page_set_defaults(ui_dashboard_page_cfg_t *page, uint8_t slot_count)
 {
     if (page == NULL) {
@@ -256,6 +260,7 @@ static void ui_dashboard_page_set_defaults(ui_dashboard_page_cfg_t *page, uint8_
     ui_dashboard_page_set_gear_rpm_ring_enabled(page, true);
 }
 
+/** 读取指定仪表页的配置。 */
 static const ui_dashboard_page_cfg_t *ui_home_get_gauge_cfg(uint8_t gauge_index)
 {
     const ui_dashboard_cfg_t *dashboard = &nvs_cfg_get()->dashboard_cfg;
@@ -265,6 +270,7 @@ static const ui_dashboard_page_cfg_t *ui_home_get_gauge_cfg(uint8_t gauge_index)
     return &dashboard->pages[gauge_index];
 }
 
+/** 返回指定仪表页当前采用的页面类型。 */
 static ui_dashboard_page_type_t ui_home_page_type_for_gauge(uint8_t gauge_index)
 {
     const ui_dashboard_page_cfg_t *page = ui_home_get_gauge_cfg(gauge_index);
@@ -272,6 +278,11 @@ static ui_dashboard_page_type_t ui_home_page_type_for_gauge(uint8_t gauge_index)
     return ui_dashboard_page_get_type(page);
 }
 
+/**
+ * 读取某个仪表项的当前值
+ *
+ * 同时在这里统一处理无效值过滤，避免界面层到处重复判空。
+ */
 static bool ui_home_read_disp_item_value(disp_item_t item, int32_t *out)
 {
     if (out == NULL) {
@@ -362,6 +373,7 @@ static bool ui_home_read_disp_item_value(disp_item_t item, int32_t *out)
     }
 }
 
+/** 按当前配置重建首页分页描述表。 */
 static void ui_home_rebuild_tile_descriptors(void)
 {
     const ui_dashboard_cfg_t *dashboard = &nvs_cfg_get()->dashboard_cfg;
@@ -379,6 +391,7 @@ static void ui_home_rebuild_tile_descriptors(void)
     s_home_tile_descs[s_home_tile_count - 1u].gauge_index = -1;
 }
 
+/** 取消当前页面切换性能采样。 */
 static void ui_home_page_switch_perf_cancel(void)
 {
     if (s_home_nav_perf.settle_timer != NULL) {
@@ -389,6 +402,7 @@ static void ui_home_page_switch_perf_cancel(void)
     app_lvgl_perf_trace_cancel();
 }
 
+/** 从拖拽开始时启动一次页面切换性能采样。 */
 static void ui_home_page_switch_perf_begin(uint8_t from_page)
 {
     ui_home_page_switch_perf_cancel();
@@ -400,6 +414,7 @@ static void ui_home_page_switch_perf_begin(uint8_t from_page)
     app_lvgl_perf_trace_begin("home_swipe", from_page, from_page);
 }
 
+/** 为性能采样安排一次延迟收尾。 */
 static void ui_home_page_switch_perf_schedule_finish(uint32_t delay_ms)
 {
     if (delay_ms == 0u) {
@@ -420,6 +435,7 @@ static void ui_home_page_switch_perf_schedule_finish(uint32_t delay_ms)
     lv_timer_set_repeat_count(s_home_nav_perf.settle_timer, 1);
 }
 
+/** 在目标页确定后提交页面切换性能采样。 */
 static void ui_home_page_switch_perf_commit(uint8_t to_page)
 {
     uint32_t refresh_period_ms;
@@ -442,6 +458,7 @@ static void ui_home_page_switch_perf_commit(uint8_t to_page)
     ui_home_page_switch_perf_schedule_finish(s_home_nav_perf.settle_ms);
 }
 
+/** 结束一次页面切换性能采样并输出统计日志。 */
 static void ui_home_page_switch_perf_finish(lv_timer_t *timer)
 {
     app_lvgl_perf_trace_stats_t stats = {0};
@@ -490,6 +507,7 @@ static void ui_home_page_switch_perf_finish(lv_timer_t *timer)
     memset(&s_home_nav_perf, 0, sizeof(s_home_nav_perf));
 }
 
+/** 重置某个首页 tile 的运行时缓存。 */
 static void ui_home_reset_runtime(uint8_t tile_id)
 {
     if (tile_id >= UI_HOME_MAX_TILE_COUNT) {
@@ -502,6 +520,7 @@ static void ui_home_reset_runtime(uint8_t tile_id)
     }
 }
 
+/** 清理某个 tile 的视觉状态缓存。 */
 static void ui_home_reset_tile_effect_cache(uint8_t page_id)
 {
     if (page_id >= UI_HOME_MAX_TILE_COUNT) {
@@ -513,6 +532,7 @@ static void ui_home_reset_tile_effect_cache(uint8_t page_id)
     }
 }
 
+/** 重置首页界面的整体运行时状态。 */
 static void ui_home_reset_screen_state(void)
 {
     ui_home_page_switch_perf_cancel();
@@ -525,6 +545,7 @@ static void ui_home_reset_screen_state(void)
     }
 }
 
+/** 把首页页面 ID 映射回仪表页索引。 */
 static int8_t ui_home_page_to_gauge_index(uint8_t page_id)
 {
     if (page_id >= s_home_tile_count || s_home_tile_descs[page_id].kind != UI_HOME_TILE_GAUGE) {
@@ -534,6 +555,11 @@ static int8_t ui_home_page_to_gauge_index(uint8_t page_id)
     return s_home_tile_descs[page_id].gauge_index;
 }
 
+/**
+ * 切换当前激活的首页页面
+ *
+ * 同步完成挂载、刷新频率和传感器需求的切换。
+ */
 static void ui_home_set_active_page(uint8_t page_id, lv_anim_enable_t anim_en)
 {
     if (page_id >= s_home_tile_count) {
@@ -555,6 +581,7 @@ static void ui_home_set_active_page(uint8_t page_id, lv_anim_enable_t anim_en)
     aux_sensor_demand_refresh();
 }
 
+/** 为单个首页 tile 创建内容根容器。 */
 static lv_obj_t *ui_home_create_content_root(lv_obj_t *tile)
 {
     lv_obj_t *root = lv_obj_create(tile);
@@ -573,6 +600,7 @@ static lv_obj_t *ui_home_create_content_root(lv_obj_t *tile)
     return root;
 }
 
+/** 收集某个仪表页当前真正可显示的仪表项。 */
 static uint8_t ui_home_collect_visible_items(const ui_dashboard_page_cfg_t *page,
                                              disp_item_t items[UI_DASHBOARD_MAX_SLOTS])
 {
@@ -596,6 +624,7 @@ static uint8_t ui_home_collect_visible_items(const ui_dashboard_page_cfg_t *page
     return count;
 }
 
+/** 处理首页菜单里的设置入口点击。 */
 static void ui_home_menu_open_settings(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
@@ -604,6 +633,7 @@ static void ui_home_menu_open_settings(lv_event_t *e)
     ui_home_nav_vertical(LV_SCR_LOAD_ANIM_NONE, &ui_ScreenPageSettings, &ui_ScreenPageSettings_screen_init);
 }
 
+/** 处理首页菜单里的蓝牙扫描入口点击。 */
 static void ui_home_menu_open_ble_scan(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
@@ -612,6 +642,7 @@ static void ui_home_menu_open_ble_scan(lv_event_t *e)
     ui_home_nav_vertical(LV_SCR_LOAD_ANIM_NONE, &ui_ScreenPageBLEScan, &ui_ScreenPageBLEScan_screen_init);
 }
 
+/** 处理新增仪表页入口点击。 */
 static void ui_home_add_page_click(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
@@ -620,6 +651,11 @@ static void ui_home_add_page_click(lv_event_t *e)
     ui_home_add_page();
 }
 
+/**
+ * 重建首页结构并加载目标页面
+ *
+ * 用于配置变化后整页重建，确保 tile 结构和运行时缓存同步刷新。
+ */
 void ui_home_runtime_rebuild_and_load(uint8_t page_id, lv_scr_load_anim_t anim)
 {
     if (ui_ScreenPageHome != NULL) {
@@ -647,6 +683,7 @@ void ui_home_runtime_rebuild_and_load(uint8_t page_id, lv_scr_load_anim_t anim)
     ui_home_load(anim, page_id);
 }
 
+/** 新增一个默认仪表页。 */
 static void ui_home_add_page(void)
 {
     static const char *btn_texts[] = {"OK", ""};
@@ -676,6 +713,7 @@ static void ui_home_add_page(void)
                                      LV_SCR_LOAD_ANIM_NONE);
 }
 
+/** 处理首页提示弹窗的关闭事件。 */
 static void ui_home_notice_msgbox_event(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
@@ -690,12 +728,14 @@ static void ui_home_notice_msgbox_event(lv_event_t *e)
     }
 }
 
+/** 首页刷新定时器回调。 */
 static void ui_home_refresh_timer_cb(lv_timer_t *timer)
 {
     LV_UNUSED(timer);
     ui_home_runtime_refresh_visible_tiles(s_home_active_page);
 }
 
+/** 根据页面类型选择合适的刷新周期。 */
 static uint32_t ui_home_refresh_period_ms_for_page(uint8_t page_id)
 {
     if (page_id >= s_home_tile_count) {
@@ -726,6 +766,7 @@ static uint32_t ui_home_refresh_period_ms_for_page(uint8_t page_id)
     }
 }
 
+/** 把对象设置成被动展示态，避免抢占手势和点击。 */
 static void ui_home_make_passive_obj(lv_obj_t *obj)
 {
     if (obj == NULL) {
@@ -735,6 +776,7 @@ static void ui_home_make_passive_obj(lv_obj_t *obj)
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 }
 
+/** 按页面类型更新首页刷新定时器的周期。 */
 static void ui_home_refresh_timer_apply_profile(uint8_t page_id)
 {
     if (s_home_refresh_timer == NULL) {
@@ -744,6 +786,7 @@ static void ui_home_refresh_timer_apply_profile(uint8_t page_id)
     lv_timer_set_period(s_home_refresh_timer, ui_home_refresh_period_ms_for_page(page_id));
 }
 
+/** 暂停首页刷新定时器。 */
 static void ui_home_refresh_timer_suspend(void)
 {
     if (s_home_refresh_timer == NULL) {
@@ -753,6 +796,7 @@ static void ui_home_refresh_timer_suspend(void)
     lv_timer_pause(s_home_refresh_timer);
 }
 
+/** 恢复首页刷新定时器。 */
 static void ui_home_refresh_timer_resume(void)
 {
     if (s_home_refresh_timer == NULL) {
@@ -763,6 +807,7 @@ static void ui_home_refresh_timer_resume(void)
     lv_timer_reset(s_home_refresh_timer);
 }
 
+/** 把蓝牙设备名格式化成首页显示用的短文本。 */
 static void ui_home_format_ble_name(char *buf, size_t buf_size, const char *name)
 {
     if (buf == NULL || buf_size == 0u) {
@@ -781,6 +826,7 @@ static void ui_home_format_ble_name(char *buf, size_t buf_size, const char *name
     snprintf(buf, buf_size, "%.5s...", name);
 }
 
+/** 构建首页菜单页内容。 */
 static void ui_home_create_menu_content(uint8_t tile_id, lv_obj_t *parent)
 {
     ui_home_tile_runtime_t *rt = &s_home_tile_runtime[tile_id];
@@ -991,6 +1037,7 @@ static void ui_home_build_gauge_layout(lv_obj_t *parent,
     }
 }
 
+/** 构建普通仪表页内容。 */
 static void ui_home_create_gauge_content(uint8_t tile_id, lv_obj_t *parent, uint8_t gauge_index)
 {
     const ui_dashboard_page_cfg_t *page = ui_home_get_gauge_cfg(gauge_index);
@@ -1059,6 +1106,7 @@ static void ui_home_create_gauge_content(uint8_t tile_id, lv_obj_t *parent, uint
     }
 }
 
+/** 构建档位页内容。 */
 static void ui_home_create_gear_content(uint8_t tile_id, lv_obj_t *parent)
 {
     ui_home_tile_runtime_t *rt = &s_home_tile_runtime[tile_id];
@@ -1256,6 +1304,7 @@ static void ui_home_create_gforce_content(uint8_t tile_id,
     ui_home_gforce_update_plot(rt, 0.0f, 0.0f);
 }
 
+/** 对浮点数做区间钳制。 */
 static float ui_home_clampf(float value, float min_value, float max_value)
 {
     if (value < min_value) {
@@ -1267,6 +1316,7 @@ static float ui_home_clampf(float value, float min_value, float max_value)
     return value;
 }
 
+/** 更新 G-force 页面上的轨迹点和读数。 */
 static void ui_home_gforce_update_plot(ui_home_tile_runtime_t *rt, float lat_g, float lon_g)
 {
     float lat_target;
@@ -1344,6 +1394,7 @@ static void ui_home_gforce_update_plot(ui_home_tile_runtime_t *rt, float lat_g, 
                  dot_y - (dot_size / 2));
 }
 
+/** 构建“新增页面”入口页内容。 */
 static void ui_home_create_add_content(uint8_t tile_id, lv_obj_t *parent)
 {
     ui_home_tile_runtime_t *rt = &s_home_tile_runtime[tile_id];
@@ -1403,6 +1454,7 @@ static void ui_home_create_add_content(uint8_t tile_id, lv_obj_t *parent)
     rt->root = parent;
 }
 
+/** 处理仪表页长按进入编辑模式。 */
 static void ui_home_gauge_long_pressed(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_LONG_PRESSED) {
@@ -1411,6 +1463,7 @@ static void ui_home_gauge_long_pressed(lv_event_t *e)
     ui_home_enter_edit_mode((uint8_t)(uintptr_t)lv_event_get_user_data(e));
 }
 
+/** 处理编辑模式里的返回操作。 */
 static void ui_home_edit_back(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
@@ -1419,6 +1472,7 @@ static void ui_home_edit_back(lv_event_t *e)
     ui_home_exit_edit_mode();
 }
 
+/** 处理编辑模式里的删除操作。 */
 static void ui_home_edit_delete(lv_event_t *e)
 {
     static const char *btn_texts[] = {"Cancel", "Delete", ""};
@@ -1440,6 +1494,7 @@ static void ui_home_edit_delete(lv_event_t *e)
     lv_obj_add_event_cb(s_home_delete_msgbox, ui_home_delete_confirm_result, LV_EVENT_DELETE, NULL);
 }
 
+/** 处理编辑模式里的配置入口。 */
 static void ui_home_edit_config(lv_event_t *e)
 {
     int8_t gauge_index;
@@ -1458,6 +1513,11 @@ static void ui_home_edit_config(lv_event_t *e)
     ui_dashboard_config_open((uint8_t)gauge_index);
 }
 
+/**
+ * 进入首页编辑模式
+ *
+ * 为当前页面挂上编辑遮罩和入口按钮。
+ */
 static void ui_home_enter_edit_mode(uint8_t page_id)
 {
     ui_home_tile_runtime_t *rt;
@@ -1547,6 +1607,7 @@ static void ui_home_enter_edit_mode(uint8_t page_id)
     lv_obj_align(label, LV_ALIGN_CENTER, 0, ui_layout_px(-16));
 }
 
+/** 退出首页编辑模式并清理遮罩。 */
 static void ui_home_exit_edit_mode(void)
 {
     uint8_t page_id;
@@ -1582,6 +1643,7 @@ static void ui_home_exit_edit_mode(void)
     ui_home_reset_tile_effect_cache(page_id);
 }
 
+/** 处理删除仪表页确认弹窗的结果。 */
 static void ui_home_delete_confirm_result(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
@@ -1628,6 +1690,7 @@ static void ui_home_delete_confirm_result(lv_event_t *e)
     s_home_delete_msgbox = NULL;
 }
 
+/** 挂载某个首页页面的实际内容。 */
 static void ui_home_mount_page(uint8_t page_id)
 {
     if (page_id >= s_home_tile_count || s_home_tile_mounted[page_id] || s_home_tiles[page_id] == NULL) {
@@ -1658,6 +1721,7 @@ static void ui_home_mount_page(uint8_t page_id)
     s_home_tile_mounted[page_id] = true;
 }
 
+/** 卸载某个首页页面的实际内容。 */
 static void ui_home_unmount_page(uint8_t page_id)
 {
     if (page_id >= UI_HOME_MAX_TILE_COUNT || !s_home_tile_mounted[page_id]) {
@@ -1673,6 +1737,7 @@ static void ui_home_unmount_page(uint8_t page_id)
     s_home_tile_mounted[page_id] = false;
 }
 
+/** 让首页只保留当前页附近几个 tile 处于挂载状态。 */
 static void ui_home_sync_tile_mounts(uint8_t active_page)
 {
     for (uint8_t i = 0; i < s_home_tile_count; ++i) {
@@ -1696,6 +1761,7 @@ static void ui_home_refresh_menu_tile(ui_home_tile_runtime_t *rt,
     ui_label_set_text_fmt_if_changed(rt->menu_ble_label, "BLE: %s", ble_short);
 }
 
+/** 自绘档位页的 RPM ring。 */
 static void ui_home_gear_ring_draw_event(lv_event_t *e)
 {
     ui_home_tile_runtime_t *rt = (ui_home_tile_runtime_t *)lv_event_get_user_data(e);
@@ -1822,6 +1888,11 @@ static void ui_home_update_gear_ring(ui_home_tile_runtime_t *rt,
     }
 }
 
+/**
+ * 刷新档位页
+ *
+ * 负责同步档位文本、状态提示和 RPM ring 显示。
+ */
 static void ui_home_refresh_gear_tile(ui_home_tile_runtime_t *rt)
 {
     uint16_t rpm = obd_data_get_rpm();
@@ -1929,6 +2000,7 @@ static void ui_home_refresh_gear_tile(ui_home_tile_runtime_t *rt)
     ui_label_set_text_if_changed(rt->custom_status_label, status_text);
 }
 
+/** 刷新 G-force 页面数据。 */
 static void ui_home_refresh_gforce_tile(ui_home_tile_runtime_t *rt,
                                         ui_dashboard_page_type_t page_type)
 {
@@ -1945,6 +2017,7 @@ static void ui_home_refresh_gforce_tile(ui_home_tile_runtime_t *rt,
                                (lon_x100 > -32768) ? ((float)lon_x100 / 100.0f) : 0.0f);
 }
 
+/** 刷新普通仪表页里的各个指标卡片。 */
 static void ui_home_refresh_metric_tile(ui_home_tile_runtime_t *rt,
                                         const ui_dashboard_page_cfg_t *page,
                                         float sweep_ratio,
@@ -1977,6 +2050,7 @@ static void ui_home_refresh_metric_tile(ui_home_tile_runtime_t *rt,
     }
 }
 
+/** 刷新单个首页 tile 的显示内容。 */
 static void ui_home_runtime_refresh_tile(uint8_t tile_id)
 {
     const nvs_user_cfg_t *user_cfg = nvs_cfg_get();
@@ -2042,6 +2116,7 @@ static void ui_home_runtime_refresh_tile(uint8_t tile_id)
     }
 }
 
+/** 刷新当前页及其相邻页，兼顾滑动时的预热显示。 */
 static void ui_home_runtime_refresh_visible_tiles(uint8_t active_page)
 {
     if (active_page >= s_home_tile_count) {
@@ -2057,11 +2132,13 @@ static void ui_home_runtime_refresh_visible_tiles(uint8_t active_page)
     }
 }
 
+/** 立即刷新当前激活页。 */
 void ui_home_runtime_refresh_active_tile(void)
 {
     ui_home_runtime_refresh_tile(s_home_active_page);
 }
 
+/** 处理分页器完成页面提交后的同步逻辑。 */
 static void ui_home_pager_commit_handler(const ui_home_pager_commit_t *commit, void *user)
 {
     int64_t mount_start_us;
@@ -2093,6 +2170,7 @@ static void ui_home_pager_commit_handler(const ui_home_pager_commit_t *commit, v
     s_home_nav_perf.refresh_us = esp_timer_get_time() - refresh_begin_us;
 }
 
+/** 在分页器确认横向拖拽后启动配套状态切换。 */
 static void ui_home_pager_drag_begin_handler(uint8_t from_page, void *user)
 {
     LV_UNUSED(user);
@@ -2108,6 +2186,7 @@ static void ui_home_pager_drag_begin_handler(uint8_t from_page, void *user)
     ui_home_page_switch_perf_begin(from_page);
 }
 
+/** 处理首页菜单页的纵向手势入口。 */
 static void ui_home_pager_vertical_handler(lv_dir_t dir, uint8_t active_page, void *user)
 {
     LV_UNUSED(user);
@@ -2118,6 +2197,7 @@ static void ui_home_pager_vertical_handler(lv_dir_t dir, uint8_t active_page, vo
     ui_home_open_menu_overlay(dir);
 }
 
+/** 根据纵向手势方向打开菜单页对应的外层界面。 */
 static void ui_home_open_menu_overlay(lv_dir_t dir)
 {
     if (dir == LV_DIR_TOP) {
@@ -2127,6 +2207,11 @@ static void ui_home_open_menu_overlay(lv_dir_t dir)
     }
 }
 
+/**
+ * 初始化首页运行时界面
+ *
+ * 创建分页器、挂载页面并启动刷新定时器。
+ */
 void ui_home_runtime_screen_init(void)
 {
     ui_home_pager_config_t pager_cfg;
@@ -2175,6 +2260,7 @@ void ui_home_runtime_screen_init(void)
     }
 }
 
+/** 加载首页并切换到指定页面。 */
 static void ui_home_load(lv_scr_load_anim_t anim, uint8_t page_id)
 {
     ui_home_runtime_screen_init();
@@ -2183,17 +2269,20 @@ static void ui_home_load(lv_scr_load_anim_t anim, uint8_t page_id)
     lv_scr_load_anim(ui_ScreenPageHome, anim, UI_NAV_ANIM_MS, 0, false);
 }
 
+/** 对外暴露的首页切页入口。 */
 void ui_home_runtime_show_page(uint8_t page_id, lv_scr_load_anim_t anim)
 {
     ui_home_load(anim, page_id);
     aux_sensor_demand_refresh();
 }
 
+/** 对外暴露的默认页转换入口。 */
 uint8_t ui_home_runtime_page_from_default(uint8_t default_page)
 {
     return ui_home_page_from_default_page(default_page);
 }
 
+/** 判断当前激活页是否依赖某个仪表项。 */
 bool ui_home_runtime_active_page_uses_item(disp_item_t item)
 {
     if (item >= DISP_ITEM_COUNT || ui_ScreenPageHome == NULL || lv_scr_act() != ui_ScreenPageHome) {
@@ -2221,6 +2310,7 @@ bool ui_home_runtime_active_page_uses_item(disp_item_t item)
     return false;
 }
 
+/** 判断当前激活页是否属于某种页面类型。 */
 bool ui_home_runtime_active_page_uses_type(ui_dashboard_page_type_t page_type)
 {
     const ui_dashboard_page_cfg_t *page;
@@ -2240,6 +2330,7 @@ bool ui_home_runtime_active_page_uses_type(ui_dashboard_page_type_t page_type)
     return ui_dashboard_page_get_type(page) == page_type;
 }
 
+/** 判断当前激活的档位页是否启用了 RPM ring。 */
 bool ui_home_runtime_active_page_gear_rpm_ring_enabled(void)
 {
     const ui_dashboard_page_cfg_t *page;
@@ -2256,6 +2347,7 @@ bool ui_home_runtime_active_page_gear_rpm_ring_enabled(void)
     return ui_dashboard_page_is_gear_rpm_ring_enabled(page);
 }
 
+/** 重置首页运行时状态，并准备下次按指定初始页启动。 */
 void ui_home_runtime_reset(uint8_t initial_page_id)
 {
     if (s_home_refresh_timer != NULL) {

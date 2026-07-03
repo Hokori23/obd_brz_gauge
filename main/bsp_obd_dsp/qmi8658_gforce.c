@@ -56,17 +56,24 @@ static volatile bool s_enabled;
 static qmi8658_state_t s_state = {0};
 static int64_t s_qmi8658_last_log_us = 0;
 
+/** 读取 QMI8658 指定寄存器区间。 */
 static esp_err_t qmi8658_read_reg(i2c_master_dev_handle_t dev, uint8_t reg, uint8_t *data, size_t len)
 {
     return i2c_master_transmit_receive(dev, &reg, 1, data, len, -1);
 }
 
+/** 向 QMI8658 写入单个寄存器值。 */
 static esp_err_t qmi8658_write_reg(i2c_master_dev_handle_t dev, uint8_t reg, uint8_t value)
 {
     uint8_t payload[2] = {reg, value};
     return i2c_master_transmit(dev, payload, sizeof(payload), -1);
 }
 
+/**
+ * 尝试在指定 I2C 地址打开 QMI8658
+ *
+ * 核心职责：挂载设备、验证 WHOAMI、返回可用句柄
+ */
 static esp_err_t qmi8658_try_open(i2c_master_bus_handle_t bus,
                                   uint8_t addr,
                                   i2c_master_dev_handle_t *out_dev)
@@ -91,6 +98,11 @@ static esp_err_t qmi8658_try_open(i2c_master_bus_handle_t bus,
     return ESP_OK;
 }
 
+/**
+ * 准备 QMI8658 运行环境
+ *
+ * 核心职责：探测器件、完成寄存器初始化、重置滤波状态
+ */
 static esp_err_t qmi8658_prepare(qmi8658_state_t *state)
 {
     i2c_master_bus_handle_t bus = NULL;
@@ -128,6 +140,7 @@ static esp_err_t qmi8658_prepare(qmi8658_state_t *state)
     return ESP_OK;
 }
 
+/** 读取一次三轴加速度，并换算成 g 值。 */
 static esp_err_t qmi8658_read_xyz_g(qmi8658_state_t *state, float *x_g, float *y_g, float *z_g)
 {
     uint8_t raw[6] = {0};
@@ -145,6 +158,11 @@ static esp_err_t qmi8658_read_xyz_g(qmi8658_state_t *state, float *x_g, float *y
     return ESP_OK;
 }
 
+/**
+ * 采样静止偏置
+ *
+ * 核心职责：在设备稳定时多次取样，生成后续映射要减掉的零偏
+ */
 static void qmi8658_capture_bias(qmi8658_state_t *state)
 {
     float sum_x = 0.0f;
@@ -177,6 +195,7 @@ static void qmi8658_capture_bias(qmi8658_state_t *state)
     }
 }
 
+/** 把 g 值转换成 0.01g 定点整数，并完成死区与限幅。 */
 static int16_t qmi8658_to_x100(float axis_g)
 {
     if (fabsf(axis_g) < QMI8658_DEADZONE_G) {
@@ -190,6 +209,7 @@ static int16_t qmi8658_to_x100(float axis_g)
     return (int16_t)lrintf(axis_g * 100.0f);
 }
 
+/** 判断当前显示旋转是否需要翻转 G-force 轨迹方向。 */
 static bool qmi8658_display_rotation_flips_plot(void)
 {
 #if CONFIG_OBD_BOARD_WS_175_AMOLED
@@ -200,6 +220,11 @@ static bool qmi8658_display_rotation_flips_plot(void)
 #endif
 }
 
+/**
+ * 把芯片坐标映射成车辆横纵向坐标
+ *
+ * 核心职责：扣除静态偏置、适配安装方向、输出车辆语义下的 G-force
+ */
 static void qmi8658_map_vehicle_axes(float raw_x_g,
                                      float raw_y_g,
                                      float raw_z_g,
@@ -217,11 +242,10 @@ static void qmi8658_map_vehicle_axes(float raw_x_g,
         return;
     }
 
-    /* The Waveshare demo uses X/Y for a flat-on-desk interaction. Our gauge is
-     * viewed like a real car instrument, so the display is mounted roughly
-     * perpendicular to the ground. In that posture the lateral component still
-     * lives on the in-plane Y axis, while the longitudinal component comes from
-     * the board-normal Z axis rather than the demo's X axis.
+    /* Waveshare 的演示代码按平放桌面的姿态理解 X/Y。
+     * 这里的仪表是按车内仪表方向安装的，屏幕法线更接近车辆前后方向。
+     * 因此横向加速度仍取板内平面的 Y 轴，纵向加速度改取板法线方向的 Z 轴，
+     * 避免沿用演示坐标后把车辆横纵向含义映射反了。
      */
     *lat_g = -corrected_y_g;
     (void)corrected_x_g;
@@ -233,6 +257,7 @@ static void qmi8658_map_vehicle_axes(float raw_x_g,
     }
 }
 
+/** 按节流频率输出一次 IMU G-force 诊断日志。 */
 static void qmi8658_log_sample(const qmi8658_state_t *state,
                                float raw_x_g,
                                float raw_y_g,
@@ -266,6 +291,11 @@ static void qmi8658_log_sample(const qmi8658_state_t *state,
              (int)lrintf(state->filtered_y * 100.0f));
 }
 
+/**
+ * QMI8658 G-force 后台任务
+ *
+ * 核心职责：按需启动 IMU、采样滤波、写入车辆横纵向加速度
+ */
 static void qmi8658_gforce_task(void *arg)
 {
     qmi8658_state_t *state = (qmi8658_state_t *)arg;
@@ -285,6 +315,8 @@ static void qmi8658_gforce_task(void *arg)
             continue;
         }
 
+        // ========== 静态校准 ==========
+        // 每次重新启用都重新采一次零偏，避免上次安装姿态残留影响本次显示。
         if (!state->bias_ready) {
             vTaskDelay(pdMS_TO_TICKS(QMI8658_STABILIZE_MS));
             qmi8658_capture_bias(state);
@@ -314,6 +346,7 @@ static void qmi8658_gforce_task(void *arg)
     }
 }
 
+/** 启动 QMI8658 G-force 采样任务。 */
 void qmi8658_gforce_start(void)
 {
     static bool started = false;
@@ -326,6 +359,7 @@ void qmi8658_gforce_start(void)
     xTaskCreate(qmi8658_gforce_task, "qmi8658_g", 4096, &s_state, 4, NULL);
 }
 
+/** 切换 QMI8658 G-force 采样开关。 */
 void qmi8658_gforce_set_enabled(bool enabled)
 {
     static bool last_enabled = false;
@@ -341,6 +375,7 @@ void qmi8658_gforce_set_enabled(bool enabled)
     last_enabled = enabled;
 }
 
+/** 返回 QMI8658 G-force 采样当前是否启用。 */
 bool qmi8658_gforce_is_enabled(void)
 {
     return s_enabled;

@@ -123,6 +123,11 @@ static esp_ble_adv_params_t s_adv_params = {
     .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
 };
 
+/**
+ * 请求配置 RaceChrono 广播数据
+ *
+ * 负责组装广播和扫描响应包，并在控制器忙时保留重试标记。
+ */
 static void request_adv_config(void)
 {
     // Build scan response with complete local name.
@@ -186,6 +191,7 @@ static const esp_gatts_attr_db_t s_gatt_db[IDX_NB] = {
       sizeof(s_dummy_val), sizeof(uint8_t), s_dummy_val}},
 };
 
+/** 读取并缩放 RPM 通道数据。 */
 static int32_t read_rpm(bool *valid)
 {
     uint16_t v = obd_data_get_rpm();
@@ -193,6 +199,7 @@ static int32_t read_rpm(bool *valid)
     return (int32_t)v;
 }
 
+/** 读取并缩放车速通道数据。 */
 static int32_t read_speed(bool *valid)
 {
     uint8_t v = obd_data_get_speed();
@@ -200,6 +207,7 @@ static int32_t read_speed(bool *valid)
     return (int32_t)v;
 }
 
+/** 读取并缩放冷却液温度通道数据。 */
 static int32_t read_clt(bool *valid)
 {
     int16_t v = obd_data_get_coolant_temp();
@@ -207,6 +215,7 @@ static int32_t read_clt(bool *valid)
     return (int32_t)v;
 }
 
+/** 读取并缩放进气温度通道数据。 */
 static int32_t read_iat(bool *valid)
 {
     int16_t v = obd_data_get_intake_temp();
@@ -214,6 +223,7 @@ static int32_t read_iat(bool *valid)
     return (int32_t)v;
 }
 
+/** 读取并缩放机油温度通道数据。 */
 static int32_t read_oil(bool *valid)
 {
     int16_t v = obd_data_get_oil_temp();
@@ -221,6 +231,7 @@ static int32_t read_oil(bool *valid)
     return (int32_t)v;
 }
 
+/** 读取并缩放发动机负载通道数据。 */
 static int32_t read_load_x10(bool *valid)
 {
     int16_t v = obd_data_get_load_pct();
@@ -228,6 +239,7 @@ static int32_t read_load_x10(bool *valid)
     return (int32_t)(v * 10);
 }
 
+/** 读取并缩放节气门开度通道数据。 */
 static int32_t read_tps_x10(bool *valid)
 {
     int16_t v = obd_data_get_tps();
@@ -235,6 +247,7 @@ static int32_t read_tps_x10(bool *valid)
     return (int32_t)(v * 10);
 }
 
+/** 读取并缩放电压通道数据。 */
 static int32_t read_bat_mv(bool *valid)
 {
     int32_t v = obd_data_get_bat_mv();
@@ -242,6 +255,7 @@ static int32_t read_bat_mv(bool *valid)
     return v;
 }
 
+/** 读取并缩放刹车温度通道数据。 */
 static int32_t read_brake_x10(bool *valid)
 {
     int16_t v = obd_data_get_brake_temp_x10();
@@ -261,6 +275,7 @@ static const rc_chan_t s_channels[RC_CH_MAX] = {
     {RC_PID_BRAKE_X10, read_brake_x10},
 };
 
+/** 按小端序写入 32 位整数。 */
 static inline void le32_store(uint8_t *p, uint32_t v)
 {
     p[0] = (uint8_t)(v & 0xFFu);
@@ -269,6 +284,7 @@ static inline void le32_store(uint8_t *p, uint32_t v)
     p[3] = (uint8_t)((v >> 24) & 0xFFu);
 }
 
+/** 按大端序读取 32 位整数。 */
 static uint32_t be32_to_u32(const uint8_t *p)
 {
     return ((uint32_t)p[0] << 24) |
@@ -277,6 +293,7 @@ static uint32_t be32_to_u32(const uint8_t *p)
            (uint32_t)p[3];
 }
 
+/** 判断某个虚拟 CAN PID 是否在支持列表里。 */
 static bool is_known_pid(uint32_t pid)
 {
     for (int i = 0; i < RC_CH_MAX; i++) {
@@ -287,6 +304,11 @@ static bool is_known_pid(uint32_t pid)
     return false;
 }
 
+/**
+ * 判断某个 PID 当前是否允许推送
+ *
+ * 同时考虑连接状态、通知开关和客户端下发的过滤规则。
+ */
 bool racechrono_ble_diy_is_pid_enabled(uint32_t pid)
 {
     if (!s_connected || !s_notify_enabled || !s_attr_ready) {
@@ -306,6 +328,7 @@ bool racechrono_ble_diy_is_pid_enabled(uint32_t pid)
     return false;
 }
 
+/** 把客户端传来的通道索引兼容映射成虚拟 PID。 */
 static bool map_index_to_pid(uint32_t idx, uint32_t *out_pid)
 {
     if (out_pid == NULL) {
@@ -325,6 +348,11 @@ static bool map_index_to_pid(uint32_t idx, uint32_t *out_pid)
     return false;
 }
 
+/**
+ * 归一化客户端传来的 PID 表示
+ *
+ * 兼容大小端和索引式写法，减少不同客户端实现差异带来的兼容问题。
+ */
 static bool normalize_client_pid(uint32_t pid_raw, uint32_t *out_pid)
 {
     if (out_pid == NULL) {
@@ -354,6 +382,7 @@ static bool normalize_client_pid(uint32_t pid_raw, uint32_t *out_pid)
     return false;
 }
 
+/** 根据当前过滤规则重建实际需要推送的通道列表。 */
 static void rebuild_active_channels(void)
 {
     uint8_t count = 0u;
@@ -387,6 +416,11 @@ static void rebuild_active_channels(void)
     s_active_channel_count = count;
 }
 
+/**
+ * 通过通知特征发送一帧虚拟 CAN 数据
+ *
+ * 失败日志需要节流，避免连接异常时持续刷屏。
+ */
 static void send_can_packet(uint32_t pid, int32_t value)
 {
     if (!s_connected || !s_notify_enabled || s_handle_can_main == 0 || s_gatts_if == ESP_GATT_IF_NONE) {
@@ -407,6 +441,7 @@ static void send_can_packet(uint32_t pid, int32_t value)
     }
 }
 
+/** 判断某个激活通道当前是否到达发送周期。 */
 static bool should_send_active_channel(const rc_active_channel_t *active_channel, int64_t now_us)
 {
     uint16_t interval_ms;
@@ -442,6 +477,11 @@ static bool should_send_active_channel(const rc_active_channel_t *active_channel
     return true;
 }
 
+/**
+ * 处理客户端写入的过滤规则
+ *
+ * 支持全关、全开和按 PID 配置周期三种模式。
+ */
 static void process_filter_write(const uint8_t *buf, uint16_t len)
 {
     if (len < 1 || buf == NULL) {
@@ -512,6 +552,7 @@ static void process_filter_write(const uint8_t *buf, uint16_t len)
     }
 }
 
+/** 后台循环推送 RaceChrono 所需的通道数据。 */
 static void stream_task(void *arg)
 {
     (void)arg;
@@ -535,6 +576,7 @@ static void stream_task(void *arg)
     }
 }
 
+/** 在广播配置完成后尝试启动广播。 */
 static void start_advertising_if_ready(void)
 {
     if (!s_adv_config_done) {
@@ -552,6 +594,11 @@ static void start_advertising_if_ready(void)
     ESP_LOGW(RC_TAG, "Start adv deferred: %s", esp_err_to_name(err));
 }
 
+/**
+ * RaceChrono DIY 服务的 GATTS 事件回调
+ *
+ * 负责连接状态、属性表和过滤特征写入的状态流转。
+ */
 static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 {
     switch (event) {
@@ -563,6 +610,7 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble
                 ESP_LOGW(RC_TAG, "Set device name failed: %s", esp_err_to_name(err));
             }
         }
+        // ========== 启动阶段 ==========
         request_adv_config();
         esp_ble_gatts_create_attr_tab(s_gatt_db, gatts_if, IDX_NB, 0);
         ESP_LOGI(RC_TAG, "GATTS registered, waiting for adv+attr table");
@@ -584,6 +632,7 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble
         break;
 
     case ESP_GATTS_CONNECT_EVT:
+        // 每次新连接都回到 allow-all 默认态，避免沿用上一次客户端留下的过滤规则。
         s_connected = true;
         s_conn_id = param->connect.conn_id;
         // Start each connection from a safe default, so stale deny-all rules don't block data.
@@ -623,6 +672,7 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble
     }
 }
 
+/** 处理 RaceChrono DIY 服务用到的 GAP 事件。 */
 void racechrono_ble_diy_handle_gap_event(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
     (void)param;
@@ -664,6 +714,11 @@ void racechrono_ble_diy_handle_gap_event(esp_gap_ble_cb_event_t event, esp_ble_g
     }
 }
 
+/**
+ * 启动 RaceChrono DIY BLE 服务
+ *
+ * 注册 GATTS 回调、创建服务并启动数据推送任务。
+ */
 void racechrono_ble_diy_start(void)
 {
     if (s_started) {
@@ -701,6 +756,7 @@ void racechrono_ble_diy_start(void)
              RC_PID_LOAD_X10, RC_PID_TPS_X10, RC_PID_BAT_MV, RC_PID_BRAKE_X10);
 }
 
+/** 返回 RaceChrono DIY 服务当前是否有客户端连接。 */
 bool racechrono_ble_diy_is_connected(void)
 {
     return s_connected;

@@ -5,6 +5,13 @@
 
 #define TAG "vehicle_profile"
 
+/*
+ * Vehicle profile catalog.
+ *
+ * Core responsibilities: expose per-vehicle drivetrain ratios,
+ * oil-temperature strategy selection, and cached gear range data.
+ */
+
 // 预定义车辆配置
 static const vehicle_profile_t s_profiles[] = {
     {
@@ -79,6 +86,7 @@ static uint8_t s_active_idx = 0;
 static bool s_ranges_dirty = true;
 
 // 根据配置重新计算档位传动比范围
+/** 重建当前车型的档位传动比区间缓存。 */
 static void rebuild_gear_ranges(const vehicle_profile_t *p)
 {
     s_gear_range_count = 0;
@@ -93,23 +101,32 @@ static void rebuild_gear_ranges(const vehicle_profile_t *p)
     ESP_LOGI(TAG, "Rebuilt gear ranges for '%s' (%d gears)", p->name, p->gear_count);
 }
 
+/** 返回完整的车型配置表，并按需带出数量。 */
 const vehicle_profile_t *vehicle_profile_get_all(uint8_t *count)
 {
     if (count) *count = (uint8_t)PROFILE_COUNT;
     return s_profiles;
 }
 
+/** 按索引返回车型配置，越界时回退到默认车型。 */
 const vehicle_profile_t *vehicle_profile_get(uint8_t index)
 {
     if (index >= PROFILE_COUNT) return &s_profiles[0];
     return &s_profiles[index];
 }
 
+/** 返回当前运行时正在使用的车型配置。 */
 const vehicle_profile_t *vehicle_profile_get_active(void)
 {
     return vehicle_profile_get(s_active_idx);
 }
 
+/**
+ * Switch the active profile and persist the selection.
+ *
+ * Core responsibility: keep runtime gear math and stored settings in
+ * sync so restarts reopen on the same vehicle profile.
+ */
 void vehicle_profile_set_active(uint8_t index)
 {
     if (index >= PROFILE_COUNT) index = 0;
@@ -124,6 +141,7 @@ void vehicle_profile_set_active(uint8_t index)
     ESP_LOGI(TAG, "Active profile set to [%d] '%s'", index, s_profiles[index].name);
 }
 
+/** 计算某个车型的转速与车速换算常数。 */
 float vehicle_profile_calc_constant(const vehicle_profile_t *p)
 {
     if (!p) return 0;
@@ -132,6 +150,7 @@ float vehicle_profile_calc_constant(const vehicle_profile_t *p)
     return 1.0f / denom;
 }
 
+/** 返回当前车型的档位区间缓存，必要时先重建。 */
 const gear_ratio_range_t *vehicle_profile_get_gear_ranges(uint8_t *count)
 {
     if (s_ranges_dirty) {
@@ -141,6 +160,7 @@ const gear_ratio_range_t *vehicle_profile_get_gear_ranges(uint8_t *count)
     return s_gear_ranges;
 }
 
+/** 返回当前车型的机油温度策略。 */
 const oil_temp_strategy_t *vehicle_profile_get_oil_temp_strategy(void)
 {
     const vehicle_profile_t *p = vehicle_profile_get_active();
@@ -148,6 +168,7 @@ const oil_temp_strategy_t *vehicle_profile_get_oil_temp_strategy(void)
     return &p->oil_temp_strategy;
 }
 
+/** 判断当前车型是否为 ZC6。 */
 bool vehicle_profile_is_active_zc6(void)
 {
     return s_active_idx == 0u;

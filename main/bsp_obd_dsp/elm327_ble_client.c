@@ -1898,4 +1898,3 @@ void elm327_oil_temp_get_diag(elm327_oil_diag_t *out) {
              out->mode2_ok, out->mode2_fail, s_oil_diag.mode3_ok, s_oil_diag.mode3_fail,
              s_oil_diag.mode4_ok, s_oil_diag.mode4_fail);
 }
-

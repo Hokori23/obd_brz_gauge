@@ -245,6 +245,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "demand-driven sensor workflow integration checks failed"
 }
 
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\integration\test_app_bootstrap_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "app bootstrap contract checks failed"
+}
+
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\integration\test_error_log_workflow_contract.ps1")
 if ($LASTEXITCODE -ne 0) {
     throw "error log workflow integration checks failed"

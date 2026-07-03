@@ -16,6 +16,7 @@ const board_profile_t *board_ws_175_amoled_profile(void);
 const char *board_ws_175_amoled_name(void);
 bool board_ws_175_amoled_has_touch(void);
 
+/** 按当前编译目标分发到对应板级初始化入口。 */
 esp_err_t board_init(void)
 {
 #if CONFIG_OBD_BOARD_WS_185
@@ -27,6 +28,7 @@ esp_err_t board_init(void)
 #endif
 }
 
+/** 为当前板卡注册显示刷屏完成回调。 */
 esp_err_t board_register_display_flush_ready_callback(board_display_flush_ready_cb_t cb, void *user_ctx)
 {
 #if CONFIG_OBD_BOARD_WS_185
@@ -38,6 +40,7 @@ esp_err_t board_register_display_flush_ready_callback(board_display_flush_ready_
 #endif
 }
 
+/** 初始化当前板卡的显示上下文。 */
 esp_err_t board_display_init(board_display_context_t *ctx)
 {
 #if CONFIG_OBD_BOARD_WS_185
@@ -49,6 +52,7 @@ esp_err_t board_display_init(board_display_context_t *ctx)
 #endif
 }
 
+/** 设置当前板卡的显示亮度百分比。 */
 esp_err_t board_set_brightness(uint8_t percent)
 {
 #if CONFIG_OBD_BOARD_WS_185
@@ -60,6 +64,7 @@ esp_err_t board_set_brightness(uint8_t percent)
 #endif
 }
 
+/** 返回当前板卡对外共享的 I2C 总线句柄。 */
 esp_err_t board_get_shared_i2c_bus(i2c_master_bus_handle_t *out_bus)
 {
 #if CONFIG_OBD_BOARD_WS_185
@@ -73,6 +78,7 @@ esp_err_t board_get_shared_i2c_bus(i2c_master_bus_handle_t *out_bus)
 #endif
 }
 
+/** 返回当前编译目标板卡的静态配置描述。 */
 const board_profile_t *board_profile(void)
 {
 #if CONFIG_OBD_BOARD_WS_185
@@ -84,6 +90,7 @@ const board_profile_t *board_profile(void)
 #endif
 }
 
+/** 返回当前板卡名称。 */
 const char *board_name(void)
 {
 #if CONFIG_OBD_BOARD_WS_185
@@ -95,6 +102,7 @@ const char *board_name(void)
 #endif
 }
 
+/** 返回当前板卡是否带触摸能力。 */
 bool board_has_touch(void)
 {
 #if CONFIG_OBD_BOARD_WS_185

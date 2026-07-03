@@ -6,52 +6,72 @@
 static uint16_t s_width = UI_PLATFORM_BASE_RES;
 static uint16_t s_height = UI_PLATFORM_BASE_RES;
 
+/**
+ * Cache the active screen dimensions for layout helpers.
+ *
+ * Core responsibility: normalize zero-sized input so generated UI
+ * code can still render against the base reference resolution.
+ */
 void ui_platform_init(uint16_t width, uint16_t height)
 {
     s_width = (width == 0) ? UI_PLATFORM_BASE_RES : width;
     s_height = (height == 0) ? UI_PLATFORM_BASE_RES : height;
 }
 
+/** 返回布局辅助函数使用的屏幕宽度缓存。 */
 uint16_t ui_screen_width(void)
 {
     return s_width;
 }
 
+/** 返回布局辅助函数使用的屏幕高度缓存。 */
 uint16_t ui_screen_height(void)
 {
     return s_height;
 }
 
+/** 返回当前布局空间的水平中心点。 */
 int16_t ui_center_x(void)
 {
     return UI_PLATFORM_CENTER_X(s_width);
 }
 
+/** 返回当前布局空间的垂直中心点。 */
 int16_t ui_center_y(void)
 {
     return UI_PLATFORM_CENTER_Y(s_height);
 }
 
+/** 返回圆屏布局使用的半径。 */
 int16_t ui_round_radius(void)
 {
     return UI_PLATFORM_ROUND_RADIUS(s_width, s_height);
 }
 
+/** 返回内容避开屏幕边缘时使用的安全边距。 */
 int16_t ui_safe_margin(void)
 {
     return UI_PLATFORM_SAFE_MARGIN(s_width, s_height);
 }
 
+/** 把参考像素值缩放到当前屏幕空间。 */
 int16_t ui_scale_px(int16_t base_px)
 {
     return UI_PLATFORM_SCALE_PX(s_width, s_height, base_px);
 }
 
+/** 供生成代码调用的像素缩放别名。 */
 int16_t ui_layout_px(int16_t base_px)
 {
     return ui_scale_px(base_px);
 }
 
+/**
+ * Fill the shared round-shell layout metrics.
+ *
+ * Core responsibility: keep page-specific layout builders aligned on
+ * the same ring diameter and black-ear compensation values.
+ */
 void ui_round_shell_layout_get(uint16_t base_ring_arc_width, ui_round_shell_layout_t *layout)
 {
     if (layout == NULL) {
@@ -63,6 +83,7 @@ void ui_round_shell_layout_get(uint16_t base_ring_arc_width, ui_round_shell_layo
     layout->black_ear_offset_y = ui_layout_px(-142);
 }
 
+/** 填充 BLE 扫描页使用的布局常量。 */
 void ui_ble_scan_layout_get(ui_ble_scan_layout_t *layout)
 {
     if (layout == NULL) {
@@ -99,6 +120,7 @@ void ui_ble_scan_layout_get(ui_ble_scan_layout_t *layout)
     layout->spinner_arc_width = (uint16_t)ui_layout_px(3);
 }
 
+/** 填充设置页使用的布局常量。 */
 void ui_settings_layout_get(ui_settings_layout_t *layout)
 {
     if (layout == NULL) {
@@ -132,6 +154,7 @@ void ui_settings_layout_get(ui_settings_layout_t *layout)
     layout->hint_y = ui_layout_px(124);
 }
 
+/** 填充刹车温度页使用的布局常量。 */
 void ui_brake_temp_layout_get(ui_brake_temp_layout_t *layout)
 {
     if (layout == NULL) {
@@ -156,6 +179,7 @@ void ui_brake_temp_layout_get(ui_brake_temp_layout_t *layout)
     layout->tick_line_width = (uint16_t)ui_layout_px(1);
 }
 
+/** 填充油压页使用的布局常量。 */
 void ui_oil_pressure_layout_get(ui_oil_pressure_layout_t *layout)
 {
     if (layout == NULL) {
@@ -180,6 +204,7 @@ void ui_oil_pressure_layout_get(ui_oil_pressure_layout_t *layout)
     layout->tick_line_width = (uint16_t)ui_layout_px(1);
 }
 
+/** 填充信息仪表页使用的布局常量。 */
 void ui_info_layout_get(ui_info_layout_t *layout)
 {
     if (layout == NULL) {
@@ -207,6 +232,7 @@ void ui_info_layout_get(ui_info_layout_t *layout)
     layout->center_col_x = ui_layout_px(0);
 }
 
+/** 填充三行温度页使用的布局常量。 */
 void ui_temp_layout_get(ui_temp_layout_t *layout)
 {
     if (layout == NULL) {
@@ -230,6 +256,7 @@ void ui_temp_layout_get(ui_temp_layout_t *layout)
     layout->inner_arc_width = (uint16_t)ui_layout_px(20);
 }
 
+/** 填充指针仪表页使用的布局常量。 */
 void ui_needle_layout_get(ui_needle_layout_t *layout)
 {
     if (layout == NULL) {
@@ -250,6 +277,7 @@ void ui_needle_layout_get(ui_needle_layout_t *layout)
     layout->unit_y = ui_layout_px(94);
 }
 
+/** 填充指针数据源配置页使用的布局常量。 */
 void ui_needle_config_layout_get(ui_needle_config_layout_t *layout)
 {
     if (layout == NULL) {
@@ -264,6 +292,7 @@ void ui_needle_config_layout_get(ui_needle_config_layout_t *layout)
     layout->hint_y = ui_layout_px(120);
 }
 
+/** 填充告警阈值页面使用的布局常量。 */
 void ui_warn_layout_get(ui_warn_layout_t *layout)
 {
     if (layout == NULL) {
@@ -282,6 +311,7 @@ void ui_warn_layout_get(ui_warn_layout_t *layout)
     layout->hint_y = ui_layout_px(110);
 }
 
+/** 填充启动 Logo 页使用的布局常量。 */
 void ui_logo_layout_get(ui_logo_layout_t *layout)
 {
     if (layout == NULL) {
@@ -295,6 +325,7 @@ void ui_logo_layout_get(ui_logo_layout_t *layout)
     layout->gauge_letter_space = ui_layout_px(12);
 }
 
+/** 填充 OBD 协议选择页使用的布局常量。 */
 void ui_obd_protocol_layout_get(ui_obd_protocol_layout_t *layout)
 {
     if (layout == NULL) {
@@ -312,6 +343,7 @@ void ui_obd_protocol_layout_get(ui_obd_protocol_layout_t *layout)
     layout->hint_y = ui_layout_px(128);
 }
 
+/** 填充信息卡片自定义页使用的布局常量。 */
 void ui_info_custom_layout_get(ui_info_custom_layout_t *layout)
 {
     if (layout == NULL) {
@@ -332,6 +364,7 @@ void ui_info_custom_layout_get(ui_info_custom_layout_t *layout)
     layout->hint_y = ui_layout_px(-22);
 }
 
+/** 填充温度卡片自定义页使用的布局常量。 */
 void ui_temp_custom_layout_get(ui_temp_custom_layout_t *layout)
 {
     if (layout == NULL) {
@@ -350,6 +383,7 @@ void ui_temp_custom_layout_get(ui_temp_custom_layout_t *layout)
     layout->hint_y = ui_layout_px(92);
 }
 
+/** 填充彩蛋页使用的布局常量。 */
 void ui_easter_egg_layout_get(ui_easter_egg_layout_t *layout)
 {
     if (layout == NULL) {

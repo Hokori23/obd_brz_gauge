@@ -24,6 +24,12 @@ static bool s_logo_transition_started = false;
 
 #define UI_NAV_ANIM_MS 0
 
+/**
+ * Tear down the splash screen once it is no longer active.
+ *
+ * Core responsibility: delete logo screen objects only after LVGL
+ * confirms the screen transition has fully completed.
+ */
 static void ui_logo_unloaded_cb(lv_event_t *e)
 {
     lv_obj_t *screen = lv_event_get_target(e);
@@ -35,6 +41,12 @@ static void ui_logo_unloaded_cb(lv_event_t *e)
     imageLogo = NULL;
 }
 
+/**
+ * Transition away from the splash logo exactly once.
+ *
+ * Core responsibility: guard against duplicate exit paths so timeout
+ * and user-driven transitions cannot both destroy the same screen.
+ */
 static void ui_logo_transition_to(lv_obj_t **target_scr, void (*target_init)(void), const char *reason)
 {
     if (s_logo_transition_started) {
@@ -75,6 +87,12 @@ lv_obj_t *ui____initial_actions0;
 // IMAGES AND IMAGE SETS
 #define CLEAR_TRIP_TIME 2000
 
+/**
+ * Periodic UI heartbeat timer.
+ *
+ * Core responsibilities: handle deferred backlight setup, tick legacy
+ * runtime hooks, and leave the logo page after its display timeout.
+ */
 void my_timerMain(lv_timer_t *timer)
 {
     LV_UNUSED(timer);
@@ -83,6 +101,9 @@ void my_timerMain(lv_timer_t *timer)
 
     ui_legacy_runtime_tick(ui_ScreenPageLogo != NULL);
 
+    // ========== DEFERRED BACKLIGHT ==========
+    // Wait a short time before pushing brightness so panel power-up
+    // completes first and the first setting write is not ignored.
     if (ucOnlyOnce == 0) {
         ulOpenLightTimeCnt++;
         if (ulOpenLightTimeCnt > 400 / 200) {
@@ -104,6 +125,9 @@ void my_timerMain(lv_timer_t *timer)
         }
     }
 
+    // ========== SPLASH EXIT ==========
+    // The home screen is prepared before switching so the splash can
+    // disappear without a blank intermediate frame.
     if (ui_ScreenPageLogo) {
         static uint32_t ulLogoTimeCnt = 0;
 
@@ -124,11 +148,18 @@ void my_timerMain(lv_timer_t *timer)
     }
 }
 
+/** 生成代码里 Logo 背景控件的占位事件回调。 */
 void ui_event_logo_background(lv_event_t *e)
 {
     LV_UNUSED(e);
 }
 
+/**
+ * Update a label only when the text actually changed.
+ *
+ * Core responsibility: avoid redundant LVGL work on fast refresh
+ * paths where the same value may be emitted every cycle.
+ */
 void ui_label_set_text_if_changed(lv_obj_t *label, const char *text)
 {
     const char *current;
@@ -145,6 +176,12 @@ void ui_label_set_text_if_changed(lv_obj_t *label, const char *text)
     lv_label_set_text(label, text);
 }
 
+/**
+ * Format label text and skip the update when the result is unchanged.
+ *
+ * Core responsibility: give refresh code one formatted update helper
+ * without forcing a redraw for identical string content.
+ */
 void ui_label_set_text_fmt_if_changed(lv_obj_t *label, const char *fmt, ...)
 {
     char buf[128];
@@ -162,6 +199,12 @@ void ui_label_set_text_fmt_if_changed(lv_obj_t *label, const char *fmt, ...)
 
 ///////////////////// SCREENS ////////////////////
 
+/**
+ * Initialize the generated UI and load the first screen.
+ *
+ * Core responsibilities: initialize fonts and theme, prepare the
+ * home runtime state, create the splash page, and start the UI timer.
+ */
 void ui_init(void)
 {
     lv_disp_t *dispp;

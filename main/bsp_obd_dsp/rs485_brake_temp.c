@@ -54,6 +54,7 @@ static const brake_modbus_cfg_t s_cfg = {
     .stop_bits = UART_STOP_BITS_1,
 };
 
+/** 判断当前硬件是否接出了 RS485 DE/RE 方向控制脚。 */
 static inline bool rs485_has_de_re(void)
 {
 #if CONFIG_OBD_RS485_DE_RE_GPIO >= 0
@@ -63,6 +64,7 @@ static inline bool rs485_has_de_re(void)
 #endif
 }
 
+/** 切换 RS485 收发方向。 */
 static void rs485_set_tx_mode(bool tx_mode)
 {
     if (!rs485_has_de_re()) return;
@@ -73,6 +75,7 @@ static void rs485_set_tx_mode(bool tx_mode)
 #endif
 }
 
+/** 计算 Modbus RTU 报文使用的 CRC16。 */
 static uint16_t modbus_crc16(const uint8_t *data, size_t len)
 {
     uint16_t crc = 0xFFFF;
@@ -89,6 +92,7 @@ static uint16_t modbus_crc16(const uint8_t *data, size_t len)
     return crc;
 }
 
+/** 生成一帧读取刹车温度寄存器的 Modbus 请求。 */
 static void build_req_frame(const brake_modbus_cfg_t *cfg, uint8_t *out8)
 {
     out8[0] = cfg->addr;
@@ -103,6 +107,11 @@ static void build_req_frame(const brake_modbus_cfg_t *cfg, uint8_t *out8)
     out8[7] = (uint8_t)(crc >> 8);
 }
 
+/**
+ * 从串口接收缓存里解析刹车温度
+ *
+ * 核心职责：扫描有效报文头、校验 CRC、提取首个温度寄存器值
+ */
 static bool parse_temp_from_rx(const uint8_t *rx, int rx_len, const brake_modbus_cfg_t *cfg, int16_t *temp_x10)
 {
     if (!rx || rx_len < 7 || !temp_x10) return false;
@@ -111,20 +120,20 @@ static bool parse_temp_from_rx(const uint8_t *rx, int rx_len, const brake_modbus
         const uint8_t *p = &rx[i];
         if (p[0] != cfg->addr) continue;
         if (p[1] != cfg->func) continue;
-        
-        uint8_t byte_count = p[2];  // 数据字节数，不强制为 0x02
-        
+
+        uint8_t byte_count = p[2];  // 数据字节数不强制要求等于 0x02
+
         // 校验最小长度：addr(1) + func(1) + byte_count(1) + 数据 + CRC(2)
         if (i + 3 + byte_count + 2 > rx_len) continue;
 
-        // 计算 CRC（从 addr 到 byte_count ...数据，不包括 CRC 本身）
+        // 计算 CRC 时只覆盖报文正文，不把尾部 CRC 自己算进去。
         uint16_t crc_calc = modbus_crc16(p, 3 + byte_count);
         uint16_t crc_recv = (uint16_t)p[3 + byte_count] | ((uint16_t)p[4 + byte_count] << 8);
-        
+
         if (crc_calc != crc_recv) continue;
 
-        // 大多数温度传感器返回单个 16 位寄存器(2 字节)
-        // 但也可能返回多个寄存器，取第一个寄存器
+        // 大多数传感器只返回一个 16 位寄存器，
+        // 即使回了多个寄存器，这里也只取第一个温度值。
         if (byte_count < 2) continue;
 
         int16_t raw = (int16_t)(((uint16_t)p[3] << 8) | p[4]);
@@ -136,6 +145,7 @@ static bool parse_temp_from_rx(const uint8_t *rx, int rx_len, const brake_modbus
     return false;
 }
 
+/** 按需切换 UART 波特率，避免重复配置。 */
 static void ensure_uart_baud(int baud)
 {
     if (s_uart_baud_cur == baud) return;
@@ -144,6 +154,7 @@ static void ensure_uart_baud(int baud)
     }
 }
 
+/** 按需更新 UART 校验位和停止位配置。 */
 static void ensure_uart_frame(uart_parity_t parity, uart_stop_bits_t stop_bits)
 {
     if (s_uart_parity_cur != (int)parity) {
@@ -158,6 +169,11 @@ static void ensure_uart_frame(uart_parity_t parity, uart_stop_bits_t stop_bits)
     }
 }
 
+/**
+ * 按指定 Modbus 参数完成一次温度查询
+ *
+ * 核心职责：准备 UART、发送请求、累计收包、返回查询状态
+ */
 static query_status_t query_with_cfg(const brake_modbus_cfg_t *cfg, int16_t *temp_x10)
 {
     uint8_t req[8];
@@ -169,16 +185,18 @@ static query_status_t query_with_cfg(const brake_modbus_cfg_t *cfg, int16_t *tem
     static int s_last_parity = -1;
     static int s_last_stop_bits = -1;
 
-    // 如果 UART 参数改变，需要刷新后再操作
+    // 如果 UART 参数变化，需要在发包前先把链路配置收敛好。
     int baud_changed = (s_last_baud != cfg->baud);
     int frame_changed = (s_last_parity != (int)cfg->parity) || (s_last_stop_bits != (int)cfg->stop_bits);
 
+    // ========== 串口参数收敛 ==========
+    // 只有参数真的变化时才重配，避免每次轮询都引入额外抖动。
     ensure_uart_baud(cfg->baud);
     ensure_uart_frame(cfg->parity, cfg->stop_bits);
 
-    // 参数改变后增加防抖延迟
+    // 参数刚切换时先等一小段时间，让硬件状态稳定下来。
     if (baud_changed || frame_changed) {
-        vTaskDelay(pdMS_TO_TICKS(10));  // 让 UART 硬件稳定
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
     s_last_baud = cfg->baud;
@@ -196,7 +214,8 @@ static query_status_t query_with_cfg(const brake_modbus_cfg_t *cfg, int16_t *tem
         vTaskDelay(pdMS_TO_TICKS(2));
     }
 
-    // 累计接收一段时间，避免串口分片导致只收到半包。
+    // ========== 分片收包 ==========
+    // 传感器回包可能被串口驱动拆成几段，这里累计一小段时间，避免只拿到半包。
     while (wait_ms > 0 && total < (int)sizeof(rx)) {
         int chunk_timeout = (wait_ms > 30) ? 30 : wait_ms;
         n = uart_read_bytes(BRAKE_TEMP_UART_PORT,
@@ -239,6 +258,11 @@ static query_status_t query_with_cfg(const brake_modbus_cfg_t *cfg, int16_t *tem
     return QUERY_PARSE_FAIL;
 }
 
+/**
+ * RS485 刹车温度后台任务
+ *
+ * 核心职责：初始化串口、周期查询温度、把结果同步到数据缓存
+ */
 static void rs485_temp_task(void *arg)
 {
     uart_config_t cfg = {
@@ -320,6 +344,7 @@ static void rs485_temp_task(void *arg)
     }
 }
 
+/** 启动 RS485 刹车温度采样任务。 */
 void rs485_brake_temp_start(void)
 {
     if (s_started) return;
@@ -327,11 +352,13 @@ void rs485_brake_temp_start(void)
     xTaskCreate(rs485_temp_task, "brake_temp", 3072, NULL, 4, NULL);
 }
 
+/** 切换 RS485 刹车温度采样开关。 */
 void rs485_brake_temp_set_enabled(bool enabled)
 {
     s_enabled = enabled;
 }
 
+/** 返回 RS485 刹车温度采样当前是否启用。 */
 bool rs485_brake_temp_is_enabled(void)
 {
     return s_enabled;

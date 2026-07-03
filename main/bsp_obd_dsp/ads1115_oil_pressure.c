@@ -14,7 +14,8 @@
 
 #define TAG "oil_press"
 
-// ADS1115 I2C 地址（ADDR 引脚接 GND 时为 0x48）
+// ADS1115 的 I2C 地址。
+// 当 ADDR 引脚接地时，地址固定为 0x48。
 #define ADS1115_ADDR            0x48
 #define ADS1115_REG_CONV        0x00
 #define ADS1115_REG_CONFIG      0x01
@@ -22,8 +23,8 @@
 #define OIL_PRESS_POLL_MS       100
 #define OIL_PRESS_IDLE_MS       250
 
-// 标定参数：3.3V 供电传感器，输出 0.5~2.5V 对应 0.0~10.0 bar
-// ADS1115 使用 AIN0 通道（传感器信号线接 AIN0，GND 接 GND）
+// 标定参数：3.3V 供电传感器输出 0.5~2.5V，
+// 对应 0.0~10.0 bar，信号线接在 ADS1115 的 AIN0。
 #define OIL_PRESS_ADC_MIN_MV    500
 #define OIL_PRESS_ADC_MAX_MV    2500
 #define OIL_PRESS_MIN_BAR_X10   0
@@ -32,7 +33,11 @@
 static bool s_started = false;
 static volatile bool s_enabled = true;
 
-// 触发单次转换并读取 AIN0 电压（单位 mV）
+/**
+ * 读取 ADS1115 的 AIN0 电压
+ *
+ * 核心职责：触发一次单次转换、等待完成、把原始结果换算成毫伏
+ */
 static esp_err_t ads1115_read_ain0_mv(int32_t *out_mv)
 {
     if (out_mv == NULL) {
@@ -50,7 +55,7 @@ static esp_err_t ads1115_read_ain0_mv(int32_t *out_mv)
         return err;
     }
 
-    // 860 SPS 转换时间约 1.2ms，给 3ms 余量
+    // 860 SPS 的单次转换时间约为 1.2ms，这里留 3ms 余量。
     vTaskDelay(pdMS_TO_TICKS(3));
 
     uint8_t conv[2] = {0};
@@ -61,7 +66,7 @@ static esp_err_t ads1115_read_ain0_mv(int32_t *out_mv)
 
     int16_t raw = (int16_t)(((uint16_t)conv[0] << 8) | conv[1]);
 
-    // PGA=±4.096V 时，LSB = 125µV = 0.125mV → mv = raw / 8
+    // PGA=±4.096V 时，LSB = 125uV = 0.125mV，因此毫伏值约等于 raw / 8。
     int32_t mv = (int32_t)raw / 8;
     if (mv < 0) {
         mv = 0;
@@ -71,6 +76,7 @@ static esp_err_t ads1115_read_ain0_mv(int32_t *out_mv)
     return ESP_OK;
 }
 
+/** 把传感器输出毫伏值映射成 0.1 bar 单位的油压。 */
 static int16_t mv_to_oil_pressure_x10(int32_t mv)
 {
     int32_t mv_clamped = mv;
@@ -100,6 +106,11 @@ static int16_t mv_to_oil_pressure_x10(int32_t mv)
     return (int16_t)x10;
 }
 
+/**
+ * 机油压力后台采样任务
+ *
+ * 核心职责：周期读取 ADS1115、电压转油压、同步到共享数据缓存
+ */
 static void oil_pressure_task(void *arg)
 {
     (void)arg;
@@ -118,7 +129,7 @@ static void oil_pressure_task(void *arg)
             int16_t pressure_x10 = mv_to_oil_pressure_x10(mv);
             obd_data_set_oil_pressure_x10(pressure_x10);
 
-            // 诊断模式：每 10 次输出一次原始电压和最终压力值
+            // 诊断模式下每 10 次输出一次原始电压和换算后的油压。
             if ((log_count++ % 10) == 0) {
                 ESP_LOGI(TAG, "[OIL] AIN0=%ldmV => pressure_x10=%d (%.1fbar) [range: %d-%dmV -> 0.0-10.0bar]",
                          (long)mv, pressure_x10, (float)pressure_x10 / 10.0f,
@@ -133,6 +144,7 @@ static void oil_pressure_task(void *arg)
     }
 }
 
+/** 启动机油压力采样任务。 */
 void oil_pressure_start(void)
 {
     if (s_started) {
@@ -149,11 +161,13 @@ void oil_pressure_start(void)
     ESP_LOGI(TAG, "Task started. Check [OIL] logs for readings.");
 }
 
+/** 切换机油压力采样开关。 */
 void oil_pressure_set_enabled(bool enabled)
 {
     s_enabled = enabled;
 }
 
+/** 兼容旧接口名，转发到机油压力采样启动入口。 */
 void ads1115_oil_pressure_start(void)
 {
     oil_pressure_start();

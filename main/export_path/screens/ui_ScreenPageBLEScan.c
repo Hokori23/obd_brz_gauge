@@ -1,11 +1,15 @@
-// BLE Scan & Select Page
-// Shows saved device and nearby scan results on a round-screen-safe layout.
+/**
+ * BLE 扫描与选设备页面
+ *
+ * 核心职责：展示已保存设备、接收扫描结果、处理选中与删除操作
+ */
 
 #include "../ui.h"
 #include "../ui_font_profile.h"
 #include "../ui_home_runtime.h"
 #include "../ui_layout.h"
 #include "../ui_round_shell.h"
+#include "app_lvgl_port.h"
 #include "app_obd_dsp/aux_sensor_demand.h"
 #include "bsp_obd_dsp/elm327_ble_client.h"
 #include "bsp_obd_dsp/nvs_storage.h"
@@ -30,19 +34,19 @@ static void on_ble_scan_background(lv_event_t *e);
 static void ui_ble_scan_screen_reset_state(void);
 static void ui_ble_scan_screen_deleted(lv_event_t *e);
 
-extern bool app_lvgl_lock(int timeout_ms);
-extern void app_lvgl_unlock(void);
-
+/** 统一封装页面内部使用的 LVGL 加锁入口。 */
 static inline bool lvgl_lock_ui(int timeout_ms)
 {
     return app_lvgl_lock(timeout_ms);
 }
 
+/** 统一封装页面内部使用的 LVGL 解锁入口。 */
 static inline void lvgl_unlock_ui(void)
 {
     app_lvgl_unlock();
 }
 
+/** 更新“附近设备”标题上的数量提示。 */
 static void ui_ble_scan_update_nearby_count(int total_count)
 {
     if (s_label_nearby == NULL) {
@@ -56,6 +60,11 @@ static void ui_ble_scan_update_nearby_count(int total_count)
     }
 }
 
+/**
+ * 处理一条 BLE 扫描结果
+ *
+ * 核心职责：去重追加列表项，并同步附近设备数量显示
+ */
 static void scan_result_cb(const ble_scan_result_t *dev, int total_count)
 {
     if (s_list == NULL) {
@@ -84,6 +93,11 @@ static void scan_result_cb(const ble_scan_result_t *dev, int total_count)
     lvgl_unlock_ui();
 }
 
+/**
+ * 处理用户点击某个扫描结果
+ *
+ * 核心职责：保存设备名、停止扫描、发起连接并返回首页菜单
+ */
 static void on_device_selected(lv_event_t *e)
 {
     lv_obj_t *btn = lv_event_get_target(e);
@@ -121,6 +135,7 @@ static void on_device_selected(lv_event_t *e)
     ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_FADE_ON);
 }
 
+/** 删除当前保存的 BLE 设备，并更新页面显示。 */
 static void on_saved_device_delete(lv_event_t *e)
 {
     LV_UNUSED(e);
@@ -142,6 +157,7 @@ static void on_saved_device_delete(lv_event_t *e)
     }
 }
 
+/** 启动一次 BLE 扫描，并清空页面上的旧扫描结果。 */
 static void start_scan(void)
 {
     if (s_scanning) {
@@ -161,6 +177,7 @@ static void start_scan(void)
     elm327_ble_scan_only_start(15, scan_result_cb);
 }
 
+/** 处理扫描页背景上的上滑返回手势。 */
 static void on_ble_scan_background(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_GESTURE) {
@@ -177,6 +194,7 @@ static void on_ble_scan_background(lv_event_t *e)
     ui_home_runtime_show_page(UI_HOME_PAGE_MENU_ID, LV_SCR_LOAD_ANIM_FADE_ON);
 }
 
+/** 清空扫描页持有的静态对象引用和运行状态。 */
 static void ui_ble_scan_screen_reset_state(void)
 {
     ui_ScreenPageBLEScan = NULL;
@@ -189,6 +207,7 @@ static void ui_ble_scan_screen_reset_state(void)
     s_scanning = false;
 }
 
+/** 在扫描页销毁时停止扫描并重置静态状态。 */
 static void ui_ble_scan_screen_deleted(lv_event_t *e)
 {
     LV_UNUSED(e);
@@ -199,6 +218,11 @@ static void ui_ble_scan_screen_deleted(lv_event_t *e)
     ui_ble_scan_screen_reset_state();
 }
 
+/**
+ * 创建 BLE 扫描页面
+ *
+ * 核心职责：构建圆屏布局、恢复保存设备、启动首次扫描
+ */
 void ui_ScreenPageBLEScan_screen_init(void)
 {
     ui_ble_scan_layout_t layout;
@@ -298,6 +322,7 @@ void ui_ScreenPageBLEScan_screen_init(void)
     lv_obj_set_style_clip_corner(s_list, true, LV_PART_MAIN);
 
     lv_obj_add_event_cb(ui_ScreenPageBLEScan, on_ble_scan_background, LV_EVENT_GESTURE, NULL);
+    // 返回到扫描页时顺手刷新一次按需采集状态，避免菜单页与扫描页切换后状态滞后。
     aux_sensor_demand_refresh();
     start_scan();
 }

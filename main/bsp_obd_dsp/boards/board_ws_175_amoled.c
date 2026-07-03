@@ -56,11 +56,13 @@ static board_profile_t s_board_profile = {
     .touch_mirror_y = BOARD_WS_175_AMOLED_TOUCH_MIRROR_Y,
 };
 
+/** 读取 WS175 AMOLED 当前生效的显示旋转角度。 */
 static uint16_t board_ws_175_amoled_rotation_degrees(void)
 {
     return nvs_cfg_get_display_rotation_degrees(nvs_cfg_get(), BOARD_WS_175_AMOLED_DISPLAY_ROTATION);
 }
 
+/** 根据运行时旋转配置刷新触摸映射参数。 */
 static void board_ws_175_amoled_refresh_touch_profile(void)
 {
     s_board_profile.touch_swap_xy = false;
@@ -77,8 +79,8 @@ static const co5300_lcd_init_cmd_t s_lcd_init_cmds[] = {
     {0x3A, (uint8_t[]){0x55}, 1, 0},
     {0x35, (uint8_t[]){0x00}, 1, 0},
     {0x53, (uint8_t[]){0x20}, 1, 0},
-    // Keep the AMOLED dark until LVGL has already rendered the first frame.
-    // The runtime startup timer will restore the user's configured brightness.
+    // 在 LVGL 完成首帧渲染前先保持黑屏，
+    // 避免面板过早点亮时把未初始化完成的内容闪给用户看。
     {0x51, (uint8_t[]){0x00}, 1, 0},
     {0x63, (uint8_t[]){0xFF}, 1, 0},
     {0x2A, (uint8_t[]){
@@ -97,6 +99,7 @@ static const co5300_lcd_init_cmd_t s_lcd_init_cmds[] = {
     {0x29, NULL, 0, 0},
 };
 
+/** 在面板 IO 建好后补注册刷屏完成回调。 */
 static esp_err_t board_ws_175_amoled_register_panel_io_callbacks(void)
 {
     if (s_panel_io_handle == NULL || s_flush_ready_cb == NULL) {
@@ -110,6 +113,7 @@ static esp_err_t board_ws_175_amoled_register_panel_io_callbacks(void)
     return esp_lcd_panel_io_register_event_callbacks(s_panel_io_handle, &cbs, s_flush_ready_user_ctx);
 }
 
+/** 初始化 WS175 AMOLED 共用的 I2C 主总线。 */
 static esp_err_t board_ws_175_amoled_i2c_init(void)
 {
     if (s_i2c_ready) {
@@ -128,6 +132,11 @@ static esp_err_t board_ws_175_amoled_i2c_init(void)
     return ESP_OK;
 }
 
+/**
+ * 初始化 AMOLED 面板链路
+ *
+ * 核心职责：准备 QSPI 总线、创建 panel IO、完成面板上电与寄存器初始化
+ */
 static esp_err_t board_ws_175_amoled_panel_init(void)
 {
     if (s_panel_handle != NULL && s_panel_io_handle != NULL) {
@@ -185,6 +194,11 @@ static esp_err_t board_ws_175_amoled_panel_init(void)
     return ESP_OK;
 }
 
+/**
+ * 初始化触摸控制器
+ *
+ * 核心职责：准备触摸 I2C IO、创建设备句柄、写入坐标系配置
+ */
 static esp_err_t board_ws_175_amoled_touch_init(void)
 {
     if (s_touch_handle != NULL) {
@@ -224,11 +238,13 @@ static esp_err_t board_ws_175_amoled_touch_init(void)
     return ESP_OK;
 }
 
+/** 执行 WS175 AMOLED 板级基础初始化。 */
 esp_err_t board_ws_175_amoled_init(void)
 {
     return ESP_OK;
 }
 
+/** 注册 WS175 AMOLED 面板刷屏完成回调。 */
 esp_err_t board_ws_175_amoled_register_display_flush_ready_callback(board_display_flush_ready_cb_t cb, void *user_ctx)
 {
     s_flush_ready_cb = cb;
@@ -238,6 +254,11 @@ esp_err_t board_ws_175_amoled_register_display_flush_ready_callback(board_displa
     return ESP_OK;
 }
 
+/**
+ * 初始化 WS175 AMOLED 显示上下文
+ *
+ * 核心职责：完成面板与触摸初始化，并把运行时句柄写入统一显示上下文
+ */
 esp_err_t board_ws_175_amoled_display_init(board_display_context_t *ctx)
 {
     esp_err_t touch_err;
@@ -264,6 +285,7 @@ esp_err_t board_ws_175_amoled_display_init(board_display_context_t *ctx)
     return ESP_OK;
 }
 
+/** 设置 WS175 AMOLED 面板亮度百分比。 */
 esp_err_t board_ws_175_amoled_set_brightness(uint8_t percent)
 {
     uint8_t param;
@@ -281,36 +303,43 @@ esp_err_t board_ws_175_amoled_set_brightness(uint8_t percent)
     return esp_lcd_panel_io_tx_param(s_panel_io_handle, lcd_cmd, &param, 1);
 }
 
+/** 返回 WS175 AMOLED 板卡静态配置。 */
 const board_profile_t *board_ws_175_amoled_profile(void)
 {
     return &s_board_profile;
 }
 
+/** 返回 WS175 AMOLED 板卡名称。 */
 const char *board_ws_175_amoled_name(void)
 {
     return s_board_profile.name;
 }
 
+/** 返回 WS175 AMOLED 当前是否声明支持触摸。 */
 bool board_ws_175_amoled_has_touch(void)
 {
     return s_board_profile.has_touch;
 }
 
+/** 在 WS175 AMOLED 板型上屏蔽油压采样入口。 */
 void oil_pressure_start(void)
 {
     ESP_LOGI(TAG, "oil pressure sampling is not available on WS175 AMOLED board");
 }
 
+/** 在 WS175 AMOLED 板型上忽略油压采样开关。 */
 void oil_pressure_set_enabled(bool enabled)
 {
     (void)enabled;
 }
 
+/** 兼容旧接口名，仍然走 WS175 的空实现。 */
 void ads1115_oil_pressure_start(void)
 {
     oil_pressure_start();
 }
 
+/** 导出 WS175 AMOLED 共用的 I2C 总线句柄。 */
 esp_err_t board_ws_175_amoled_get_shared_i2c_bus(i2c_master_bus_handle_t *out_bus)
 {
     ESP_RETURN_ON_FALSE(out_bus != NULL, ESP_ERR_INVALID_ARG, TAG, "out_bus is null");

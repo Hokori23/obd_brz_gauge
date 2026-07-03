@@ -1,86 +1,56 @@
-# `app_obd_dsp`
+# `app_obd_dsp` 模块说明
 
-这是业务层。它不直接操作屏幕，也不直接控制 BLE 硬件，而是维护“车况数据”和“车型规则”。
+这一层是业务层，不直接操作 BLE、LCD 或触摸硬件。
+它负责维护“车况数据”和“车型规则”，给 UI 和驱动层提供稳定的业务语义。
 
-如果类比 Web：
+## 当前核心模块
 
-- `obd_data_cache.*` 类似运行时 store
-- `vehicle_profiles.*` 类似多租户配置 / 策略表
+- `obd_data_cache.*`
+- `vehicle_profiles.*`
+- `aux_sensor_demand.*`
 
-## 文件
+## `obd_data_cache`
 
-- `obd_data_cache.c/.h`
-- `vehicle_profiles.c/.h`
+这是全项目最核心的共享状态缓存，保存实时车况数据，例如：
 
-## 1. `obd_data_cache`
+- 转速、车速
+- 冷却液温度、机油温度、进气温度
+- 节气门、负载、电压
+- 机油压力、刹车温度、增压值
+- OBD/IMU G-force
+- 实际档位
 
-这是项目的共享状态中心，保存当前实时数据：
+它主要负责：
 
-- RPM
-- 车速
-- 水温
-- 机油温
-- 进气温
-- 负载
-- 节气门开度
-- 电瓶电压
-- 机油压力
-- 刹车温度
-- 增压值
+1. 提供统一的 `set/get` 接口给驱动层和 UI 层使用。
+2. 对共享数据做基本并发保护。
+3. 对 RPM、车速等高频数据做平滑处理。
+4. 对温度、压力、档位等值做范围校验或推导。
 
-### 它做的事
+## `vehicle_profiles`
 
-1. 提供 `set/get` API 给驱动层和 UI 使用。
-2. 用 `portMUX_TYPE` 保护共享变量，避免并发读写冲突。
-3. 对 `rpm`、`speed` 做平滑处理，避免指针或数字跳变。
-4. 对机油温、刹车温、机油压力做有效范围校验。
-5. 根据 `rpm + speed + 当前车型传动比` 估算档位。
-6. 启动里程统计定时器，每秒把车速换算成里程并写入 `NVS` 统计。
+这是车型抽象层，避免把所有逻辑硬编码成单一车型。
+它定义每种车型的关键规则，例如：
 
-### 重点函数
-
-- `obd_data_set_*` / `obd_data_get_*`
-- `calculate_gear()`
-- `vMileageDataStatisticTask()`
-
-### 你阅读时要注意
-
-- 这里的 `get_rpm()` / `get_speed()` 不一定返回原始值，返回的是平滑后的值。
-- `calculate_gear()` 不是从 ECU 直接读档位，而是推导出来的。
-
-## 2. `vehicle_profiles`
-
-这是多车型抽象层。项目当前不是把所有逻辑写死给 BRZ，而是抽象出：
-
-- 主减速比
-- 各档传动比
+- 主减速比和各档齿比
 - 轮胎滚动半径
 - 档位容差
-- 机油温查询策略
+- 机油温度查询策略
 - 是否支持增压显示
 
-### 当前内置车型
+UI、档位推导和 OBD 查询策略都会依赖这里的配置。
 
-- `BRZ ZC6`
-- `BRZ ZD8`
-- `MX-5 ND`
-- `BMW G`
+## `aux_sensor_demand`
 
-### 它做的事
+这是“按需采集”的状态汇总模块。
+它会根据当前页面和显示项，统一推导：
 
-1. 返回车型列表。
-2. 保存当前激活车型。
-3. 根据车型重建档位判定区间。
-4. 为 OBD 层提供机油温查询策略。
-5. 在切换车型时把索引写回 `NVS`。
+- 当前需要轮询哪些 OBD PID
+- 是否需要启用 OBD G-force 流
+- 是否需要启用 ZC6 档位监控流
+- 是否需要打开 RS485 刹车温度、油压、IMU 等附加采集
 
-### 重点函数
-
-- `vehicle_profile_get_all()`
-- `vehicle_profile_get_active()`
-- `vehicle_profile_set_active()`
-- `vehicle_profile_get_gear_ranges()`
-- `vehicle_profile_get_oil_temp_strategy()`
+如果你在改首页显示逻辑，这个模块通常也要一起看。
 
 ## 建议阅读顺序
 
@@ -88,8 +58,11 @@
 2. [obd_data_cache.c](obd_data_cache.c)
 3. [vehicle_profiles.h](vehicle_profiles.h)
 4. [vehicle_profiles.c](vehicle_profiles.c)
+5. [aux_sensor_demand.h](aux_sensor_demand.h)
+6. [aux_sensor_demand.c](aux_sensor_demand.c)
 
 ## 就近说明
 
 - [obd_data_cache.md](obd_data_cache.md)
 - [vehicle_profiles.md](vehicle_profiles.md)
+- [aux_sensor_demand.md](aux_sensor_demand.md)

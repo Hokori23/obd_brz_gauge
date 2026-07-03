@@ -8,6 +8,13 @@
 #include "esp_log.h"
 #include <inttypes.h>
 
+/*
+ * Shared runtime sensor cache.
+ *
+ * Core responsibilities: hold the latest decoded telemetry,
+ * smooth fast-changing values, and provide thread-safe getters/setters.
+ */
+
 
 // 使用简单全局变量 + 临界区保护
 static volatile uint16_t s_rpm = 0;
@@ -30,6 +37,7 @@ static volatile enGear s_actual_gear = GEAR_NEUTRAL;
 static volatile bool s_actual_gear_valid = false;
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
+/** 写入最新的原始发动机转速。 */
 void obd_data_set_rpm(uint16_t rpm)
 {
     portENTER_CRITICAL(&s_mux);
@@ -37,6 +45,7 @@ void obd_data_set_rpm(uint16_t rpm)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 写入最新的原始车速。 */
 void obd_data_set_speed(uint8_t kmh)
 {
     portENTER_CRITICAL(&s_mux);
@@ -44,6 +53,7 @@ void obd_data_set_speed(uint8_t kmh)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 写入最新的冷却液温度。 */
 void obd_data_set_coolant_temp(int16_t temp)
 {
     portENTER_CRITICAL(&s_mux);
@@ -51,6 +61,12 @@ void obd_data_set_coolant_temp(int16_t temp)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/**
+ * Store oil temperature when the decoded value looks plausible.
+ *
+ * Core responsibility: reject parser glitches early so transient junk
+ * data does not pollute UI widgets or warning logic.
+ */
 void obd_data_set_oil_temp(int16_t temp)
 {
     // 有效范围 -20~150°C，超出视为解析错误丢弃
@@ -60,6 +76,7 @@ void obd_data_set_oil_temp(int16_t temp)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 写入最新的进气温度。 */
 void obd_data_set_intake_temp(int16_t temp)
 {
     portENTER_CRITICAL(&s_mux);
@@ -72,6 +89,7 @@ void obd_data_set_intake_temp(int16_t temp)
 #define FALL_TO_ZERO_MS      500  // 归零缓降时间常数 (ms)
 
 // 实时转速（缓升缓降）获取
+/** 返回经过一阶平滑后的发动机转速。 */
 uint16_t obd_data_get_rpm(void)
 {
     static TickType_t last_tick = 0;
@@ -98,6 +116,7 @@ uint16_t obd_data_get_rpm(void)
 
 
 // 实时速度（缓升缓降）获取
+/** 返回使用同一平滑策略处理后的车速。 */
 uint8_t obd_data_get_speed(void)
 {
     static TickType_t last_tick = 0;
@@ -125,6 +144,7 @@ uint8_t obd_data_get_speed(void)
     return (uint8_t)(smooth + 0.5f); // 四舍五入返回
 }
 
+/** 返回最新的冷却液温度。 */
 int16_t obd_data_get_coolant_temp(void)
 {
     int16_t val;
@@ -134,6 +154,7 @@ int16_t obd_data_get_coolant_temp(void)
     return val;
 }
 
+/** 返回最新的机油温度。 */
 int16_t obd_data_get_oil_temp(void)
 {
     int16_t val;
@@ -143,6 +164,7 @@ int16_t obd_data_get_oil_temp(void)
     return val;
 }
 
+/** 返回最新的进气温度。 */
 int16_t obd_data_get_intake_temp(void)
 {
     int16_t val;
@@ -152,6 +174,7 @@ int16_t obd_data_get_intake_temp(void)
     return val;
 }
 
+/** 写入最新的发动机负载百分比。 */
 void obd_data_set_load_pct(int16_t pct)
 {
     portENTER_CRITICAL(&s_mux);
@@ -159,6 +182,7 @@ void obd_data_set_load_pct(int16_t pct)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 返回最新的发动机负载百分比。 */
 int16_t obd_data_get_load_pct(void)
 {
     int16_t val;
@@ -168,6 +192,7 @@ int16_t obd_data_get_load_pct(void)
     return val;
 }
 
+/** 写入最新的节气门开度百分比。 */
 void obd_data_set_tps(int16_t pct)
 {
     portENTER_CRITICAL(&s_mux);
@@ -175,6 +200,7 @@ void obd_data_set_tps(int16_t pct)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 返回最新的节气门开度百分比。 */
 int16_t obd_data_get_tps(void)
 {
     int16_t val;
@@ -184,6 +210,7 @@ int16_t obd_data_get_tps(void)
     return val;
 }
 
+/** 写入最新的控制模块电压，单位为毫伏。 */
 void obd_data_set_bat_mv(int32_t mv)
 {
     portENTER_CRITICAL(&s_mux);
@@ -191,6 +218,7 @@ void obd_data_set_bat_mv(int32_t mv)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 返回最新的控制模块电压，单位为毫伏。 */
 int32_t obd_data_get_bat_mv(void)
 {
     int32_t val;
@@ -200,6 +228,7 @@ int32_t obd_data_get_bat_mv(void)
     return val;
 }
 
+/** 仅在数值合理时写入机油压力。 */
 void obd_data_set_oil_pressure_x10(int16_t pressure_x10)
 {
     // 合理范围: 0.0bar ~ 20.0bar
@@ -209,6 +238,7 @@ void obd_data_set_oil_pressure_x10(int16_t pressure_x10)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 返回最新的机油压力，单位为 0.1 bar。 */
 int16_t obd_data_get_oil_pressure_x10(void)
 {
     int16_t val;
@@ -218,6 +248,7 @@ int16_t obd_data_get_oil_pressure_x10(void)
     return val;
 }
 
+/** 仅在数值合理时写入增压压力。 */
 void obd_data_set_boost_x10(int16_t boost_x10)
 {
     // 涡轮表压合理范围: -1.5bar(真空) ~ +30.0bar
@@ -227,6 +258,7 @@ void obd_data_set_boost_x10(int16_t boost_x10)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 返回最新的增压压力，单位为 0.1 bar。 */
 int16_t obd_data_get_boost_x10(void)
 {
     int16_t val;
@@ -236,6 +268,7 @@ int16_t obd_data_get_boost_x10(void)
     return val;
 }
 
+/** 仅在数值合理时写入刹车温度。 */
 void obd_data_set_brake_temp_x10(int16_t temp_x10)
 {
     // 合理范围: -50.0°C ~ 1200.0°C
@@ -245,6 +278,7 @@ void obd_data_set_brake_temp_x10(int16_t temp_x10)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 写入 OBD 推导的横向加速度，单位为 0.01 g。 */
 void obd_data_set_lat_accel_x100(int16_t accel_x100)
 {
     if (accel_x100 != -32768 && (accel_x100 < -500 || accel_x100 > 500)) return;
@@ -253,6 +287,7 @@ void obd_data_set_lat_accel_x100(int16_t accel_x100)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 写入 OBD 推导的纵向加速度，单位为 0.01 g。 */
 void obd_data_set_lon_accel_x100(int16_t accel_x100)
 {
     if (accel_x100 != -32768 && (accel_x100 < -500 || accel_x100 > 500)) return;
@@ -261,6 +296,7 @@ void obd_data_set_lon_accel_x100(int16_t accel_x100)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 写入 IMU 推导的横向加速度，单位为 0.01 g。 */
 void obd_data_set_lat_accel_imu_x100(int16_t accel_x100)
 {
     if (accel_x100 != -32768 && (accel_x100 < -500 || accel_x100 > 500)) return;
@@ -269,6 +305,7 @@ void obd_data_set_lat_accel_imu_x100(int16_t accel_x100)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 写入 IMU 推导的纵向加速度，单位为 0.01 g。 */
 void obd_data_set_lon_accel_imu_x100(int16_t accel_x100)
 {
     if (accel_x100 != -32768 && (accel_x100 < -500 || accel_x100 > 500)) return;
@@ -277,6 +314,7 @@ void obd_data_set_lon_accel_imu_x100(int16_t accel_x100)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 写入最新的 RS485 刹车温度传输状态。 */
 void obd_data_set_brake_rs485_status(brake_rs485_status_t status)
 {
     portENTER_CRITICAL(&s_mux);
@@ -284,6 +322,7 @@ void obd_data_set_brake_rs485_status(brake_rs485_status_t status)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 写入最新的实际档位，并标记当前结果有效。 */
 void obd_data_set_actual_gear(enGear gear)
 {
     portENTER_CRITICAL(&s_mux);
@@ -292,6 +331,7 @@ void obd_data_set_actual_gear(enGear gear)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 在数据源不可靠时清除缓存的实际档位。 */
 void obd_data_clear_actual_gear(void)
 {
     portENTER_CRITICAL(&s_mux);
@@ -300,6 +340,7 @@ void obd_data_clear_actual_gear(void)
     portEXIT_CRITICAL(&s_mux);
 }
 
+/** 返回最新的刹车温度，单位为 0.1 摄氏度。 */
 int16_t obd_data_get_brake_temp_x10(void)
 {
     int16_t val;
@@ -309,6 +350,7 @@ int16_t obd_data_get_brake_temp_x10(void)
     return val;
 }
 
+/** 返回最新的 OBD 横向加速度，单位为 0.01 g。 */
 int16_t obd_data_get_lat_accel_x100(void)
 {
     int16_t val;
@@ -318,6 +360,7 @@ int16_t obd_data_get_lat_accel_x100(void)
     return val;
 }
 
+/** 返回最新的 OBD 纵向加速度，单位为 0.01 g。 */
 int16_t obd_data_get_lon_accel_x100(void)
 {
     int16_t val;
@@ -327,6 +370,7 @@ int16_t obd_data_get_lon_accel_x100(void)
     return val;
 }
 
+/** 返回最新的 IMU 横向加速度，单位为 0.01 g。 */
 int16_t obd_data_get_lat_accel_imu_x100(void)
 {
     int16_t val;
@@ -336,6 +380,7 @@ int16_t obd_data_get_lat_accel_imu_x100(void)
     return val;
 }
 
+/** 返回最新的 IMU 纵向加速度，单位为 0.01 g。 */
 int16_t obd_data_get_lon_accel_imu_x100(void)
 {
     int16_t val;
@@ -345,6 +390,7 @@ int16_t obd_data_get_lon_accel_imu_x100(void)
     return val;
 }
 
+/** 返回最新的 RS485 刹车温度传输状态。 */
 brake_rs485_status_t obd_data_get_brake_rs485_status(void)
 {
     brake_rs485_status_t val;
@@ -354,6 +400,7 @@ brake_rs485_status_t obd_data_get_brake_rs485_status(void)
     return val;
 }
 
+/** 返回当前有效的实际档位。 */
 bool obd_data_get_actual_gear(enGear *gear_out)
 {
     bool valid;
@@ -374,8 +421,15 @@ bool obd_data_get_actual_gear(enGear *gear_out)
  * @param speed 车速 (km/h)
  * @return 计算出的档位
  */
+/**
+ * 根据转速和车速推断当前档位
+ *
+ * 核心职责：结合车型传动比范围，给 UI 和业务逻辑提供稳定档位。
+ */
 enGear calculate_gear(float rpm, float speed) {
     static enGear s_last_gear = GEAR_NEUTRAL;
+    // ========== 输入校验 ==========
+    // 任一信号缺失时直接回到空挡，避免沿用上一次档位造成误判。
     // 1. 检查输入数据有效性
     if (rpm <= 0 || speed <= 0) {
         s_last_gear = GEAR_NEUTRAL;
@@ -384,6 +438,8 @@ enGear calculate_gear(float rpm, float speed) {
 
     // 2. 使用当前车辆配置计算总传动比
     const vehicle_profile_t *profile = vehicle_profile_get_active();
+    // ========== 传动比匹配 ==========
+    // 必须使用当前车型配置，否则不同终传比会让档位判断整体偏移。
     float calc_const = vehicle_profile_calc_constant(profile);
     float total_ratio = rpm / (speed * calc_const);
     ESP_LOGD("gear", "RPM=%.0f Speed=%.1f ratio=%.2f", rpm, speed, total_ratio);
@@ -417,11 +473,18 @@ enGear calculate_gear(float rpm, float speed) {
  * @note  
  * @note 里程统计任务
  */
+/**
+ * 里程统计定时器回调
+ *
+ * 每秒刷新一次里程相关统计，并按节流频率输出调试日志。
+ */
 static void mileage_timer_cb(void* arg)
 {
     static uint16_t usPrintCnt = 0;
+    (void)arg;
     nvs_stat_update_speed(obd_data_get_speed(), 1000);
 
+    // 仅在车辆移动时打印，避免静止阶段持续刷日志。
     if(obd_data_get_speed() > 0){
         usPrintCnt++;
         if(usPrintCnt >= 20){
@@ -438,6 +501,11 @@ static void mileage_timer_cb(void* arg)
  * @note  
  * @note 初始化里程统计任务
  */
+/**
+ * 初始化里程统计任务
+ *
+ * 创建周期定时器，让里程和 trip 统计持续更新。
+ */
 void vMileageDataStatisticTask(void)
 {
     ESP_LOGI("MileageStat", "MileageStatTask Init Start");
@@ -449,6 +517,7 @@ void vMileageDataStatisticTask(void)
             .name = "mile_stat"
         };
         if(esp_timer_create(&args,&s_timer)==ESP_OK){
+            // 固定 1 秒采样一次，方便距离和运行时长按统一节奏累加。
             esp_timer_start_periodic(s_timer, 1000000); //1s
         }
     }

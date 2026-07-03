@@ -2,6 +2,7 @@
 #include "ui_font_profile.h"
 #include <math.h>
 
+/** 测量指定字体在样本文本下的高度。 */
 static lv_coord_t ui_round_shell_measure_text_height(const lv_font_t *font, const char *sample_text)
 {
     lv_point_t size = {0};
@@ -20,6 +21,11 @@ static lv_coord_t ui_round_shell_measure_text_height(const lv_font_t *font, cons
     return size.y;
 }
 
+/**
+ * 为滚轮计算更紧凑的圆屏几何尺寸
+ *
+ * 让文本高度、包裹高度和触摸区在圆屏上保持更平衡的观感。
+ */
 static void ui_round_shell_apply_compact_roller_geometry(lv_obj_t *roller,
                                                          lv_coord_t requested_height,
                                                          lv_coord_t font_size)
@@ -63,6 +69,7 @@ static void ui_round_shell_apply_compact_roller_geometry(lv_obj_t *roller,
     lv_obj_set_style_pad_bottom(roller, pad_ver, LV_PART_SELECTED | LV_STATE_DEFAULT);
 }
 
+/** 给圆屏页面应用基础外观样式。 */
 void ui_round_screen_apply_base(lv_obj_t *screen, lv_color_t bg_color)
 {
     if (screen == NULL) {
@@ -80,6 +87,7 @@ void ui_round_screen_apply_base(lv_obj_t *screen, lv_color_t bg_color)
     lv_obj_set_style_pad_all(screen, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
 }
 
+/** 创建圆屏外圈装饰弧。 */
 lv_obj_t *ui_round_shell_create_ring(lv_obj_t *parent, const ui_round_shell_layout_t *shell)
 {
     if (parent == NULL || shell == NULL) {
@@ -107,6 +115,7 @@ lv_obj_t *ui_round_shell_create_ring(lv_obj_t *parent, const ui_round_shell_layo
     return ring;
 }
 
+/** 创建页头区域使用的胶囊按钮。 */
 lv_obj_t *ui_round_shell_create_header_button(lv_obj_t *parent,
                                               const char *text,
                                               lv_coord_t width,
@@ -138,6 +147,7 @@ lv_obj_t *ui_round_shell_create_header_button(lv_obj_t *parent,
     return btn;
 }
 
+/** 创建页面主标题。 */
 lv_obj_t *ui_round_shell_create_page_title(lv_obj_t *parent,
                                            const char *title_text,
                                            lv_coord_t title_y,
@@ -166,6 +176,11 @@ lv_obj_t *ui_round_shell_create_page_title(lv_obj_t *parent,
     return title;
 }
 
+/**
+ * 创建标题和副标题组合块
+ *
+ * 会根据圆屏安全区域自动收敛副标题宽度。
+ */
 void ui_round_shell_create_title_block(lv_obj_t *parent,
                                        const char *title_text,
                                        const char *subtitle_text,
@@ -226,6 +241,7 @@ void ui_round_shell_create_title_block(lv_obj_t *parent,
     }
 }
 
+/** 创建顶部小胶囊信息块。 */
 lv_obj_t *ui_round_shell_create_chip(lv_obj_t *parent,
                                      lv_coord_t width,
                                      lv_coord_t height,
@@ -248,6 +264,7 @@ lv_obj_t *ui_round_shell_create_chip(lv_obj_t *parent,
     return chip;
 }
 
+/** 创建居中的圆角卡片容器。 */
 lv_obj_t *ui_round_shell_create_center_card(lv_obj_t *parent,
                                             lv_coord_t width,
                                             lv_coord_t min_height,
@@ -277,6 +294,7 @@ lv_obj_t *ui_round_shell_create_center_card(lv_obj_t *parent,
     return card;
 }
 
+/** 创建一条简单的分割线。 */
 lv_obj_t *ui_round_shell_create_divider(lv_obj_t *parent,
                                         lv_coord_t x,
                                         lv_coord_t y,
@@ -301,6 +319,7 @@ lv_obj_t *ui_round_shell_create_divider(lv_obj_t *parent,
     return divider;
 }
 
+/** 创建覆盖层里的中心行动卡片。 */
 lv_obj_t *ui_round_shell_create_overlay_action_card(lv_obj_t *parent,
                                                     lv_coord_t width,
                                                     lv_coord_t height,
@@ -336,6 +355,7 @@ lv_obj_t *ui_round_shell_create_overlay_action_card(lv_obj_t *parent,
     return card;
 }
 
+/** 给卡片对象应用深色主题。 */
 void ui_round_shell_apply_dark_card_theme(lv_obj_t *obj,
                                           lv_coord_t radius,
                                           lv_coord_t pad_all)
@@ -353,6 +373,7 @@ void ui_round_shell_apply_dark_card_theme(lv_obj_t *obj,
     lv_obj_set_style_shadow_width(obj, 0, LV_PART_MAIN);
 }
 
+/** 给滚轮应用主态和选中态的完整主题。 */
 void ui_round_shell_apply_roller_theme(lv_obj_t *roller,
                                        lv_coord_t radius,
                                        lv_color_t main_bg,
@@ -384,6 +405,7 @@ void ui_round_shell_apply_roller_theme(lv_obj_t *roller,
     lv_obj_set_style_shadow_width(roller, 0, LV_PART_SELECTED | LV_STATE_DEFAULT);
 }
 
+/** 给滚轮应用圆屏深色预设。 */
 void ui_round_shell_apply_dark_roller_preset(lv_obj_t *roller,
                                              lv_coord_t radius,
                                              lv_coord_t min_height,
@@ -411,6 +433,7 @@ void ui_round_shell_apply_dark_roller_preset(lv_obj_t *roller,
     ui_round_shell_set_roller_touch_target(roller, min_height, ui_layout_px(6), 0);
 }
 
+/** 调整滚轮的触摸热区和文字内边距。 */
 void ui_round_shell_set_roller_touch_target(lv_obj_t *roller,
                                             lv_coord_t min_height,
                                             lv_coord_t pad_hor,
@@ -440,6 +463,7 @@ void ui_round_shell_set_roller_touch_target(lv_obj_t *roller,
     lv_obj_set_style_text_align(roller, LV_TEXT_ALIGN_CENTER, LV_PART_SELECTED | LV_STATE_DEFAULT);
 }
 
+/** 给切换按钮应用统一主题。 */
 void ui_round_shell_apply_toggle_button_theme(lv_obj_t *btn,
                                               lv_color_t accent_color)
 {
@@ -464,6 +488,7 @@ void ui_round_shell_apply_toggle_button_theme(lv_obj_t *btn,
     lv_obj_set_style_text_color(btn, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_CHECKED);
 }
 
+/** 给普通操作按钮应用统一主题。 */
 void ui_round_shell_apply_action_button_theme(lv_obj_t *btn,
                                               lv_color_t accent_color,
                                               bool emphasize_accent,
@@ -496,6 +521,7 @@ void ui_round_shell_apply_action_button_theme(lv_obj_t *btn,
     }
 }
 
+/** 给危险操作按钮应用统一主题。 */
 void ui_round_shell_apply_danger_button_theme(lv_obj_t *btn,
                                               lv_coord_t radius,
                                               lv_coord_t pad_all)
@@ -512,6 +538,7 @@ void ui_round_shell_apply_danger_button_theme(lv_obj_t *btn,
     lv_obj_set_style_shadow_width(btn, 0, LV_PART_MAIN);
 }
 
+/** 给列表按钮应用统一主题。 */
 void ui_round_shell_apply_list_button_theme(lv_obj_t *btn,
                                             lv_coord_t font_size)
 {
@@ -527,6 +554,11 @@ void ui_round_shell_apply_list_button_theme(lv_obj_t *btn,
     lv_obj_set_style_shadow_width(btn, 0, LV_PART_MAIN);
 }
 
+/**
+ * 给消息框应用圆屏弹窗主题
+ *
+ * 同时重新排版按钮区域，保证主按钮更醒目。
+ */
 void ui_round_shell_apply_modal_theme(lv_obj_t *msgbox,
                                       lv_color_t accent_color,
                                       int32_t primary_btn_index)
@@ -609,6 +641,7 @@ void ui_round_shell_apply_modal_theme(lv_obj_t *msgbox,
     }
 }
 
+/** 计算圆屏在指定 y 坐标处的左边界。 */
 lv_coord_t ui_round_shell_circle_left_at_y(lv_coord_t y)
 {
     int32_t r = (int32_t)ui_round_radius();
@@ -622,11 +655,17 @@ lv_coord_t ui_round_shell_circle_left_at_y(lv_coord_t y)
     return (lv_coord_t)(r - (int32_t)sqrtf((float)r2_dy2));
 }
 
+/** 计算圆屏在指定 y 坐标处的右边界。 */
 lv_coord_t ui_round_shell_circle_right_at_y(lv_coord_t y)
 {
     return (lv_coord_t)(ui_screen_width() - ui_round_shell_circle_left_at_y(y));
 }
 
+/**
+ * 计算某条水平带状区域在圆屏内的安全左右边界
+ *
+ * 通过多点采样避免控件在圆屏边缘被裁切。
+ */
 void ui_round_shell_safe_span_for_band(lv_coord_t y,
                                        lv_coord_t h,
                                        lv_coord_t inset,

@@ -36,11 +36,17 @@ static const disp_item_meta_t s_disp_meta[DISP_ITEM_COUNT] = {
     {"BST", "bar", 0x00DD88},
 };
 
+/** 返回当前开机扫表动画所在的步进序号。 */
 int ui_runtime_sweep_step_get(void)
 {
     return s_sweep_step;
 }
 
+/**
+ * 从一组缓存值里读取指定仪表项的显示值
+ *
+ * 核心职责：统一处理各类数据项的有效性判断，并输出可显示的整数结果
+ */
 bool disp_item_read_value(disp_item_t item,
                           int16_t clt,
                           int16_t iat,
@@ -125,6 +131,7 @@ bool disp_item_read_value(disp_item_t item,
     }
 }
 
+/** 根据扫表动画进度生成某个仪表项的演示值。 */
 int32_t disp_item_sweep_value(disp_item_t item, float ratio)
 {
     switch (item) {
@@ -152,6 +159,11 @@ int32_t disp_item_sweep_value(disp_item_t item, float ratio)
     }
 }
 
+/**
+ * 把某个仪表值格式化成标签文本
+ *
+ * 核心职责：按不同单位选择合适的小数位和符号格式
+ */
 void disp_item_set_text(lv_obj_t *label, disp_item_t item, int32_t value, bool valid)
 {
     if (!label) {
@@ -182,6 +194,7 @@ void disp_item_set_text(lv_obj_t *label, disp_item_t item, int32_t value, bool v
     }
 }
 
+/** 按当前数值和告警阈值刷新标签颜色。 */
 void disp_item_set_value_color(lv_obj_t *label,
                                disp_item_t item,
                                int32_t value,
@@ -204,6 +217,7 @@ void disp_item_set_value_color(lv_obj_t *label,
     lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
 }
 
+/** 同步某个槽位的名称、单位和标题色。 */
 void disp_item_sync_meta(lv_obj_t *name_label,
                          lv_obj_t *unit_label,
                          uint8_t *cache_slot,
@@ -223,6 +237,7 @@ void disp_item_sync_meta(lv_obj_t *name_label,
     *cache_slot = (uint8_t)item;
 }
 
+/** 返回指定显示项的短名称。 */
 const char *ui_disp_item_name(uint8_t item)
 {
     if (item >= DISP_ITEM_COUNT) {
@@ -231,6 +246,11 @@ const char *ui_disp_item_name(uint8_t item)
     return s_disp_meta[item].name;
 }
 
+/**
+ * 推进旧版运行时动画状态机
+ *
+ * 核心职责：检测蓝牙连上瞬间，并驱动开机扫表动画的起停节奏
+ */
 void ui_legacy_runtime_tick(bool logo_visible)
 {
     bool ble_now = elm327_ble_is_connected();
@@ -252,6 +272,7 @@ void ui_legacy_runtime_tick(bool logo_visible)
     }
 }
 
+/** 在 Logo 页面退出后补触发挂起中的扫表动画。 */
 void ui_legacy_runtime_on_logo_exit(void)
 {
     if (s_sweep_pending) {

@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+/** 把横向偏移应用到分页轨道对象。 */
 static void ui_home_pager_apply_track_x(ui_home_pager_t *pager, lv_coord_t x)
 {
     if (pager == NULL || pager->track == NULL) {
@@ -11,6 +12,7 @@ static void ui_home_pager_apply_track_x(ui_home_pager_t *pager, lv_coord_t x)
     lv_obj_set_x(pager->track, x);
 }
 
+/** 把页面索引换算成居中时的轨道 x 坐标。 */
 static lv_coord_t ui_home_pager_track_x_for_page(const ui_home_pager_t *pager, uint8_t page_id)
 {
     if (pager == NULL || pager->page_width <= 0) {
@@ -20,6 +22,7 @@ static lv_coord_t ui_home_pager_track_x_for_page(const ui_home_pager_t *pager, u
     return (lv_coord_t)(-((lv_coord_t)page_id) * pager->page_width);
 }
 
+/** 限制拖拽位置，避免轨道滑出有效页面范围。 */
 static lv_coord_t ui_home_pager_clamp_track_x(const ui_home_pager_t *pager, lv_coord_t x)
 {
     lv_coord_t min_x;
@@ -39,6 +42,7 @@ static lv_coord_t ui_home_pager_clamp_track_x(const ui_home_pager_t *pager, lv_c
     return x;
 }
 
+/** 分页器回弹动画回调。 */
 static void ui_home_pager_settle_exec_cb(void *var, int32_t value)
 {
     ui_home_pager_t *pager = (ui_home_pager_t *)var;
@@ -46,6 +50,7 @@ static void ui_home_pager_settle_exec_cb(void *var, int32_t value)
     ui_home_pager_apply_track_x(pager, (lv_coord_t)value);
 }
 
+/** 在回弹动画销毁后收尾分页器状态。 */
 static void ui_home_pager_settle_deleted_cb(lv_anim_t *anim)
 {
     ui_home_pager_t *pager = (ui_home_pager_t *)anim->var;
@@ -60,6 +65,7 @@ static void ui_home_pager_settle_deleted_cb(lv_anim_t *anim)
     ui_home_pager_apply_track_x(pager, ui_home_pager_track_x_for_page(pager, pager->active_page));
 }
 
+/** 取消当前正在进行的回弹动画。 */
 static void ui_home_pager_stop_settle(ui_home_pager_t *pager)
 {
     if (pager == NULL || pager->track == NULL) {
@@ -70,6 +76,7 @@ static void ui_home_pager_stop_settle(ui_home_pager_t *pager)
     pager->settling = false;
 }
 
+/** 以规范化参数触发页面提交回调。 */
 static void ui_home_pager_emit_commit(ui_home_pager_t *pager, uint8_t from_page, uint8_t to_page)
 {
     ui_home_pager_commit_t commit;
@@ -84,6 +91,7 @@ static void ui_home_pager_emit_commit(ui_home_pager_t *pager, uint8_t from_page,
     pager->commit_cb(&commit, pager->user);
 }
 
+/** 在横向拖拽真正成立时通知监听方。 */
 static void ui_home_pager_emit_drag_begin(ui_home_pager_t *pager, uint8_t from_page)
 {
     if (pager == NULL || pager->drag_begin_cb == NULL) {
@@ -93,6 +101,7 @@ static void ui_home_pager_emit_drag_begin(ui_home_pager_t *pager, uint8_t from_p
     pager->drag_begin_cb(from_page, pager->user);
 }
 
+/** 朝目标页面启动回弹动画。 */
 static void ui_home_pager_start_settle(ui_home_pager_t *pager, uint8_t to_page)
 {
     lv_coord_t current_x;
@@ -125,6 +134,7 @@ static void ui_home_pager_start_settle(ui_home_pager_t *pager, uint8_t to_page)
     lv_anim_start(&pager->settle_anim);
 }
 
+/** 根据松手手势判定目标页，并启动对应动画。 */
 static void ui_home_pager_commit_release(ui_home_pager_t *pager)
 {
     uint8_t from_page;
@@ -145,6 +155,12 @@ static void ui_home_pager_commit_release(ui_home_pager_t *pager)
     ui_home_pager_start_settle(pager, to_page);
 }
 
+/**
+ * Handle press, drag, and release events for the home pager.
+ *
+ * Core responsibilities: lock axis choice after intent is clear,
+ * translate horizontal drags, and dispatch vertical menu actions.
+ */
 static void ui_home_pager_event_cb(lv_event_t *e)
 {
     ui_home_pager_t *pager = (ui_home_pager_t *)lv_event_get_user_data(e);
@@ -191,6 +207,8 @@ static void ui_home_pager_event_cb(lv_event_t *e)
     dy = point.y - pager->press_start_y;
 
     if (pager->axis == UI_HOME_PAGER_AXIS_NONE) {
+        // Wait until gesture intent is clear so vertical menu swipes
+        // are not accidentally consumed as horizontal page turns.
         pager->axis = ui_home_pager_axis_from_delta(dx, dy, pager->active_page == 0u);
         if (pager->axis == UI_HOME_PAGER_AXIS_X) {
             ui_home_pager_emit_drag_begin(pager, pager->target_page);
@@ -227,6 +245,12 @@ static void ui_home_pager_event_cb(lv_event_t *e)
     pager->last_dx = 0;
 }
 
+/**
+ * Build a pager instance and its page containers.
+ *
+ * Core responsibility: allocate the gesture root, track object, and
+ * one child page per visible tile slot.
+ */
 void ui_home_pager_init(ui_home_pager_t *pager, const ui_home_pager_config_t *cfg)
 {
     lv_coord_t track_width;
@@ -274,6 +298,7 @@ void ui_home_pager_init(ui_home_pager_t *pager, const ui_home_pager_config_t *cf
     }
 }
 
+/** 在外部删除 LVGL 对象后重置分页器状态。 */
 void ui_home_pager_deinit(ui_home_pager_t *pager)
 {
     if (pager == NULL) {
@@ -284,11 +309,13 @@ void ui_home_pager_deinit(ui_home_pager_t *pager)
     memset(pager, 0, sizeof(*pager));
 }
 
+/** 返回负责接收分页手势的根对象。 */
 lv_obj_t *ui_home_pager_root(const ui_home_pager_t *pager)
 {
     return (pager != NULL) ? pager->root : NULL;
 }
 
+/** 返回某一页对应的 LVGL 容器。 */
 lv_obj_t *ui_home_pager_page(const ui_home_pager_t *pager, uint8_t page_id)
 {
     if (pager == NULL || page_id >= pager->page_count) {
@@ -298,11 +325,13 @@ lv_obj_t *ui_home_pager_page(const ui_home_pager_t *pager, uint8_t page_id)
     return pager->pages[page_id];
 }
 
+/** 返回当前激活的页面索引。 */
 uint8_t ui_home_pager_active_page(const ui_home_pager_t *pager)
 {
     return (pager != NULL) ? pager->active_page : 0u;
 }
 
+/** 切换当前激活页，可选是否走回弹动画。 */
 void ui_home_pager_set_active_page(ui_home_pager_t *pager, uint8_t page_id, bool animate)
 {
     uint8_t target_page;
@@ -326,6 +355,7 @@ void ui_home_pager_set_active_page(ui_home_pager_t *pager, uint8_t page_id, bool
     ui_home_pager_apply_track_x(pager, ui_home_pager_track_x_for_page(pager, target_page));
 }
 
+/** 启用或禁用分页手势，不销毁现有对象。 */
 void ui_home_pager_set_locked(ui_home_pager_t *pager, bool locked)
 {
     if (pager == NULL) {
@@ -341,6 +371,7 @@ void ui_home_pager_set_locked(ui_home_pager_t *pager, bool locked)
     }
 }
 
+/** 在页面数量变化后同步更新分页器内部状态。 */
 void ui_home_pager_set_page_count(ui_home_pager_t *pager, uint8_t page_count)
 {
     lv_coord_t track_width;
