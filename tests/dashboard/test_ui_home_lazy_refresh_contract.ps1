@@ -19,4 +19,8 @@ if ($homeRuntime -match 'disp_item_read_value\(item,\s*clt,\s*iat,\s*oil,\s*load
     throw "ui_home_runtime.c must no longer route home-page refresh through the eager bulk disp_item_read_value() path"
 }
 
+if ($homeRuntime -notmatch 'if \(rt->item_cache\[i\] != \(uint8_t\)item\)\s*\{\s*ui_home_runtime_widgets_apply_slot_typography') {
+    throw "ui_home_runtime.c must not re-apply metric typography on every refresh when the slot item has not changed"
+}
+
 Write-Output "ui home lazy refresh contract checks passed"

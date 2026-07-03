@@ -26,12 +26,12 @@ if ($elm -notmatch 'obd_data_set_lon_accel_x100') {
     throw "elm327_ble_client.c must decode longitudinal acceleration into the OBD cache"
 }
 
-if ($homeRuntime -notmatch 'gforce_history_glow_line') {
-    throw "ui_home_runtime.c must render the yellow historical G envelope"
+if ($homeRuntime -notmatch 'ui_home_gforce_draw_event') {
+    throw "ui_home_runtime.c must keep a dedicated draw pipeline for the G-force page"
 }
 
-if ($homeRuntime -notmatch 'gforce_center_dot') {
-    throw "ui_home_runtime.c must render the G-force center marker"
+if ($homeRuntime -notmatch 'ui_gforce_plot_step') {
+    throw "ui_home_runtime.c must keep the extracted G-force plot state update path"
 }
 
 Write-Output "G-force OBD monitor contract checks passed"

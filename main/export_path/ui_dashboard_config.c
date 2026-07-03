@@ -575,14 +575,22 @@ static lv_obj_t *ui_dashboard_config_create_row(lv_obj_t *parent, lv_coord_t hei
     lv_obj_set_width(row, LV_PCT(100));
     lv_obj_set_height(row, height);
     lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(row, 0, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
+    ui_round_shell_apply_dark_card_theme(row, ui_layout_px(14), ui_layout_px(10));
+    lv_obj_set_style_bg_color(row, lv_color_hex(0x161616), LV_PART_MAIN);
+    lv_obj_set_style_border_width(row, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(row, lv_color_hex(0x2E2E2E), LV_PART_MAIN);
     lv_obj_set_style_shadow_width(row, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_left(row, ui_layout_px(6), LV_PART_MAIN);
-    lv_obj_set_style_pad_right(row, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(row, ui_layout_px(10), LV_PART_MAIN);
+    lv_obj_set_style_pad_right(row, ui_layout_px(10), LV_PART_MAIN);
     lv_obj_set_style_pad_top(row, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(row, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(row, ui_layout_px(8), LV_PART_MAIN);
+    lv_obj_set_layout(row, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row,
+                          LV_FLEX_ALIGN_SPACE_BETWEEN,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
     return row;
 }
 
@@ -766,15 +774,15 @@ static void ui_dashboard_config_screen_init(void)
     lv_obj_t *type_label = lv_label_create(s_dashboard_cfg_type_row);
     lv_label_set_text(type_label, "TYPE");
     lv_obj_set_style_text_font(type_label, ui_font_hint(label_font), LV_PART_MAIN);
-    lv_obj_set_style_text_color(type_label, lv_color_hex(0x7A7A7A), LV_PART_MAIN);
-    lv_obj_align(type_label, LV_ALIGN_LEFT_MID, ui_layout_px(6), 0);
+    lv_obj_set_style_text_color(type_label, lv_color_hex(0xB8B8B8), LV_PART_MAIN);
+    lv_label_set_long_mode(type_label, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(type_label, ui_layout_px(90));
 
     s_dashboard_cfg_type_roller = lv_roller_create(s_dashboard_cfg_type_row);
     lv_roller_set_options(s_dashboard_cfg_type_roller, type_options, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_dashboard_cfg_type_roller, 1);
     lv_roller_set_selected(s_dashboard_cfg_type_roller, (uint16_t)ui_dashboard_page_get_type(page), LV_ANIM_OFF);
     lv_obj_set_size(s_dashboard_cfg_type_roller, type_roller_w, row_h);
-    lv_obj_align(s_dashboard_cfg_type_roller, LV_ALIGN_RIGHT_MID, 0, 0);
     ui_dashboard_config_apply_roller_style(s_dashboard_cfg_type_roller,
                                            visible_row_radius,
                                            row_h,
@@ -791,15 +799,15 @@ static void ui_dashboard_config_screen_init(void)
     lv_obj_t *count_label = s_dashboard_cfg_slot_count_label;
     lv_label_set_text(count_label, "SLOTS");
     lv_obj_set_style_text_font(count_label, ui_font_hint(label_font), LV_PART_MAIN);
-    lv_obj_set_style_text_color(count_label, lv_color_hex(0x7A7A7A), LV_PART_MAIN);
-    lv_obj_align(count_label, LV_ALIGN_LEFT_MID, ui_layout_px(6), 0);
+    lv_obj_set_style_text_color(count_label, lv_color_hex(0xB8B8B8), LV_PART_MAIN);
+    lv_label_set_long_mode(count_label, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(count_label, ui_layout_px(90));
 
     s_dashboard_cfg_slot_count_roller = lv_roller_create(s_dashboard_cfg_slot_count_row);
     lv_roller_set_options(s_dashboard_cfg_slot_count_roller, slot_count_options, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_dashboard_cfg_slot_count_roller, 1);
     lv_roller_set_selected(s_dashboard_cfg_slot_count_roller, (uint16_t)(page->slot_count - 1u), LV_ANIM_OFF);
     lv_obj_set_size(s_dashboard_cfg_slot_count_roller, count_roller_w, row_h);
-    lv_obj_align(s_dashboard_cfg_slot_count_roller, LV_ALIGN_RIGHT_MID, 0, 0);
     ui_dashboard_config_apply_roller_style(s_dashboard_cfg_slot_count_roller,
                                            visible_row_radius,
                                            row_h,
@@ -815,14 +823,14 @@ static void ui_dashboard_config_screen_init(void)
     s_dashboard_cfg_slot_edit_label = lv_label_create(s_dashboard_cfg_slot_edit_row);
     lv_label_set_text(s_dashboard_cfg_slot_edit_label, "EDIT SLOT");
     lv_obj_set_style_text_font(s_dashboard_cfg_slot_edit_label, ui_font_hint(label_font), LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_dashboard_cfg_slot_edit_label, lv_color_hex(0x7A7A7A), LV_PART_MAIN);
-    lv_obj_align(s_dashboard_cfg_slot_edit_label, LV_ALIGN_LEFT_MID, ui_layout_px(6), 0);
+    lv_obj_set_style_text_color(s_dashboard_cfg_slot_edit_label, lv_color_hex(0xB8B8B8), LV_PART_MAIN);
+    lv_label_set_long_mode(s_dashboard_cfg_slot_edit_label, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(s_dashboard_cfg_slot_edit_label, ui_layout_px(90));
 
     s_dashboard_cfg_slot_edit_roller = lv_roller_create(s_dashboard_cfg_slot_edit_row);
     lv_roller_set_options(s_dashboard_cfg_slot_edit_roller, "1", LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_dashboard_cfg_slot_edit_roller, 1);
     lv_obj_set_size(s_dashboard_cfg_slot_edit_roller, count_roller_w, row_h);
-    lv_obj_align(s_dashboard_cfg_slot_edit_roller, LV_ALIGN_RIGHT_MID, 0, 0);
     ui_dashboard_config_apply_roller_style(s_dashboard_cfg_slot_edit_roller,
                                            visible_row_radius,
                                            row_h,
@@ -838,14 +846,14 @@ static void ui_dashboard_config_screen_init(void)
     s_dashboard_cfg_slot_item_label = lv_label_create(s_dashboard_cfg_slot_item_row);
     lv_label_set_text(s_dashboard_cfg_slot_item_label, "METRIC");
     lv_obj_set_style_text_font(s_dashboard_cfg_slot_item_label, ui_font_hint(label_font), LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_dashboard_cfg_slot_item_label, lv_color_hex(0x7A7A7A), LV_PART_MAIN);
-    lv_obj_align(s_dashboard_cfg_slot_item_label, LV_ALIGN_LEFT_MID, ui_layout_px(6), 0);
+    lv_obj_set_style_text_color(s_dashboard_cfg_slot_item_label, lv_color_hex(0xB8B8B8), LV_PART_MAIN);
+    lv_label_set_long_mode(s_dashboard_cfg_slot_item_label, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(s_dashboard_cfg_slot_item_label, ui_layout_px(90));
 
     s_dashboard_cfg_slot_item_roller = lv_roller_create(s_dashboard_cfg_slot_item_row);
     lv_roller_set_options(s_dashboard_cfg_slot_item_roller, item_options, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_dashboard_cfg_slot_item_roller, 1);
     lv_obj_set_size(s_dashboard_cfg_slot_item_roller, item_roller_w, row_h);
-    lv_obj_align(s_dashboard_cfg_slot_item_roller, LV_ALIGN_RIGHT_MID, 0, 0);
     ui_dashboard_config_apply_roller_style(s_dashboard_cfg_slot_item_roller,
                                            visible_row_radius,
                                            row_h,
@@ -857,7 +865,6 @@ static void ui_dashboard_config_screen_init(void)
 
     s_dashboard_cfg_rpm_toggle_wrap = lv_obj_create(s_dashboard_cfg_slot_item_row);
     lv_obj_set_size(s_dashboard_cfg_rpm_toggle_wrap, ui_layout_px(152), row_h);
-    lv_obj_align(s_dashboard_cfg_rpm_toggle_wrap, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_set_style_bg_opa(s_dashboard_cfg_rpm_toggle_wrap, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_dashboard_cfg_rpm_toggle_wrap, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(s_dashboard_cfg_rpm_toggle_wrap, 0, LV_PART_MAIN);
@@ -904,14 +911,14 @@ static void ui_dashboard_config_screen_init(void)
     s_dashboard_cfg_gear_gap_label = lv_label_create(s_dashboard_cfg_gear_gap_row);
     lv_label_set_text(s_dashboard_cfg_gear_gap_label, "GAP");
     lv_obj_set_style_text_font(s_dashboard_cfg_gear_gap_label, ui_font_hint(label_font), LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_dashboard_cfg_gear_gap_label, lv_color_hex(0x7A7A7A), LV_PART_MAIN);
-    lv_obj_align(s_dashboard_cfg_gear_gap_label, LV_ALIGN_LEFT_MID, ui_layout_px(6), 0);
+    lv_obj_set_style_text_color(s_dashboard_cfg_gear_gap_label, lv_color_hex(0xB8B8B8), LV_PART_MAIN);
+    lv_label_set_long_mode(s_dashboard_cfg_gear_gap_label, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(s_dashboard_cfg_gear_gap_label, ui_layout_px(90));
 
     s_dashboard_cfg_gear_gap_roller = lv_roller_create(s_dashboard_cfg_gear_gap_row);
     lv_roller_set_options(s_dashboard_cfg_gear_gap_roller, "100\n200\n500\n800\n1000\n2000", LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_dashboard_cfg_gear_gap_roller, 1);
     lv_obj_set_size(s_dashboard_cfg_gear_gap_roller, ui_layout_px(124), row_h);
-    lv_obj_align(s_dashboard_cfg_gear_gap_roller, LV_ALIGN_RIGHT_MID, 0, 0);
     ui_dashboard_config_apply_roller_style(s_dashboard_cfg_gear_gap_roller,
                                            visible_row_radius,
                                            row_h,

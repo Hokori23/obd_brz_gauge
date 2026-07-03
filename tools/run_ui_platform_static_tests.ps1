@@ -69,6 +69,14 @@ $tests = @(
     @{
         Source = Join-Path $PSScriptRoot "..\tests\dashboard\test_zc6_gforce_monitor_decode.c"
         Output = Join-Path $outputDir "test_zc6_gforce_monitor_decode.o"
+    },
+    @{
+        Source = Join-Path $PSScriptRoot "..\tests\dashboard\test_ui_gforce_plot_logic.c"
+        Output = Join-Path $outputDir "test_ui_gforce_plot_logic.o"
+    },
+    @{
+        Source = Join-Path $PSScriptRoot "..\tests\dashboard\test_ui_metric_layout_logic.c"
+        Output = Join-Path $outputDir "test_ui_metric_layout_logic.o"
     }
 )
 
@@ -218,6 +226,11 @@ if ($LASTEXITCODE -ne 0) {
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_ui_home_pager_contract.ps1")
 if ($LASTEXITCODE -ne 0) {
     throw "ui home pager contract checks failed"
+}
+
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_metric_background_draw_contract.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "metric background draw contract checks failed"
 }
 
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "..\tests\dashboard\test_racechrono_active_channel_contract.ps1")
