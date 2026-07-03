@@ -57,7 +57,27 @@ if (-not $metricContentRect.Success -or
 if ($widgets -notmatch 'ui_home_widgets_metric_value_fit_padding' -or
     $widgets -notmatch 'if \(slot_count >= 6u\)\s*\{\s*return ui_layout_px\(6\);' -or
     $widgets -notmatch 'if \(slot_count == 5u\)\s*\{\s*return ui_layout_px\(5\);') {
-    throw "5/6-slot metric value fitting must keep a small extra padding guard against glyph clipping"
+    throw "5/6-slot metric value fitting must keep a small glyph-edge padding guard without shrinking single rows"
+}
+
+if ($widgets -notmatch 'static lv_coord_t ui_home_widgets_metric_block_pad_y' -or
+    $widgets -notmatch 'return LV_MAX\(ui_layout_px\(2\), slot_h \* 3 / 100\);' -or
+    $widgets -notmatch 'static lv_coord_t ui_home_widgets_metric_block_pad_x' -or
+    $widgets -notmatch 'return ui_layout_px\(4\);') {
+    throw "dense metric blocks must use a small shared content inset so corner labels are not clipped"
+}
+
+if ($widgets -notmatch 'ui_home_widgets_metric_resolve_gaps' -or
+    $widgets -notmatch 'value_text_h / 12' -or
+    $widgets -notmatch 'value_text_h / 18' -or
+    $widgets -notmatch 'ui_home_widgets_metric_resolve_gaps\(content_rect\.h,\s*slot_count,\s*value_fit\.text_h,' -or
+    $widgets -match 'single_slot_row') {
+    throw "dense metric vertical gaps must scale from resolved value font height, not slot-specific single-row branches"
+}
+
+if ($widgets -match 'ui_home_widgets_metric_label_value_gap\(' -or
+    $widgets -match 'ui_home_widgets_metric_value_unit_gap\(') {
+    throw "dense metric gap callers must use the floor helpers or resolved-gap helper; old gap names must not remain"
 }
 
 if ($widgets -notmatch 'ui_home_runtime_widgets_create_box_slot_card\(parent') {

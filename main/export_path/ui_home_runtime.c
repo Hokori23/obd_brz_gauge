@@ -1284,6 +1284,8 @@ static void ui_home_build_dense_metric_styles(uint8_t slot_count,
         if (row_slot_counts[row] == 1u) {
             lv_coord_t center_x = layouts[slot_index].x + (layouts[slot_index].w / 2);
 
+            // 3/5-slot pages put one metric on the bottom row.
+            // The true flag lets the row keep its centered, full-width value band.
             ui_home_runtime_widgets_build_dense_slot_style(layouts[slot_index].x,
                                                            layouts[slot_index].y,
                                                            layouts[slot_index].w,

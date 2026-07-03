@@ -15,8 +15,8 @@ typedef struct {
 
 static int16_t ui_home_widgets_slot_name_font(uint8_t slot_count);
 static int16_t ui_home_widgets_slot_unit_font(uint8_t slot_count);
-static lv_coord_t ui_home_widgets_metric_label_value_gap(lv_coord_t slot_h, uint8_t slot_count);
-static lv_coord_t ui_home_widgets_metric_value_unit_gap(lv_coord_t slot_h, uint8_t slot_count);
+static lv_coord_t ui_home_widgets_metric_label_value_gap_floor(lv_coord_t slot_h, uint8_t slot_count);
+static lv_coord_t ui_home_widgets_metric_value_unit_gap_floor(lv_coord_t slot_h, uint8_t slot_count);
 
 /** 返回某个仪表项用于估算字号的样本文本。 */
 static const char *ui_home_widgets_value_sample_text(disp_item_t item)
@@ -134,8 +134,8 @@ static ui_home_metric_rect_t ui_home_widgets_value_rect_for_panel(lv_coord_t pan
         inset_x = 0;
     }
 
-    label_gap = ui_home_widgets_metric_label_value_gap(panel_h, slot_count);
-    unit_gap = ui_home_widgets_metric_value_unit_gap(panel_h, slot_count);
+    label_gap = ui_home_widgets_metric_label_value_gap_floor(panel_h, slot_count);
+    unit_gap = ui_home_widgets_metric_value_unit_gap_floor(panel_h, slot_count);
     name_h = ui_home_widgets_font_line_height(ui_home_widgets_slot_name_font(slot_count), ui_layout_px(20));
     unit_h = ui_home_widgets_font_line_height(ui_home_widgets_slot_unit_font(slot_count), ui_layout_px(16));
     value_h = panel_h - name_h - unit_h - label_gap - unit_gap - (stack_pad_y * 2);
@@ -341,6 +341,7 @@ static int16_t ui_home_widgets_value_font_for_rect(disp_item_t item,
 
 static bool ui_home_widgets_use_metric_block_layout(uint8_t slot_count)
 {
+    // 3/4/5/6 slots use the dense metric template; 1/2 keep the separate box-card path.
     return slot_count >= 3u && slot_count <= 6u;
 }
 
@@ -351,24 +352,19 @@ bool ui_home_runtime_widgets_is_dense_slot_count(uint8_t slot_count)
 
 static lv_coord_t ui_home_widgets_metric_block_pad_y(lv_coord_t slot_h, uint8_t slot_count)
 {
-    if (slot_count == 3u) {
-        return LV_MAX(ui_layout_px(2), slot_h * 3 / 100);
-    }
-    if (slot_count == 4u) {
-        return LV_MAX(ui_layout_px(2), slot_h * 3 / 100);
-    }
-    if (slot_count == 5u) {
-        return LV_MAX(ui_layout_px(1), slot_h * 2 / 100);
-    }
-    return LV_MAX(ui_layout_px(1), slot_h * 1 / 100);
+    LV_UNUSED(slot_count);
+
+    return LV_MAX(ui_layout_px(2), slot_h * 3 / 100);
 }
 
 static lv_coord_t ui_home_widgets_metric_block_pad_x(uint8_t slot_count)
 {
-    return ui_layout_px((slot_count >= 6u) ? 1 : 2);
+    LV_UNUSED(slot_count);
+
+    return ui_layout_px(4);
 }
 
-static lv_coord_t ui_home_widgets_metric_label_value_gap(lv_coord_t slot_h, uint8_t slot_count)
+static lv_coord_t ui_home_widgets_metric_label_value_gap_floor(lv_coord_t slot_h, uint8_t slot_count)
 {
     if (slot_count >= 6u) {
         return LV_MAX(ui_layout_px(2), slot_h * 2 / 100);
@@ -376,13 +372,38 @@ static lv_coord_t ui_home_widgets_metric_label_value_gap(lv_coord_t slot_h, uint
     return LV_MAX(ui_layout_px(3), slot_h * 3 / 100);
 }
 
-static lv_coord_t ui_home_widgets_metric_value_unit_gap(lv_coord_t slot_h, uint8_t slot_count)
+static lv_coord_t ui_home_widgets_metric_value_unit_gap_floor(lv_coord_t slot_h, uint8_t slot_count)
 {
     return LV_MAX(ui_layout_px(1), slot_h / ((slot_count >= 6u) ? 100 : 80));
 }
 
+static void ui_home_widgets_metric_resolve_gaps(lv_coord_t slot_h,
+                                                uint8_t slot_count,
+                                                lv_coord_t value_text_h,
+                                                lv_coord_t *label_gap_out,
+                                                lv_coord_t *unit_gap_out)
+{
+    lv_coord_t label_gap = ui_home_widgets_metric_label_value_gap_floor(slot_h, slot_count);
+    lv_coord_t unit_gap = ui_home_widgets_metric_value_unit_gap_floor(slot_h, slot_count);
+
+    // Gap scales with the resolved value font. Wide single rows naturally pick bigger values,
+    // so they need more visual air without any slot-specific branch.
+    if (value_text_h > 0) {
+        label_gap = LV_MAX(label_gap, value_text_h / 12);
+        unit_gap = LV_MAX(unit_gap, value_text_h / 18);
+    }
+    if (label_gap_out != NULL) {
+        *label_gap_out = label_gap;
+    }
+    if (unit_gap_out != NULL) {
+        *unit_gap_out = unit_gap;
+    }
+}
+
 static lv_coord_t ui_home_widgets_metric_value_fit_padding(uint8_t slot_count)
 {
+    // Dense metric value sizing funnels through ui_font_pick_typoder_fit_for_box().
+    // This guards glyph edges only; overall label inset is handled by metric_block_pad_x/y.
     if (slot_count >= 6u) {
         return ui_layout_px(6);
     }
@@ -498,10 +519,20 @@ void ui_home_runtime_widgets_build_dense_slot_style(lv_coord_t x,
     unit_font_ptr = ui_font_typoder(ui_home_widgets_slot_unit_font(slot_count));
     name_h = (name_font_ptr != NULL) ? (lv_coord_t)name_font_ptr->line_height : ui_layout_px(20);
     unit_h = (unit_font_ptr != NULL) ? (lv_coord_t)unit_font_ptr->line_height : ui_layout_px(16);
-    label_gap = ui_home_widgets_metric_label_value_gap(content_rect.h, slot_count);
-    unit_gap = ui_home_widgets_metric_value_unit_gap(content_rect.h, slot_count);
+    ui_home_widgets_metric_resolve_gaps(content_rect.h, slot_count, 0, &label_gap, &unit_gap);
 
     value_rect = content_rect;
+    value_rect.y = content_rect.y + name_h + label_gap;
+    value_rect.h = content_rect.h - name_h - unit_h - label_gap - unit_gap;
+    if (value_rect.h < ui_layout_px(20)) {
+        value_rect.h = ui_layout_px(20);
+    }
+    ui_home_widgets_pick_value_fit(item, value_rect, slot_count, forced_value_font, &value_fit);
+    ui_home_widgets_metric_resolve_gaps(content_rect.h,
+                                        slot_count,
+                                        value_fit.text_h,
+                                        &label_gap,
+                                        &unit_gap);
     value_rect.y = content_rect.y + name_h + label_gap;
     value_rect.h = content_rect.h - name_h - unit_h - label_gap - unit_gap;
     if (value_rect.h < ui_layout_px(20)) {
