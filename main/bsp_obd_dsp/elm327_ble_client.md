@@ -64,7 +64,7 @@ ESP32
 - 轮询哪些 PID
 - 机油温查询如何按车型切换
 - `MAP (01 0B)` / `IGN (01 0E)` 如何并入轮询
-- monitor-mode 如何在 `G-force` / `GEAR-MONITOR` / `OIL-CAN` 之间切换
+- monitor-mode 如何在 `G-force` / `GEAR-MONITOR` 之间切换
 
 ### 4. GATT notify 处理
 
@@ -93,9 +93,11 @@ ELM327 返回的是文本流，不一定一包就完整，所以代码会：
 
 - `0x0D0`：ZC6 `G-force` monitor
 - `0x141`：ZC6 `GEAR-MONITOR`
-- `0x360`：ZC6 `OIL-CAN`
+- 当前仅保留两个 monitor-mode 分支：
+  - `0x0D0`：ZC6 `G-force`
+  - `0x141`：ZC6 `GEAR-MONITOR`
 
-这三个路径都复用 ELM327 `ATCRA + ATMA`，因此同一时刻只能启用一个 monitor-mode 分支。
+这两个路径都复用 ELM327 `ATCRA + ATMA`，因此同一时刻只能启用一个 monitor-mode 分支。
 
 ### 7. 自愈逻辑
 

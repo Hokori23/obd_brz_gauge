@@ -26,7 +26,7 @@ static bool s_prev_ble_connected = false;
 static const disp_item_meta_t s_disp_meta[DISP_ITEM_COUNT] = {
     {"CLT", "\xC2\xB0" "C", 0x44AAFF},
     {"IAT", "\xC2\xB0" "C", 0x44FF88},
-    {"OIL-PID", "\xC2\xB0" "C", 0xFF7722},
+    {"OIL", "\xC2\xB0" "C", 0xFF7722},
     {"LOD", "%", 0xFFCC00},
     {"TPS", "%", 0xFF8844},
     {"RPM", "rpm", 0x66CCFF},
@@ -35,7 +35,7 @@ static const disp_item_meta_t s_disp_meta[DISP_ITEM_COUNT] = {
     {"OIP", "bar", 0xFFD166},
     {"BKT", "\xC2\xB0" "C", 0xFF5A5A},
     {"BST", "bar", 0x00DD88},
-    {"OIL-CAN", "\xC2\xB0" "C", 0xFF9F1C},
+    {"UNKNOWN", "", 0x7A7A7A},
     {"MAP", "kPa", 0x6CE5E8},
     {"IGN", "deg", 0xCDB4FF},
 };
@@ -50,7 +50,6 @@ static bool disp_item_ui_debug_mock_value(disp_item_t item, int32_t *out)
     case DISP_ITEM_CLT:
     case DISP_ITEM_IAT:
     case DISP_ITEM_OIL:
-    case DISP_ITEM_OILC:
     case DISP_ITEM_BKT:
         *out = UI_DEBUG_MOCK_TEMP_VALUE_C;
         return true;
@@ -134,10 +133,6 @@ bool disp_item_read_value(disp_item_t item,
         }
         return false;
     case DISP_ITEM_OILC:
-        if (oil_can > -41) {
-            *out = oil_can;
-            return true;
-        }
         return false;
     case DISP_ITEM_LOAD:
         if (load_pct >= 0) {
@@ -205,7 +200,6 @@ int32_t disp_item_sweep_value(disp_item_t item, float ratio)
     case DISP_ITEM_CLT:
     case DISP_ITEM_IAT:
     case DISP_ITEM_OIL:
-    case DISP_ITEM_OILC:
         return (int32_t)(120.0f * ratio);
     case DISP_ITEM_LOAD:
     case DISP_ITEM_TPS:
@@ -326,7 +320,10 @@ void disp_item_sync_meta(lv_obj_t *name_label,
 const char *ui_disp_item_name(uint8_t item)
 {
     if (item >= DISP_ITEM_COUNT) {
-        return "";
+        return "UNKNOWN";
+    }
+    if (item == (uint8_t)DISP_ITEM_OILC) {
+        return "UNKNOWN";
     }
     return s_disp_meta[item].name;
 }

@@ -22,7 +22,6 @@ static volatile uint16_t s_rpm = 0;
 static volatile uint8_t  s_speed = 0;
 static volatile int16_t  s_coolant_temp = -40;
 static volatile int16_t  s_oil_temp = -100;  // 真实机油温度 °C, -100=无效
-static volatile int16_t  s_oil_temp_can = -100; // CAN机油温度 °C, -100=无效
 static volatile int16_t  s_intake_temp = -40;
 static volatile int16_t  s_load_pct = -1;   // 发动机负荷 0~100%, -1=无效
 static volatile int16_t  s_tps = -1;         // 节气门开度 0~100%, -1=无效
@@ -85,14 +84,6 @@ void obd_data_set_intake_temp(int16_t temp)
 {
     portENTER_CRITICAL(&s_mux);
     s_intake_temp = temp;
-    portEXIT_CRITICAL(&s_mux);
-}
-
-void obd_data_set_oil_temp_can(int16_t temp)
-{
-    if (temp < -20 || temp > 150) return;
-    portENTER_CRITICAL(&s_mux);
-    s_oil_temp_can = temp;
     portEXIT_CRITICAL(&s_mux);
 }
 
@@ -182,15 +173,6 @@ int16_t obd_data_get_intake_temp(void)
     int16_t val;
     portENTER_CRITICAL(&s_mux);
     val = s_intake_temp;
-    portEXIT_CRITICAL(&s_mux);
-    return val;
-}
-
-int16_t obd_data_get_oil_temp_can(void)
-{
-    int16_t val;
-    portENTER_CRITICAL(&s_mux);
-    val = s_oil_temp_can;
     portEXIT_CRITICAL(&s_mux);
     return val;
 }

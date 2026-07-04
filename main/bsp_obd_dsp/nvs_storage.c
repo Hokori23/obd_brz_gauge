@@ -260,7 +260,7 @@ bool ui_dashboard_item_supported_for_vehicle(uint8_t vehicle_profile_idx, uint8_
                profile->oil_temp_strategy.secondary != OIL_TEMP_MODE_NONE ||
                profile->oil_temp_strategy.tertiary != OIL_TEMP_MODE_NONE;
     case DISP_ITEM_OILC:
-        return vehicle_profile_idx == 0u;
+        return false;
     case DISP_ITEM_MAP:
     case DISP_ITEM_IGN:
         return true;

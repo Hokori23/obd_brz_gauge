@@ -16,7 +16,6 @@
 #include "app_obd_dsp/obd_data_cache.h"
 #include "app_obd_dsp/zc6_gear_monitor_decode.h"
 #include "app_obd_dsp/zc6_gforce_monitor_decode.h"
-#include "app_obd_dsp/zc6_oil_can_monitor_decode.h"
 #include "app_obd_dsp/vehicle_profiles.h"
 #include "app_obd_dsp/zc6_gforce_decode.h"
 #include "bsp_obd_dsp/ble_scan_buffer_profile.h"
@@ -56,7 +55,6 @@ typedef enum {
     OBD_STREAM_MODE_PID_POLL = 0,
     OBD_STREAM_MODE_GFORCE_MONITOR,
     OBD_STREAM_MODE_ZC6_GEAR_MONITOR,
-    OBD_STREAM_MODE_ZC6_OIL_CAN_MONITOR,
 } obd_stream_mode_t;
 
 #define OBD_IDLE_NO_DEMAND_DELAY_MS 200u
@@ -123,7 +121,6 @@ static volatile bool s_elm_ready = true; // 閸掓繂顫愰崗浣筋啅閸欐垿
 static volatile bool s_expect_mode21 = false; // true=娑撳﹥娼崨鎴掓姢閺?21 01閿涘瞼鐡戝?61 01 閸濆秴绨?
 static volatile bool s_gforce_monitor_active = false;
 static volatile bool s_zc6_gear_monitor_active = false;
-static volatile bool s_zc6_oil_can_monitor_active = false;
 static volatile bool s_notify_ready = false;
 static volatile bool s_manual_disconnect_requested = false;
 static volatile int64_t s_last_obd_valid_us = 0;
@@ -147,10 +144,6 @@ static char s_zc6_gear_monitor_buf[ZC6_GEAR_MONITOR_BUF_SIZE];
 static size_t s_zc6_gear_monitor_len = 0;
 static int64_t s_zc6_gear_monitor_last_log_us = 0;
 
-#define ZC6_OIL_CAN_MONITOR_BUF_SIZE 160
-static char s_zc6_oil_can_monitor_buf[ZC6_OIL_CAN_MONITOR_BUF_SIZE];
-static size_t s_zc6_oil_can_monitor_len = 0;
-static int64_t s_zc6_oil_can_monitor_last_log_us = 0;
 
 static ble_scan_result_t *ble_scan_buffer_alloc(void)
 {
@@ -400,7 +393,6 @@ static void elm327_send_standard_init_sequence(uint8_t protocol_to_use, const ch
     s_elm_ready = true;
     s_gforce_monitor_active = false;
     s_zc6_gear_monitor_active = false;
-    s_zc6_oil_can_monitor_active = false;
     s_gforce_monitor_len = 0u;
     s_gforce_monitor_entered_us = 0;
     s_gforce_monitor_last_sample_us = 0;
@@ -408,8 +400,6 @@ static void elm327_send_standard_init_sequence(uint8_t protocol_to_use, const ch
     s_gforce_monitor_last_log_us = 0;
     s_zc6_gear_monitor_len = 0u;
     s_zc6_gear_monitor_last_log_us = 0;
-    s_zc6_oil_can_monitor_len = 0u;
-    s_zc6_oil_can_monitor_last_log_us = 0;
     s_accum_len = 0u;
     s_accum_buf[0] = '\0';
     s_expect_mode21 = false;
@@ -439,7 +429,6 @@ static void elm327_enter_gforce_monitor_mode(void)
 
     s_gforce_monitor_active = false;
     s_zc6_gear_monitor_active = false;
-    s_zc6_oil_can_monitor_active = false;
     s_gforce_monitor_len = 0u;
     s_gforce_monitor_entered_us = 0;
     s_gforce_monitor_last_sample_us = 0;
@@ -480,7 +469,6 @@ static void elm327_enter_zc6_gear_monitor_mode(void)
 
     s_gforce_monitor_active = false;
     s_zc6_gear_monitor_active = false;
-    s_zc6_oil_can_monitor_active = false;
     s_zc6_gear_monitor_len = 0u;
     s_accum_len = 0u;
     s_accum_buf[0] = '\0';
@@ -503,43 +491,6 @@ static void elm327_exit_zc6_gear_monitor_mode(uint8_t protocol_to_use, const cha
     vTaskDelay(pdMS_TO_TICKS(80));
     elm327_send_standard_init_sequence(protocol_to_use, fixed_header_cmd);
     ESP_LOGI(TAG, "Exited ZC6 gear OBD monitor mode");
-}
-
-static void elm327_enter_zc6_oil_can_monitor_mode(void)
-{
-    const char *monitor_cmds[] = {
-        "ATE0\r",
-        "ATL0\r",
-        "ATS0\r",
-        "ATH1\r",
-        "ATCRA360\r",
-        "ATMA\r",
-    };
-
-    s_gforce_monitor_active = false;
-    s_zc6_gear_monitor_active = false;
-    s_zc6_oil_can_monitor_active = false;
-    s_zc6_oil_can_monitor_len = 0u;
-    s_accum_len = 0u;
-    s_accum_buf[0] = '\0';
-    s_expect_mode21 = false;
-
-    for (size_t i = 0; i < sizeof(monitor_cmds) / sizeof(monitor_cmds[0]); ++i) {
-        elm327_ble_send_ascii_blocking(monitor_cmds[i]);
-        vTaskDelay(pdMS_TO_TICKS((i + 1u == sizeof(monitor_cmds) / sizeof(monitor_cmds[0])) ? 80u : 30u));
-    }
-
-    s_zc6_oil_can_monitor_active = true;
-    ESP_LOGI(TAG, "Entered ZC6 oil-temp CAN monitor mode for CAN 0x360");
-}
-
-static void elm327_exit_zc6_oil_can_monitor_mode(uint8_t protocol_to_use, const char *fixed_header_cmd)
-{
-    s_elm_ready = true;
-    elm327_ble_send_ascii_blocking("\r");
-    vTaskDelay(pdMS_TO_TICKS(80));
-    elm327_send_standard_init_sequence(protocol_to_use, fixed_header_cmd);
-    ESP_LOGI(TAG, "Exited ZC6 oil-temp CAN monitor mode");
 }
 
 static void elm327_log_gforce_monitor_sample(const char *line, int16_t lat_x100, int16_t lon_x100)
@@ -705,68 +656,6 @@ static void elm327_feed_zc6_gear_monitor_bytes(const uint8_t *data, size_t len)
             s_zc6_gear_monitor_len = 0u;
         }
         s_zc6_gear_monitor_buf[s_zc6_gear_monitor_len++] = ch;
-    }
-}
-
-static void elm327_log_zc6_oil_can_monitor_sample(const char *line, int16_t oil_temp_c)
-{
-    int64_t now_us;
-
-    if (line == NULL) {
-        return;
-    }
-
-    now_us = esp_timer_get_time();
-    if ((now_us - s_zc6_oil_can_monitor_last_log_us) < 1000000LL) {
-        return;
-    }
-
-    s_zc6_oil_can_monitor_last_log_us = now_us;
-    ESP_LOGI(TAG, "ZC6 oil CAN sample oil=%dC line=%.32s", (int)oil_temp_c, line);
-}
-
-static bool elm327_parse_zc6_oil_can_monitor_line(const char *line)
-{
-    int16_t oil_temp_c = -100;
-
-    if (!zc6_oil_can_decode_monitor_line(line, &oil_temp_c)) {
-        return false;
-    }
-
-    obd_data_set_oil_temp_can(oil_temp_c);
-    elm327_mark_obd_payload_valid();
-    elm327_log_zc6_oil_can_monitor_sample(line, oil_temp_c);
-    return true;
-}
-
-static void elm327_feed_zc6_oil_can_monitor_bytes(const uint8_t *data, size_t len)
-{
-    if (data == NULL || len == 0u) {
-        return;
-    }
-
-    for (size_t i = 0u; i < len; ++i) {
-        char ch = (char)data[i];
-
-        if (ch == '>') {
-            s_elm_ready = true;
-            continue;
-        }
-        if (ch == '\r' || ch == '\n') {
-            if (s_zc6_oil_can_monitor_len > 0u) {
-                s_zc6_oil_can_monitor_buf[s_zc6_oil_can_monitor_len] = '\0';
-                elm327_parse_zc6_oil_can_monitor_line(s_zc6_oil_can_monitor_buf);
-                s_zc6_oil_can_monitor_len = 0u;
-            }
-            continue;
-        }
-        if ((unsigned char)ch < 0x20u || (unsigned char)ch > 0x7Eu) {
-            continue;
-        }
-        if (s_zc6_oil_can_monitor_len + 1u >= ZC6_OIL_CAN_MONITOR_BUF_SIZE) {
-            s_zc6_oil_can_monitor_len = 0u;
-        }
-        s_zc6_oil_can_monitor_buf[s_zc6_oil_can_monitor_len++] = ch;
     }
 }
 
@@ -1055,7 +944,6 @@ static void obd_poll_task(void *arg) {
         uint32_t demand_mask = aux_sensor_demand_get_obd_mask();
         bool gforce_monitor_needed = aux_sensor_demand_is_gforce_obd_enabled();
         bool zc6_gear_monitor_needed = aux_sensor_demand_is_zc6_gear_obd_enabled();
-        bool zc6_oil_can_monitor_needed = aux_sensor_demand_is_zc6_oil_can_enabled();
 
         if (!s_connected || !s_notify_ready) {
             pid_poll_inited = false;
@@ -1119,15 +1007,6 @@ static void obd_poll_task(void *arg) {
             continue;
         }
 
-        if (zc6_oil_can_monitor_needed) {
-            if (stream_mode != OBD_STREAM_MODE_ZC6_OIL_CAN_MONITOR) {
-                elm327_enter_zc6_oil_can_monitor_mode();
-                stream_mode = OBD_STREAM_MODE_ZC6_OIL_CAN_MONITOR;
-            }
-            vTaskDelay(pdMS_TO_TICKS(200));
-            continue;
-        }
-
         if (stream_mode == OBD_STREAM_MODE_GFORCE_MONITOR) {
             elm327_exit_gforce_monitor_mode(protocol_to_use, fixed_header_cmd);
             stream_mode = OBD_STREAM_MODE_PID_POLL;
@@ -1138,12 +1017,6 @@ static void obd_poll_task(void *arg) {
             stream_mode = OBD_STREAM_MODE_PID_POLL;
             pid_poll_inited = true;
         }
-        if (stream_mode == OBD_STREAM_MODE_ZC6_OIL_CAN_MONITOR) {
-            elm327_exit_zc6_oil_can_monitor_mode(protocol_to_use, fixed_header_cmd);
-            stream_mode = OBD_STREAM_MODE_PID_POLL;
-            pid_poll_inited = true;
-        }
-
         if (!obd_poll_schedule_find_next_active_index(poll_seq,
                                                       poll_seq_len,
                                                       tick_count,
@@ -1812,11 +1685,6 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
             elm327_feed_zc6_gear_monitor_bytes(v, (size_t)n);
             break;
         }
-        if (s_zc6_oil_can_monitor_active) {
-            elm327_feed_zc6_oil_can_monitor_bytes(v, (size_t)n);
-            break;
-        }
-
         // ---- 缁鳖垳袧婢舵艾瀵橀弫鐗堝祦閻╂潙鍩岄弨璺哄煂 '>' 閿涘湕LM327 閹绘劗銇氱粭锔肩礆 ----
         // 缁鳖垳袧鐡掑懏妞傛穱婵囧Б閿?缁夋帒鍞撮張顏呮暪閸?'>' 閸掓瑥宸遍崚璺哄煕閺?
         if (s_accum_len > 0) {

@@ -344,14 +344,8 @@ static bool ui_home_read_disp_item_value(disp_item_t item, int32_t *out)
         }
         return false;
     }
-    case DISP_ITEM_OILC: {
-        int16_t value = obd_data_get_oil_temp_can();
-        if (value > -41) {
-            *out = value;
-            return true;
-        }
+    case DISP_ITEM_OILC:
         return false;
-    }
     case DISP_ITEM_LOAD: {
         int16_t value = obd_data_get_load_pct();
         if (value >= 0) {

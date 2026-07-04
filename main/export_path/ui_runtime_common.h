@@ -22,7 +22,7 @@ typedef enum {
     DISP_ITEM_OILP,
     DISP_ITEM_BKT,
     DISP_ITEM_BOOST,
-    DISP_ITEM_OILC,
+    DISP_ITEM_OILC, /* legacy slot kept only to tolerate old persisted item indices */
     DISP_ITEM_MAP,
     DISP_ITEM_IGN,
     DISP_ITEM_COUNT

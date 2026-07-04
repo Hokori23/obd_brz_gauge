@@ -146,9 +146,9 @@
 - `GEAR-MONITOR`
   - 来源：ELM327 monitor mode + `0x141`
   - 说明：适合作为 ZC6 专用增强路径，但要接受适配器不支持 `ATMA/ATCRA` 的现实风险
-- `OIL-CAN`
-  - 来源：ELM327 monitor mode + `0x360`
-  - 说明：温度变化慢，低频 monitor-mode 是合理实现路径
+- `OIL`
+  - 来源：标准 / 扩展 OBD 机油温查询策略
+  - 说明：`0x360` monitor-mode 路径已从当前仓库移除，不再作为可配置指标
 - `IGN`
   - 当前仓库实现来源：标准 OBD `01 0E`
   - 说明：这条路径优先于“假定已有公开被动 CAN ID”

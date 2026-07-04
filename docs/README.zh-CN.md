@@ -99,7 +99,7 @@ idf.py -p PORT flash monitor
 
 近期与 ZC6 / OBD 运行时相关的新增点：
 
-- 指标层已区分 `OIL-PID` 与 `OIL-CAN`
+- 机油温指标现统一为 `OIL`
 - 新增独立指标：
   - `MAP`
   - `IGN`
@@ -107,6 +107,6 @@ idf.py -p PORT flash monitor
   - `GEAR-DERIVED`
   - `GEAR-MONITOR`
 - `GEAR-MONITOR` 继续使用 ZC6 `0x141`
-- `OIL-CAN` 当前为 ZC6 低频 monitor-mode 路径，监听 `0x360`
+- 已移除 ZC6 `0x360` 机油温 monitor-mode 路径，机油温仅保留 OBD 查询路径
 - 启动阶段支持打印最近 20 条持久化错误日志
 - UI 调试开关已集中到 `main/export_path/ui_debug_config.h`

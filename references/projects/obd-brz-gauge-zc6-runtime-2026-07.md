@@ -11,11 +11,8 @@ Main thread: ZC6 telemetry expansion, monitor-mode robustness, dashboard startup
 - Added boot-time persisted error-log dump behind `CONFIG_OBD_BOOT_PRINT_ERROR_LOG`.
 - Added display-only bootstrap mode behind `CONFIG_OBD_BOOTSTRAP_DISPLAY_ONLY`.
 - Consolidated UI debug switches into `main/export_path/ui_debug_config.h`.
-- Split oil temperature into two runtime metrics:
-  - `OIL-PID`
-  - `OIL-CAN`
+- Unified oil temperature UI naming to a single `OIL` metric.
 - Added independent `MAP` and `IGN` metrics.
-- Added ZC6 low-frequency CAN oil-temp monitor on `0x360`.
 - Kept ZC6 gear monitor on `0x141` and renamed the computed gear path to `GEAR-DERIVED`.
 - Upgraded derived-gear logic to use profile ratio ranges plus short hysteresis.
 - Increased poll weighting:
@@ -35,9 +32,8 @@ Main thread: ZC6 telemetry expansion, monitor-mode robustness, dashboard startup
 
 - `MAP` can be sourced directly from standard OBD PID `01 0B`.
 - `IGN` can be sourced directly from standard OBD PID `01 0E`.
-- ZC6 `OIL-CAN` is practical as a low-frequency monitor-mode feature because temperature does not need fast refresh.
 - `GEAR-DERIVED` can identify forward gears from RPM/speed/profile ratios, but reverse is still not a reliable derived signal.
-- `GEAR-MONITOR` and `OIL-CAN` both consume ELM327 monitor mode, so they must remain mutually exclusive at runtime.
+- Current monitor-mode contention is only between `G-force` and `GEAR-MONITOR`.
 - `GEAR-MONITOR` still uses an extra flag in NVS because page type storage only has 2 raw bits.
 - BLE-connected state is earlier than real-data-ready state. Sweep completion alone is not a safe point to assume visible metrics will refresh without an explicit first-valid-data bridge.
 - Full Defi-style light cut is a poor fit for an electronic display because the content disappears with the light; a reduced-brightness burst gives the same waiting cue without turning the screen into a black strobe.
@@ -57,7 +53,6 @@ Main thread: ZC6 telemetry expansion, monitor-mode robustness, dashboard startup
   - switching the waiting state to a 3-burst brightness sequence
 - No hardware validation yet for:
   - ZC6 `0x141` monitor on current adapter
-  - ZC6 `0x360` oil-temp monitor on current adapter
   - Real-world `GEAR-DERIVED` shift-edge behavior
   - WS175 real ADS1115 oil-pressure sampling over the shared board I2C path
   - Real hardware comfort / timing of the post-sweep 3-burst wait effect
@@ -68,6 +63,6 @@ Main thread: ZC6 telemetry expansion, monitor-mode robustness, dashboard startup
 - Add targeted runtime logs when validating:
   - `GEAR-DERIVED` ratio / chosen gear
   - `0x141` monitor receive vs decode failure
-  - `0x360` monitor receive vs decode failure
+- Legacy `DISP_ITEM_OILC` is intentionally kept only as a dead enum hole so old persisted slot values fail soft as `UNKNOWN` instead of crashing or migrating.
 - If oil-pressure bring-up moves to hardware validation, verify ADS1115 address `0x48`, AIN0 scaling, and whether both boards should eventually expose a true shared I2C bus handle instead of only abstract register access.
 - If `0x141` remains unavailable on the adapter, keep `GEAR-DERIVED` as the default usable path and treat monitor gear as optional.

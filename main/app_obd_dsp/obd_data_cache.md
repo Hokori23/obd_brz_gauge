@@ -8,7 +8,6 @@
 - 车速 `speed`
 - 水温 `coolant_temp`
 - 机油温 `oil_temp`
-- CAN 机油温 `oil_temp_can`
 - 进气温 `intake_temp`
 - 发动机负载 `load_pct`
 - 节气门开度 `tps`
