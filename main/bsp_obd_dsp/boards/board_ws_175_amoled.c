@@ -308,6 +308,7 @@ esp_err_t board_ws_175_amoled_display_init(board_display_context_t *ctx)
     touch_err = board_ws_175_amoled_touch_init();
     if (touch_err != ESP_OK) {
         ESP_LOGW(TAG, "touch init failed, continuing without touch: %s", esp_err_to_name(touch_err));
+        nvs_error_log_recordf(TAG, touch_err, "touch init failed");
         s_touch_handle = NULL;
     }
 

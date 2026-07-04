@@ -592,6 +592,7 @@ static void start_advertising_if_ready(void)
     // If controller is busy, just defer without stopping external scans
     s_adv_start_pending = true;
     ESP_LOGW(RC_TAG, "Start adv deferred: %s", esp_err_to_name(err));
+    nvs_error_log_recordf(RC_TAG, err, "Start adv deferred");
 }
 
 /**
@@ -608,6 +609,7 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble
             esp_err_t err = esp_ble_gap_set_device_name(RC_DEVICE_NAME);
             if (err != ESP_OK) {
                 ESP_LOGW(RC_TAG, "Set device name failed: %s", esp_err_to_name(err));
+                nvs_error_log_recordf(RC_TAG, err, "Set device name failed");
             }
         }
         // ========== 启动阶段 ==========
@@ -728,6 +730,7 @@ void racechrono_ble_diy_start(void)
     if (esp_bt_controller_get_status() != ESP_BT_CONTROLLER_STATUS_ENABLED ||
         esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_ENABLED) {
         ESP_LOGW(RC_TAG, "BT stack is not ready, skip RaceChrono BLE DIY start");
+        nvs_error_log_record(RC_TAG, ESP_ERR_INVALID_STATE, "BT stack not ready");
         return;
     }
 

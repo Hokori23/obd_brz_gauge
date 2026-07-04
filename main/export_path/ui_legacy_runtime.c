@@ -38,6 +38,10 @@ static const disp_item_meta_t s_disp_meta[DISP_ITEM_COUNT] = {
     {"UNKNOWN", "", 0x7A7A7A},
     {"MAP", "kPa", 0x6CE5E8},
     {"IGN", "deg", 0xCDB4FF},
+    {"TPFL", "bar", 0x6AA9FF},
+    {"TPFR", "bar", 0x59D4B8},
+    {"TPRL", "bar", 0xF4B860},
+    {"TPRR", "bar", 0xF28F8F},
 };
 
 static bool disp_item_ui_debug_mock_value(disp_item_t item, int32_t *out)
@@ -67,6 +71,10 @@ static bool disp_item_ui_debug_mock_value(disp_item_t item, int32_t *out)
         *out = UI_DEBUG_MOCK_BAT_VALUE_MV; /* 99.9 V */
         return true;
     case DISP_ITEM_OILP:
+    case DISP_ITEM_TPFL:
+    case DISP_ITEM_TPFR:
+    case DISP_ITEM_TPRL:
+    case DISP_ITEM_TPRR:
     case DISP_ITEM_BOOST:
         *out = UI_DEBUG_MOCK_PRESSURE_VALUE_X10; /* 99.9 bar */
         return true;
@@ -188,6 +196,11 @@ bool disp_item_read_value(disp_item_t item,
             return true;
         }
         return false;
+    case DISP_ITEM_TPFL:
+    case DISP_ITEM_TPFR:
+    case DISP_ITEM_TPRL:
+    case DISP_ITEM_TPRR:
+        return false;
     default:
         return false;
     }
@@ -211,6 +224,10 @@ int32_t disp_item_sweep_value(disp_item_t item, float ratio)
     case DISP_ITEM_BAT:
         return (int32_t)(12000.0f + 2400.0f * ratio);
     case DISP_ITEM_OILP:
+    case DISP_ITEM_TPFL:
+    case DISP_ITEM_TPFR:
+    case DISP_ITEM_TPRL:
+    case DISP_ITEM_TPRR:
         return (int32_t)(100.0f * ratio);
     case DISP_ITEM_BKT:
         return (int32_t)(600.0f * ratio);
@@ -249,7 +266,11 @@ void disp_item_set_text(lv_obj_t *label, disp_item_t item, int32_t value, bool v
 
     if (item == DISP_ITEM_BAT) {
         ui_label_set_text_fmt_if_changed(label, "%d.%d", (int)(value / 1000), (int)((value % 1000) / 100));
-    } else if (item == DISP_ITEM_OILP) {
+    } else if (item == DISP_ITEM_OILP ||
+               item == DISP_ITEM_TPFL ||
+               item == DISP_ITEM_TPFR ||
+               item == DISP_ITEM_TPRL ||
+               item == DISP_ITEM_TPRR) {
         int32_t abs_val = (value < 0) ? -value : value;
         ui_label_set_text_fmt_if_changed(label, "%d.%d", (int)(value / 10), (int)(abs_val % 10));
     } else if (item == DISP_ITEM_BKT) {

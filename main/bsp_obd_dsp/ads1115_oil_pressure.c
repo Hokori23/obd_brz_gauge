@@ -8,8 +8,10 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include "bsp_obd_dsp/boards/board_api.h"
+#include "bsp_obd_dsp/nvs_storage.h"
 #include "app_obd_dsp/obd_data_cache.h"
 
 #define TAG "oil_press"
@@ -32,6 +34,7 @@
 
 static bool s_started = false;
 static volatile bool s_enabled = true;
+static int64_t s_last_oil_read_fail_log_us = 0;
 
 /**
  * 读取 ADS1115 的 AIN0 电压
@@ -137,6 +140,10 @@ static void oil_pressure_task(void *arg)
             }
         } else {
             ESP_LOGW(TAG, "[OIL] ADS1115 read failed: %s (addr=0x48)", esp_err_to_name(err));
+            if ((esp_timer_get_time() - s_last_oil_read_fail_log_us) > 10000000LL) {
+                s_last_oil_read_fail_log_us = esp_timer_get_time();
+                nvs_error_log_recordf(TAG, err, "ADS1115 read failed addr=0x%02X", ADS1115_ADDR);
+            }
             obd_data_set_oil_pressure_x10(-1);
         }
 

@@ -91,14 +91,11 @@ idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkc
 3. [main/app_obd_dsp/README.md](main/app_obd_dsp/README.md)
 4. [main/bsp_obd_dsp/README.md](main/bsp_obd_dsp/README.md)
 5. [main/export_path/README.md](main/export_path/README.md)
-6. [docs/DYNAMIC_DASHBOARD_HOME_UI_PLAN.zh-CN.md](docs/DYNAMIC_DASHBOARD_HOME_UI_PLAN.zh-CN.md)
+6. [docs/README.zh-CN.md](docs/README.zh-CN.md)
 
 ## 相关文档
 
 - [docs/README.zh-CN.md](docs/README.zh-CN.md)
-- [docs/README.en.md](docs/README.en.md)
-- [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
-- [docs/WS175_DASHBOARD_POLISH_2026-07-02.md](docs/WS175_DASHBOARD_POLISH_2026-07-02.md)
 
 ## Update 2026-07-03
 

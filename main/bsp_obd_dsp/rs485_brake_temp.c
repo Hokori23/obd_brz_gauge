@@ -6,8 +6,10 @@
 #include "driver/gpio.h"
 #include "driver/uart.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "sdkconfig.h"
 #include "app_obd_dsp/obd_data_cache.h"
+#include "bsp_obd_dsp/nvs_storage.h"
 
 #define BRAKE_TEMP_UART_PORT        UART_NUM_0
 #define BRAKE_TEMP_UART_BUF_SIZE    256
@@ -23,6 +25,9 @@ static int s_uart_baud_cur = -1;
 static int s_uart_parity_cur = -1;
 static int s_uart_stop_bits_cur = -1;
 static int s_fail_count = 0;
+static int64_t s_last_timeout_log_us = 0;
+static int64_t s_last_parse_fail_log_us = 0;
+static int64_t s_last_query_fail_log_us = 0;
 
 typedef struct {
     int baud;
@@ -231,6 +236,10 @@ static query_status_t query_with_cfg(const brake_modbus_cfg_t *cfg, int16_t *tem
     if (total <= 0) {
         if ((s_fail_count % 6) == 0) {
             ESP_LOGW(TAG, "RS485 RX timeout: 0 bytes in %d ms", BRAKE_TEMP_READ_TIMEOUT_MS);
+            if ((esp_timer_get_time() - s_last_timeout_log_us) > 10000000LL) {
+                s_last_timeout_log_us = esp_timer_get_time();
+                nvs_error_log_recordf(TAG, ESP_ERR_TIMEOUT, "RS485 RX timeout %dms", BRAKE_TEMP_READ_TIMEOUT_MS);
+            }
         }
         return QUERY_TIMEOUT;
     }
@@ -253,6 +262,10 @@ static query_status_t query_with_cfg(const brake_modbus_cfg_t *cfg, int16_t *tem
                  dump_len > 5 ? rx[5] : 0,
                  dump_len > 6 ? rx[6] : 0,
                  dump_len > 7 ? rx[7] : 0);
+        if ((esp_timer_get_time() - s_last_parse_fail_log_us) > 10000000LL) {
+            s_last_parse_fail_log_us = esp_timer_get_time();
+            nvs_error_log_recordf(TAG, ESP_ERR_INVALID_RESPONSE, "RS485 parse fail bytes=%d", total);
+        }
     }
 
     return QUERY_PARSE_FAIL;
@@ -334,6 +347,16 @@ static void rs485_temp_task(void *arg)
             if ((s_fail_count % 3) == 0) {
                 ESP_LOGW(TAG, "Query fail x%d (st=%d): baud=%d addr=0x%02X reg=0x%04X func=0x%02X",
                          s_fail_count, st, s_cfg.baud, s_cfg.addr, s_cfg.reg, s_cfg.func);
+                if ((esp_timer_get_time() - s_last_query_fail_log_us) > 10000000LL) {
+                    s_last_query_fail_log_us = esp_timer_get_time();
+                    nvs_error_log_recordf(TAG,
+                                          st == QUERY_TIMEOUT ? ESP_ERR_TIMEOUT : ESP_ERR_INVALID_RESPONSE,
+                                          "Query fail x%d st=%d baud=%d addr=0x%02X",
+                                          s_fail_count,
+                                          st,
+                                          s_cfg.baud,
+                                          s_cfg.addr);
+                }
             }
             if (s_fail_count >= BRAKE_TEMP_FAIL_RESET) {
                 obd_data_set_brake_temp_x10(-1000);

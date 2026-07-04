@@ -34,6 +34,8 @@ static void app_bootstrap_dump_error_log(void)
 {
     nvs_error_log_t log = {0};
     uint8_t start = 0u;
+    uint8_t dump_count = 0u;
+    uint8_t skipped = 0u;
 
     nvs_error_log_copy(&log);
     if (log.count == 0u) {
@@ -41,10 +43,20 @@ static void app_bootstrap_dump_error_log(void)
         return;
     }
 
-    start = (uint8_t)((log.head + NVS_ERROR_LOG_CAPACITY - log.count) % NVS_ERROR_LOG_CAPACITY);
-    ESP_LOGI(TAG, "boot error log: dumping %u stored entries", (unsigned)log.count);
+    // 持久化错误环允许保留较多历史，但开机阶段不适合一次性刷太多串口日志。
+    // 否则容易在启动早期和其他中断/驱动日志争用 log 锁，放大看门狗风险。
+    dump_count = (log.count > 16u) ? 16u : log.count;
+    skipped = (uint8_t)(log.count - dump_count);
+    start = (uint8_t)((log.head + NVS_ERROR_LOG_CAPACITY - dump_count) % NVS_ERROR_LOG_CAPACITY);
+    ESP_LOGI(TAG,
+             "boot error log: dumping latest %u/%u stored entries",
+             (unsigned)dump_count,
+             (unsigned)log.count);
+    if (skipped > 0u) {
+        ESP_LOGI(TAG, "boot error log: skipped %u older entries", (unsigned)skipped);
+    }
 
-    for (uint8_t i = 0u; i < log.count; ++i) {
+    for (uint8_t i = 0u; i < dump_count; ++i) {
         uint8_t index = (uint8_t)((start + i) % NVS_ERROR_LOG_CAPACITY);
         const nvs_error_entry_t *entry = &log.entries[index];
         ESP_LOGI(TAG,
@@ -67,9 +79,14 @@ static void app_bootstrap_dump_error_log(void)
  */
 void app_bootstrap_init_storage_and_profile(void)
 {
+    uint32_t boot_count = 0u;
+
     ESP_LOGI(TAG, "bootstrap: init nvs");
     nvs_storage_init();
     ESP_LOGI(TAG, "bootstrap: nvs ready");
+    boot_count = nvs_boot_count_increment_and_persist();
+    nvs_error_log_recordf(TAG, ESP_OK, "BOOT #%lu", (unsigned long)boot_count);
+    ESP_LOGI(TAG, "bootstrap: boot count=%" PRIu32, boot_count);
 
     ESP_LOGI("NVS", "protocol=%d", nvs_cfg_get()->protocol);
     ESP_LOGI("NVS", "theme=%d, dominant=%d, secondary=%d",

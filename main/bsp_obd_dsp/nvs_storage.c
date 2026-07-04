@@ -1,5 +1,6 @@
 #include "nvs_storage.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -22,6 +23,7 @@
 #define KEY_STAT "runtime"
 #define NS_DIAG "diag"
 #define KEY_ERR_LOG "errors"
+#define KEY_BOOT_COUNT "boot_count"
 #define STAT_FLUSH_PERIOD_MS 30000
 #define ERROR_FLUSH_PERIOD_MS 5000
 #define NVS_FLUSH_TASK_STACK_BYTES 4096
@@ -85,6 +87,7 @@ static nvs_stat_t s_stat = {0};
 static nvs_error_log_t s_error_log = {
     .version = NVS_ERROR_LOG_VERSION,
 };
+static uint32_t s_boot_count = 0u;
 static bool s_stat_dirty = false;
 static bool s_error_log_dirty = false;
 static uint32_t s_stat_dirty_seq = 0u;
@@ -264,6 +267,11 @@ bool ui_dashboard_item_supported_for_vehicle(uint8_t vehicle_profile_idx, uint8_
     case DISP_ITEM_MAP:
     case DISP_ITEM_IGN:
         return true;
+    case DISP_ITEM_TPFL:
+    case DISP_ITEM_TPFR:
+    case DISP_ITEM_TPRL:
+    case DISP_ITEM_TPRR:
+        return vehicle_profile_idx == 0u;
     case DISP_ITEM_BOOST:
         return profile->has_boost;
     default:
@@ -504,6 +512,9 @@ esp_err_t nvs_storage_init(void)
     if (load_blob_or_create(NS_DIAG, KEY_ERR_LOG, &s_error_log, sizeof(s_error_log)) != ESP_OK) {
         ESP_LOGW(TAG, "Using in-memory default for %s/%s", NS_DIAG, KEY_ERR_LOG);
     }
+    if (load_blob_or_create(NS_DIAG, KEY_BOOT_COUNT, &s_boot_count, sizeof(s_boot_count)) != ESP_OK) {
+        ESP_LOGW(TAG, "Using in-memory default for %s/%s", NS_DIAG, KEY_BOOT_COUNT);
+    }
     cfg_sanitize(&s_cfg);
     nvs_error_log_logic_sanitize(&s_error_log);
 
@@ -658,6 +669,23 @@ void nvs_error_log_record(const char *tag, esp_err_t err, const char *message)
     xSemaphoreGive(s_mux);
 }
 
+void nvs_error_log_recordf(const char *tag, esp_err_t err, const char *fmt, ...)
+{
+    char message[NVS_ERROR_MSG_LEN];
+    va_list args;
+
+    if (fmt == NULL) {
+        return;
+    }
+
+    va_start(args, fmt);
+    vsnprintf(message, sizeof(message), fmt, args);
+    va_end(args);
+    message[sizeof(message) - 1u] = '\0';
+
+    nvs_error_log_record(tag, err, message);
+}
+
 /** 返回当前错误日志条目数。 */
 uint8_t nvs_error_log_count(void)
 {
@@ -688,6 +716,40 @@ void nvs_error_log_copy(nvs_error_log_t *out)
     xSemaphoreTake(s_mux, portMAX_DELAY);
     *out = s_error_log;
     xSemaphoreGive(s_mux);
+}
+
+uint32_t nvs_boot_count_get(void)
+{
+    uint32_t boot_count;
+
+    if (s_mux == NULL) {
+        return s_boot_count;
+    }
+
+    xSemaphoreTake(s_mux, portMAX_DELAY);
+    boot_count = s_boot_count;
+    xSemaphoreGive(s_mux);
+    return boot_count;
+}
+
+uint32_t nvs_boot_count_increment_and_persist(void)
+{
+    uint32_t boot_count = 0u;
+
+    if (s_mux != NULL) {
+        xSemaphoreTake(s_mux, portMAX_DELAY);
+    }
+    s_boot_count++;
+    boot_count = s_boot_count;
+    if (s_mux != NULL) {
+        xSemaphoreGive(s_mux);
+    }
+
+    if (save_blob(NS_DIAG, KEY_BOOT_COUNT, &boot_count, sizeof(boot_count)) != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to persist %s/%s", NS_DIAG, KEY_BOOT_COUNT);
+    }
+
+    return boot_count;
 }
 
 /**

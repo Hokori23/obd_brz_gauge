@@ -13,6 +13,7 @@
 static volatile uint32_t s_obd_demand_mask = 0u;
 static volatile bool s_gforce_obd_enabled = false;
 static volatile bool s_zc6_gear_obd_enabled = false;
+static volatile bool s_zc6_tpms_enabled = false;
 
 /** 判断当前激活车型是否为 ZC6。 */
 static bool aux_sensor_is_active_vehicle_zc6(void)
@@ -52,6 +53,14 @@ static uint32_t ui_home_obd_demand_mask(void)
     return aux_sensor_demand_mask_from_page_flags(&flags);
 }
 
+static bool ui_home_active_page_uses_zc6_tpms(void)
+{
+    return ui_home_runtime_active_page_uses_item(DISP_ITEM_TPFL) ||
+           ui_home_runtime_active_page_uses_item(DISP_ITEM_TPFR) ||
+           ui_home_runtime_active_page_uses_item(DISP_ITEM_TPRL) ||
+           ui_home_runtime_active_page_uses_item(DISP_ITEM_TPRR);
+}
+
 /**
  * 刷新当前页面驱动的传感器需求状态
  *
@@ -66,6 +75,7 @@ void aux_sensor_demand_refresh(void)
     bool imu_needed = ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_G_FORCE_ESP32);
     bool zc6_gear_obd_needed = aux_sensor_is_active_vehicle_zc6() &&
                                ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_GEAR_MONITOR);
+    bool zc6_tpms_needed = aux_sensor_is_active_vehicle_zc6() && ui_home_active_page_uses_zc6_tpms();
     bool oil_pressure_needed = !nvs_cfg_is_oil_pressure_demand_driven(cfg) ||
                                ui_home_runtime_active_page_uses_item(DISP_ITEM_OILP);
 
@@ -74,6 +84,7 @@ void aux_sensor_demand_refresh(void)
     s_obd_demand_mask = ui_home_obd_demand_mask();
     s_gforce_obd_enabled = gforce_obd_needed;
     s_zc6_gear_obd_enabled = zc6_gear_obd_needed;
+    s_zc6_tpms_enabled = zc6_tpms_needed;
     rs485_brake_temp_set_enabled(brake_needed);
     qmi8658_gforce_set_enabled(imu_needed);
     oil_pressure_set_enabled(oil_pressure_needed);
@@ -95,4 +106,9 @@ bool aux_sensor_demand_is_gforce_obd_enabled(void)
 bool aux_sensor_demand_is_zc6_gear_obd_enabled(void)
 {
     return s_zc6_gear_obd_enabled;
+}
+
+bool aux_sensor_demand_is_zc6_tpms_enabled(void)
+{
+    return s_zc6_tpms_enabled;
 }

@@ -416,6 +416,38 @@ static bool ui_home_read_disp_item_value(disp_item_t item, int32_t *out)
         }
         return false;
     }
+    case DISP_ITEM_TPFL: {
+        int16_t value = obd_data_get_tpms_fl_x10();
+        if (value >= 0) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_TPFR: {
+        int16_t value = obd_data_get_tpms_fr_x10();
+        if (value >= 0) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_TPRL: {
+        int16_t value = obd_data_get_tpms_rl_x10();
+        if (value >= 0) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_TPRR: {
+        int16_t value = obd_data_get_tpms_rr_x10();
+        if (value >= 0) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
     default:
         return false;
     }

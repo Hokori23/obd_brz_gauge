@@ -25,6 +25,10 @@ typedef enum {
     DISP_ITEM_OILC, /* legacy slot kept only to tolerate old persisted item indices */
     DISP_ITEM_MAP,
     DISP_ITEM_IGN,
+    DISP_ITEM_TPFL,
+    DISP_ITEM_TPFR,
+    DISP_ITEM_TPRL,
+    DISP_ITEM_TPRR,
     DISP_ITEM_COUNT
 } disp_item_t;
 

@@ -24,6 +24,7 @@ void aux_sensor_demand_refresh(void);
 uint32_t aux_sensor_demand_get_obd_mask(void);
 bool aux_sensor_demand_is_gforce_obd_enabled(void);
 bool aux_sensor_demand_is_zc6_gear_obd_enabled(void);
+bool aux_sensor_demand_is_zc6_tpms_enabled(void);
 
 #ifdef __cplusplus
 }

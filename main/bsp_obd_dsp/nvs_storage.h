@@ -72,7 +72,7 @@ typedef struct {
 #define NVS_DISPLAY_ROTATION_MODE_COUNT        3u
 
 #define NVS_ERROR_LOG_VERSION  1u
-#define NVS_ERROR_LOG_CAPACITY 20u
+#define NVS_ERROR_LOG_CAPACITY 64u
 #define NVS_ERROR_TAG_LEN      16u
 #define NVS_ERROR_MSG_LEN      64u
 
@@ -154,5 +154,8 @@ void nvs_stat_update_speed(uint8_t speed_kmh, uint32_t dt_ms);
 nvs_stat_t nvs_stat_get_mileage(void);
 
 void nvs_error_log_record(const char *tag, esp_err_t err, const char *message);
+void nvs_error_log_recordf(const char *tag, esp_err_t err, const char *fmt, ...);
 uint8_t nvs_error_log_count(void);
 void nvs_error_log_copy(nvs_error_log_t *out);
+uint32_t nvs_boot_count_get(void);
+uint32_t nvs_boot_count_increment_and_persist(void);

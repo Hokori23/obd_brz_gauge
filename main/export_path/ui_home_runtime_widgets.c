@@ -30,6 +30,10 @@ static const char *ui_home_widgets_value_sample_text(disp_item_t item)
     case DISP_ITEM_BAT:
         return UI_DEBUG_SAMPLE_TEXT_BAT;
     case DISP_ITEM_OILP:
+    case DISP_ITEM_TPFL:
+    case DISP_ITEM_TPFR:
+    case DISP_ITEM_TPRL:
+    case DISP_ITEM_TPRR:
         return UI_DEBUG_SAMPLE_TEXT_PRESSURE;
     case DISP_ITEM_BOOST:
         return UI_DEBUG_SAMPLE_TEXT_BOOST;

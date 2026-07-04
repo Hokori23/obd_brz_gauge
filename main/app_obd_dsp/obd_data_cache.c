@@ -35,6 +35,10 @@ static volatile int16_t  s_lat_accel_x100 = -32768; // 0.01g, -32768=invalid
 static volatile int16_t  s_lon_accel_x100 = -32768; // 0.01g, -32768=invalid
 static volatile int16_t  s_lat_accel_imu_x100 = -32768; // 0.01g, -32768=invalid
 static volatile int16_t  s_lon_accel_imu_x100 = -32768; // 0.01g, -32768=invalid
+static volatile int16_t  s_tpms_fl_x10 = -1; // 0.1bar, -1=invalid
+static volatile int16_t  s_tpms_fr_x10 = -1; // 0.1bar, -1=invalid
+static volatile int16_t  s_tpms_rl_x10 = -1; // 0.1bar, -1=invalid
+static volatile int16_t  s_tpms_rr_x10 = -1; // 0.1bar, -1=invalid
 static volatile brake_rs485_status_t s_brake_rs485_status = BRAKE_RS485_IDLE;
 static volatile enGear s_actual_gear = GEAR_NEUTRAL;
 static volatile bool s_actual_gear_valid = false;
@@ -286,6 +290,37 @@ void obd_data_set_ign_timing_x10(int16_t ign_x10)
     portEXIT_CRITICAL(&s_mux);
 }
 
+static void obd_data_set_tpms_pressure_x10_internal(volatile int16_t *slot, int16_t pressure_x10)
+{
+    if (slot == NULL || pressure_x10 < 0 || pressure_x10 > 60) {
+        return;
+    }
+
+    portENTER_CRITICAL(&s_mux);
+    *slot = pressure_x10;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+void obd_data_set_tpms_fl_x10(int16_t pressure_x10)
+{
+    obd_data_set_tpms_pressure_x10_internal(&s_tpms_fl_x10, pressure_x10);
+}
+
+void obd_data_set_tpms_fr_x10(int16_t pressure_x10)
+{
+    obd_data_set_tpms_pressure_x10_internal(&s_tpms_fr_x10, pressure_x10);
+}
+
+void obd_data_set_tpms_rl_x10(int16_t pressure_x10)
+{
+    obd_data_set_tpms_pressure_x10_internal(&s_tpms_rl_x10, pressure_x10);
+}
+
+void obd_data_set_tpms_rr_x10(int16_t pressure_x10)
+{
+    obd_data_set_tpms_pressure_x10_internal(&s_tpms_rr_x10, pressure_x10);
+}
+
 int16_t obd_data_get_ign_timing_x10(void)
 {
     int16_t val;
@@ -296,6 +331,40 @@ int16_t obd_data_get_ign_timing_x10(void)
 }
 
 /** 返回最新的增压压力，单位为 0.1 bar。 */
+static int16_t obd_data_get_tpms_pressure_x10_internal(volatile int16_t *slot)
+{
+    int16_t val;
+
+    if (slot == NULL) {
+        return -1;
+    }
+
+    portENTER_CRITICAL(&s_mux);
+    val = *slot;
+    portEXIT_CRITICAL(&s_mux);
+    return val;
+}
+
+int16_t obd_data_get_tpms_fl_x10(void)
+{
+    return obd_data_get_tpms_pressure_x10_internal(&s_tpms_fl_x10);
+}
+
+int16_t obd_data_get_tpms_fr_x10(void)
+{
+    return obd_data_get_tpms_pressure_x10_internal(&s_tpms_fr_x10);
+}
+
+int16_t obd_data_get_tpms_rl_x10(void)
+{
+    return obd_data_get_tpms_pressure_x10_internal(&s_tpms_rl_x10);
+}
+
+int16_t obd_data_get_tpms_rr_x10(void)
+{
+    return obd_data_get_tpms_pressure_x10_internal(&s_tpms_rr_x10);
+}
+
 int16_t obd_data_get_boost_x10(void)
 {
     int16_t val;
