@@ -107,3 +107,17 @@ Current repo direction to remember:
 - `Settings` now owns the `OBD` settings path as part of one unified IA.
 - The old standalone OBD protocol screen is legacy debt and should not be treated as the target UX.
 - Home horizontal page-switch performance has been instrumented with `ui_home_perf`; current evidence shows the bottleneck is the existing tile/scroll implementation path, not page-specific content.
+
+## Update 2026-07-04
+
+Current runtime changes to remember:
+
+- Dashboard metric set now distinguishes `OIL-PID` and `OIL-CAN` as separate items.
+- `MAP` and `IGN` are now first-class metrics sourced from standard OBD PIDs `01 0B` and `01 0E`.
+- ZC6 now has two gear paths:
+  - `GEAR-DERIVED`: computed from RPM and vehicle speed using profile gear-ratio ranges with hysteresis.
+  - `GEAR-MON`: monitor-mode path for ZC6 CAN `0x141`.
+- ZC6 `OIL-CAN` is implemented as a low-frequency ELM327 monitor-mode path for CAN `0x360`.
+- ELM327 polling now includes stronger self-heal / reconnect behavior and weighted polling for `LOD`, `TPS`, and `Speed`.
+- Debug toggles have been consolidated in `main/export_path/ui_debug_config.h`.
+- Boot can print the persisted last-20-entry error log when `CONFIG_OBD_BOOT_PRINT_ERROR_LOG=y`.

@@ -1,4 +1,5 @@
 #include <string.h>
+#include <inttypes.h>
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
@@ -151,14 +152,33 @@ static esp_err_t board_ws_175_amoled_panel_init(void)
             BOARD_WS_175_AMOLED_LCD_DATA2,
             BOARD_WS_175_AMOLED_LCD_DATA3,
             BOARD_WS_175_AMOLED_TRANSFER_BYTES(BOARD_WS_175_AMOLED_DRAW_BUFFER_LINES));
+        ESP_LOGI(TAG,
+                 "panel_init: spi_bus_initialize host=%d sclk=%d d0=%d d1=%d d2=%d d3=%d max_tx=%" PRIu32,
+                 (int)BOARD_WS_175_AMOLED_SPI_HOST,
+                 (int)BOARD_WS_175_AMOLED_LCD_PCLK,
+                 (int)BOARD_WS_175_AMOLED_LCD_DATA0,
+                 (int)BOARD_WS_175_AMOLED_LCD_DATA1,
+                 (int)BOARD_WS_175_AMOLED_LCD_DATA2,
+                 (int)BOARD_WS_175_AMOLED_LCD_DATA3,
+                 (uint32_t)BOARD_WS_175_AMOLED_TRANSFER_BYTES(BOARD_WS_175_AMOLED_DRAW_BUFFER_LINES));
         ESP_RETURN_ON_ERROR(spi_bus_initialize(BOARD_WS_175_AMOLED_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO),
                             TAG, "spi init failed");
         s_spi_ready = true;
+        ESP_LOGI(TAG, "panel_init: spi_bus_initialize done");
     }
 
     esp_lcd_panel_io_spi_config_t io_config =
         CO5300_PANEL_IO_QSPI_CONFIG(BOARD_WS_175_AMOLED_LCD_CS, s_flush_ready_cb, s_flush_ready_user_ctx);
     io_config.trans_queue_depth = BOARD_WS_175_AMOLED_LCD_TRANS_QUEUE;
+    ESP_LOGI(TAG,
+             "panel_init: panel_io_spi begin host=%d cs=%d pclk=%u queue=%u cmd_bits=%d param_bits=%d quad=%d",
+             (int)BOARD_WS_175_AMOLED_SPI_HOST,
+             (int)io_config.cs_gpio_num,
+             (unsigned)io_config.pclk_hz,
+             (unsigned)io_config.trans_queue_depth,
+             io_config.lcd_cmd_bits,
+             io_config.lcd_param_bits,
+             io_config.flags.quad_mode);
 
     co5300_vendor_config_t vendor_config = {
         .init_cmds = s_lcd_init_cmds,
@@ -178,10 +198,13 @@ static esp_err_t board_ws_175_amoled_panel_init(void)
         esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)BOARD_WS_175_AMOLED_SPI_HOST, &io_config,
                                  &s_panel_io_handle),
         TAG, "panel io init failed");
+    ESP_LOGI(TAG, "panel_init: panel_io_spi done io=%p", s_panel_io_handle);
     ESP_RETURN_ON_ERROR(board_ws_175_amoled_register_panel_io_callbacks(),
                         TAG, "panel io callback registration failed");
+    ESP_LOGI(TAG, "panel_init: panel_io callbacks registered");
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_co5300(s_panel_io_handle, &panel_config, &s_panel_handle),
                         TAG, "panel init failed");
+    ESP_LOGI(TAG, "panel_init: panel handle created panel=%p", s_panel_handle);
     ESP_RETURN_ON_ERROR(esp_lcd_panel_set_gap(s_panel_handle,
                                               BOARD_WS_175_AMOLED_LCD_GAP_X,
                                               BOARD_WS_175_AMOLED_LCD_GAP_Y),
@@ -324,7 +347,7 @@ bool board_ws_175_amoled_has_touch(void)
 /** 在 WS175 AMOLED 板型上屏蔽油压采样入口。 */
 void oil_pressure_start(void)
 {
-    ESP_LOGI(TAG, "oil pressure sampling is not available on WS175 AMOLED board");
+    ESP_LOGI(TAG, "oil pressure task requested on WS175; no board-specific sampler is configured in this build");
 }
 
 /** 在 WS175 AMOLED 板型上忽略油压采样开关。 */

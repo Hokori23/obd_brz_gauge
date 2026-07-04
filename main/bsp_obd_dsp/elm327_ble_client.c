@@ -16,6 +16,7 @@
 #include "app_obd_dsp/obd_data_cache.h"
 #include "app_obd_dsp/zc6_gear_monitor_decode.h"
 #include "app_obd_dsp/zc6_gforce_monitor_decode.h"
+#include "app_obd_dsp/zc6_oil_can_monitor_decode.h"
 #include "app_obd_dsp/vehicle_profiles.h"
 #include "app_obd_dsp/zc6_gforce_decode.h"
 #include "bsp_obd_dsp/ble_scan_buffer_profile.h"
@@ -24,6 +25,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <inttypes.h>
 #include "nvs_storage.h"
 
 // UUID 鐢悂鍣?
@@ -45,12 +47,14 @@ typedef enum {
     OBD_POLL_SLOT_OIL,
     OBD_POLL_SLOT_BAT,
     OBD_POLL_SLOT_BOOST,
+    OBD_POLL_SLOT_IGN,
 } obd_poll_slot_t;
 
 typedef enum {
     OBD_STREAM_MODE_PID_POLL = 0,
     OBD_STREAM_MODE_GFORCE_MONITOR,
     OBD_STREAM_MODE_ZC6_GEAR_MONITOR,
+    OBD_STREAM_MODE_ZC6_OIL_CAN_MONITOR,
 } obd_stream_mode_t;
 
 #define OBD_IDLE_NO_DEMAND_DELAY_MS 200u
@@ -117,17 +121,33 @@ static volatile bool s_elm_ready = true; // 閸掓繂顫愰崗浣筋啅閸欐垿
 static volatile bool s_expect_mode21 = false; // true=娑撳﹥娼崨鎴掓姢閺?21 01閿涘瞼鐡戝?61 01 閸濆秴绨?
 static volatile bool s_gforce_monitor_active = false;
 static volatile bool s_zc6_gear_monitor_active = false;
+static volatile bool s_zc6_oil_can_monitor_active = false;
+static volatile bool s_notify_ready = false;
+static volatile bool s_manual_disconnect_requested = false;
+static volatile int64_t s_last_obd_valid_us = 0;
 bool elm327_ble_send_ascii_blocking(const char *ascii_cmd);
+
+#define OBD_VALID_DATA_RESET_US    2000000LL
+#define OBD_VALID_DATA_TIMEOUT_US  5000000LL
+#define OBD_SELF_HEAL_REINIT_LIMIT 3u
 
 #define GFORCE_MONITOR_BUF_SIZE 160
 static char s_gforce_monitor_buf[GFORCE_MONITOR_BUF_SIZE];
 static size_t s_gforce_monitor_len = 0;
 static int64_t s_gforce_monitor_last_log_us = 0;
+static int64_t s_gforce_monitor_entered_us = 0;
+static int64_t s_gforce_monitor_last_sample_us = 0;
+static int64_t s_gforce_monitor_last_warn_us = 0;
 
 #define ZC6_GEAR_MONITOR_BUF_SIZE 160
 static char s_zc6_gear_monitor_buf[ZC6_GEAR_MONITOR_BUF_SIZE];
 static size_t s_zc6_gear_monitor_len = 0;
 static int64_t s_zc6_gear_monitor_last_log_us = 0;
+
+#define ZC6_OIL_CAN_MONITOR_BUF_SIZE 160
+static char s_zc6_oil_can_monitor_buf[ZC6_OIL_CAN_MONITOR_BUF_SIZE];
+static size_t s_zc6_oil_can_monitor_len = 0;
+static int64_t s_zc6_oil_can_monitor_last_log_us = 0;
 
 static ble_scan_result_t *ble_scan_buffer_alloc(void)
 {
@@ -308,6 +328,11 @@ static void record_oil_temp_failure(oil_temp_query_mode_t mode) {
     ESP_LOGD(TAG, "Oil temp query FAILED for mode %u (fail_count now %u)", mode, s_oil_mode_fail_count[idx]);
 }
 
+static void elm327_mark_obd_valid(void)
+{
+    s_last_obd_valid_us = esp_timer_get_time();
+}
+
 // 姒涙顓婚崶鐐剁殶娑撳氦鐤嗙拠顫崲閸斺槄绱欓崣顖炩偓澶涚礆
 static void default_on_connected(void) { ESP_LOGI(TAG, "OBD BLE connected"); }
 static void default_on_disconnected(void) { ESP_LOGI(TAG, "OBD BLE disconnected"); }
@@ -351,10 +376,16 @@ static void elm327_send_standard_init_sequence(uint8_t protocol_to_use, const ch
     s_elm_ready = true;
     s_gforce_monitor_active = false;
     s_zc6_gear_monitor_active = false;
+    s_zc6_oil_can_monitor_active = false;
     s_gforce_monitor_len = 0u;
+    s_gforce_monitor_entered_us = 0;
+    s_gforce_monitor_last_sample_us = 0;
+    s_gforce_monitor_last_warn_us = 0;
     s_gforce_monitor_last_log_us = 0;
     s_zc6_gear_monitor_len = 0u;
     s_zc6_gear_monitor_last_log_us = 0;
+    s_zc6_oil_can_monitor_len = 0u;
+    s_zc6_oil_can_monitor_last_log_us = 0;
     s_accum_len = 0u;
     s_accum_buf[0] = '\0';
     s_expect_mode21 = false;
@@ -368,6 +399,7 @@ static void elm327_send_standard_init_sequence(uint8_t protocol_to_use, const ch
 
     elm327_ble_send_ascii_blocking("01 00\r");
     vTaskDelay(pdMS_TO_TICKS(100));
+    elm327_mark_obd_valid();
 }
 
 static void elm327_enter_gforce_monitor_mode(void)
@@ -383,7 +415,11 @@ static void elm327_enter_gforce_monitor_mode(void)
 
     s_gforce_monitor_active = false;
     s_zc6_gear_monitor_active = false;
+    s_zc6_oil_can_monitor_active = false;
     s_gforce_monitor_len = 0u;
+    s_gforce_monitor_entered_us = 0;
+    s_gforce_monitor_last_sample_us = 0;
+    s_gforce_monitor_last_warn_us = 0;
     s_accum_len = 0u;
     s_accum_buf[0] = '\0';
     s_expect_mode21 = false;
@@ -394,6 +430,7 @@ static void elm327_enter_gforce_monitor_mode(void)
     }
 
     s_gforce_monitor_active = true;
+    s_gforce_monitor_entered_us = esp_timer_get_time();
     ESP_LOGI(TAG, "Entered G-force OBD monitor mode for CAN 0x0D0");
 }
 
@@ -419,6 +456,7 @@ static void elm327_enter_zc6_gear_monitor_mode(void)
 
     s_gforce_monitor_active = false;
     s_zc6_gear_monitor_active = false;
+    s_zc6_oil_can_monitor_active = false;
     s_zc6_gear_monitor_len = 0u;
     s_accum_len = 0u;
     s_accum_buf[0] = '\0';
@@ -441,6 +479,43 @@ static void elm327_exit_zc6_gear_monitor_mode(uint8_t protocol_to_use, const cha
     vTaskDelay(pdMS_TO_TICKS(80));
     elm327_send_standard_init_sequence(protocol_to_use, fixed_header_cmd);
     ESP_LOGI(TAG, "Exited ZC6 gear OBD monitor mode");
+}
+
+static void elm327_enter_zc6_oil_can_monitor_mode(void)
+{
+    const char *monitor_cmds[] = {
+        "ATE0\r",
+        "ATL0\r",
+        "ATS0\r",
+        "ATH1\r",
+        "ATCRA360\r",
+        "ATMA\r",
+    };
+
+    s_gforce_monitor_active = false;
+    s_zc6_gear_monitor_active = false;
+    s_zc6_oil_can_monitor_active = false;
+    s_zc6_oil_can_monitor_len = 0u;
+    s_accum_len = 0u;
+    s_accum_buf[0] = '\0';
+    s_expect_mode21 = false;
+
+    for (size_t i = 0; i < sizeof(monitor_cmds) / sizeof(monitor_cmds[0]); ++i) {
+        elm327_ble_send_ascii_blocking(monitor_cmds[i]);
+        vTaskDelay(pdMS_TO_TICKS((i + 1u == sizeof(monitor_cmds) / sizeof(monitor_cmds[0])) ? 80u : 30u));
+    }
+
+    s_zc6_oil_can_monitor_active = true;
+    ESP_LOGI(TAG, "Entered ZC6 oil-temp CAN monitor mode for CAN 0x360");
+}
+
+static void elm327_exit_zc6_oil_can_monitor_mode(uint8_t protocol_to_use, const char *fixed_header_cmd)
+{
+    s_elm_ready = true;
+    elm327_ble_send_ascii_blocking("\r");
+    vTaskDelay(pdMS_TO_TICKS(80));
+    elm327_send_standard_init_sequence(protocol_to_use, fixed_header_cmd);
+    ESP_LOGI(TAG, "Exited ZC6 oil-temp CAN monitor mode");
 }
 
 static void elm327_log_gforce_monitor_sample(const char *line, int16_t lat_x100, int16_t lon_x100)
@@ -478,9 +553,42 @@ static bool elm327_parse_gforce_monitor_line(const char *line)
 
         obd_data_set_lat_accel_x100(lat_x100);
         obd_data_set_lon_accel_x100(lon_x100);
+        elm327_mark_obd_valid();
+        s_gforce_monitor_last_sample_us = esp_timer_get_time();
         elm327_log_gforce_monitor_sample(line, lat_x100, lon_x100);
         return true;
     }
+}
+
+static void elm327_warn_gforce_monitor_stall(void)
+{
+    int64_t now_us;
+    int64_t active_us;
+    int64_t last_sample_us;
+
+    if (!s_gforce_monitor_active) {
+        return;
+    }
+
+    now_us = esp_timer_get_time();
+    active_us = s_gforce_monitor_entered_us;
+    last_sample_us = s_gforce_monitor_last_sample_us;
+
+    if (active_us <= 0 || (now_us - active_us) < 3000000LL) {
+        return;
+    }
+    if (last_sample_us > 0) {
+        return;
+    }
+    if ((now_us - s_gforce_monitor_last_warn_us) < 5000000LL) {
+        return;
+    }
+
+    s_gforce_monitor_last_warn_us = now_us;
+    ESP_LOGW(TAG,
+             "G-force monitor active for %" PRIi64 " ms but no 0x0D0 sample parsed yet; "
+             "likely adapter ATMA support, 0x0D0 broadcast availability, or monitor-line format mismatch",
+             (now_us - active_us) / 1000LL);
 }
 
 static void elm327_feed_gforce_monitor_bytes(const uint8_t *data, size_t len)
@@ -540,6 +648,7 @@ static bool elm327_parse_zc6_gear_monitor_line(const char *line)
     }
 
     obd_data_set_actual_gear(gear);
+    elm327_mark_obd_valid();
     elm327_log_zc6_gear_monitor_sample(line, gear);
     return true;
 }
@@ -572,6 +681,68 @@ static void elm327_feed_zc6_gear_monitor_bytes(const uint8_t *data, size_t len)
             s_zc6_gear_monitor_len = 0u;
         }
         s_zc6_gear_monitor_buf[s_zc6_gear_monitor_len++] = ch;
+    }
+}
+
+static void elm327_log_zc6_oil_can_monitor_sample(const char *line, int16_t oil_temp_c)
+{
+    int64_t now_us;
+
+    if (line == NULL) {
+        return;
+    }
+
+    now_us = esp_timer_get_time();
+    if ((now_us - s_zc6_oil_can_monitor_last_log_us) < 1000000LL) {
+        return;
+    }
+
+    s_zc6_oil_can_monitor_last_log_us = now_us;
+    ESP_LOGI(TAG, "ZC6 oil CAN sample oil=%dC line=%.32s", (int)oil_temp_c, line);
+}
+
+static bool elm327_parse_zc6_oil_can_monitor_line(const char *line)
+{
+    int16_t oil_temp_c = -100;
+
+    if (!zc6_oil_can_decode_monitor_line(line, &oil_temp_c)) {
+        return false;
+    }
+
+    obd_data_set_oil_temp_can(oil_temp_c);
+    elm327_mark_obd_valid();
+    elm327_log_zc6_oil_can_monitor_sample(line, oil_temp_c);
+    return true;
+}
+
+static void elm327_feed_zc6_oil_can_monitor_bytes(const uint8_t *data, size_t len)
+{
+    if (data == NULL || len == 0u) {
+        return;
+    }
+
+    for (size_t i = 0u; i < len; ++i) {
+        char ch = (char)data[i];
+
+        if (ch == '>') {
+            s_elm_ready = true;
+            continue;
+        }
+        if (ch == '\r' || ch == '\n') {
+            if (s_zc6_oil_can_monitor_len > 0u) {
+                s_zc6_oil_can_monitor_buf[s_zc6_oil_can_monitor_len] = '\0';
+                elm327_parse_zc6_oil_can_monitor_line(s_zc6_oil_can_monitor_buf);
+                s_zc6_oil_can_monitor_len = 0u;
+            }
+            continue;
+        }
+        if ((unsigned char)ch < 0x20u || (unsigned char)ch > 0x7Eu) {
+            continue;
+        }
+        if (s_zc6_oil_can_monitor_len + 1u >= ZC6_OIL_CAN_MONITOR_BUF_SIZE) {
+            s_zc6_oil_can_monitor_len = 0u;
+        }
+        s_zc6_oil_can_monitor_buf[s_zc6_oil_can_monitor_len++] = ch;
     }
 }
 
@@ -637,10 +808,10 @@ static int elm327_auto_detect_protocol(void) {
     return 0;  // 鏉╂柨娲?0 鐞涖劎銇氬Λ鈧ù瀣亼鐠愩儻绱濇担璺ㄦ暏姒涙顓婚崡蹇氼唴 6
 }
 
-static void default_on_parsed_rpm(uint16_t rpm) { ESP_LOGD(TAG, "RPM: %u", rpm); obd_data_set_rpm(rpm); }
-static void default_on_parsed_speed(uint8_t kmh) { ESP_LOGD(TAG, "SPEED: %u km/h", kmh); obd_data_set_speed(kmh); }
-static void default_on_parsed_coolant_temp(uint32_t coolant_temp) { ESP_LOGD(TAG, "CLT: %u C", coolant_temp); obd_data_set_coolant_temp((int16_t)coolant_temp); }
-static void default_on_parsed_intake_temp(uint32_t intake_temp) { ESP_LOGD(TAG, "IAT: %u C", intake_temp); obd_data_set_intake_temp((int16_t)intake_temp); }
+static void default_on_parsed_rpm(uint16_t rpm) { ESP_LOGD(TAG, "RPM: %u", rpm); obd_data_set_rpm(rpm); elm327_mark_obd_valid(); }
+static void default_on_parsed_speed(uint8_t kmh) { ESP_LOGD(TAG, "SPEED: %u km/h", kmh); obd_data_set_speed(kmh); elm327_mark_obd_valid(); }
+static void default_on_parsed_coolant_temp(uint32_t coolant_temp) { ESP_LOGD(TAG, "CLT: %u C", coolant_temp); obd_data_set_coolant_temp((int16_t)coolant_temp); elm327_mark_obd_valid(); }
+static void default_on_parsed_intake_temp(uint32_t intake_temp) { ESP_LOGD(TAG, "IAT: %u C", intake_temp); obd_data_set_intake_temp((int16_t)intake_temp); elm327_mark_obd_valid(); }
 
 // 閸愬懓浠堝銉ュ徔閸戣姤鏆熼敍姘安閻劍琛ュ〒鈺佷焊缁夊鍣洪崥搴＄摠閸?
 static inline void obd_data_set_oil_temp_with_offset(int16_t temp) {
@@ -680,6 +851,7 @@ static void default_on_parsed_oil_temp(uint32_t oil_temp)
         s_oil_diag.last_filtered_temp = in;
         ESP_LOGI(TAG, "OIL: Init with raw=%d", in);
         obd_data_set_oil_temp_with_offset(s_oil_filtered);
+        elm327_mark_obd_valid();
         return;
     }
 
@@ -694,6 +866,7 @@ static void default_on_parsed_oil_temp(uint32_t oil_temp)
         s_oil_diag.last_filtered_temp = s_oil_filtered;
         ESP_LOGD(TAG, "OIL: Small change raw=%d filtered=%d", in, s_oil_filtered);
         obd_data_set_oil_temp_with_offset(s_oil_filtered);
+        elm327_mark_obd_valid();
         return;
     }
 
@@ -716,6 +889,7 @@ static void default_on_parsed_oil_temp(uint32_t oil_temp)
             s_oil_diag.last_filtered_temp = s_oil_filtered;
             ESP_LOGI(TAG, "OIL: Medium change confirmed raw=%d filtered=%d", in, s_oil_filtered);
             obd_data_set_oil_temp_with_offset(s_oil_filtered);
+            elm327_mark_obd_valid();
             return;
         }
         
@@ -744,18 +918,22 @@ static void default_on_parsed_oil_temp(uint32_t oil_temp)
             s_oil_diag.last_filtered_temp = s_oil_filtered;
             ESP_LOGI(TAG, "OIL: Large change ACCEPTED raw=%d filtered=%d (confirmed 3x)", in, s_oil_filtered);
             obd_data_set_oil_temp_with_offset(s_oil_filtered);
+            elm327_mark_obd_valid();
         }
     }
 }
-static void default_on_parsed_load_pct(uint32_t load_pct) { ESP_LOGD(TAG, "LOAD: %u%%", load_pct); obd_data_set_load_pct((int16_t)load_pct); }
-static void default_on_parsed_control_module_voltage(uint32_t bat_mv) { ESP_LOGD(TAG, "BAT: %u.%uV", bat_mv/1000, (bat_mv%1000)/100); obd_data_set_bat_mv((int32_t)bat_mv); }
-static void default_on_parsed_throttle_position(uint32_t tps_pct) { ESP_LOGD(TAG, "TPS: %u%%", tps_pct); obd_data_set_tps((int16_t)tps_pct); }
+static void default_on_parsed_load_pct(uint32_t load_pct) { ESP_LOGD(TAG, "LOAD: %u%%", load_pct); obd_data_set_load_pct((int16_t)load_pct); elm327_mark_obd_valid(); }
+static void default_on_parsed_control_module_voltage(uint32_t bat_mv) { ESP_LOGD(TAG, "BAT: %u.%uV", bat_mv/1000, (bat_mv%1000)/100); obd_data_set_bat_mv((int32_t)bat_mv); elm327_mark_obd_valid(); }
+static void default_on_parsed_throttle_position(uint32_t tps_pct) { ESP_LOGD(TAG, "TPS: %u%%", tps_pct); obd_data_set_tps((int16_t)tps_pct); elm327_mark_obd_valid(); }
+static void default_on_parsed_timing_advance_x10(int16_t timing_advance_x10) { ESP_LOGD(TAG, "IGN: %d.%d deg", timing_advance_x10 / 10, abs(timing_advance_x10 % 10)); obd_data_set_ign_timing_x10(timing_advance_x10); elm327_mark_obd_valid(); }
 // MAP(kPa) 閳?濞懧ょ枂鐞涖劌甯?0.1bar)閿涙俺銆冮崢?= (MAP - 婢堆勭毜閳?00kPa)閿?0kPa = 0.1bar
 static void default_on_parsed_manifold_pressure(uint32_t map_kpa) {
     int16_t boost_x10 = (int16_t)(((int32_t)map_kpa - 100) / 10);
     if (boost_x10 < 0) boost_x10 = 0; // 娑撳秵妯夌粈楦跨閸?閻喓鈹?閿涘奔绮?鐠?
     ESP_LOGD(TAG, "MAP: %u kPa -> boost %d.%d bar", map_kpa, boost_x10/10, boost_x10%10);
+    obd_data_set_map_kpa((int16_t)map_kpa);
     obd_data_set_boost_x10(boost_x10);
+    elm327_mark_obd_valid();
 }
  
 static void obd_poll_task(void *arg) {
@@ -763,19 +941,24 @@ static void obd_poll_task(void *arg) {
         {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
         {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
         {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
-        {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
-        {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
         {OBD_POLL_SLOT_LOAD, AUX_OBD_DEMAND_LOAD},
-        {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
         {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
         {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
         {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
+        {OBD_POLL_SLOT_LOAD, AUX_OBD_DEMAND_LOAD},
+        {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
+        {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
+        {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
+        {OBD_POLL_SLOT_LOAD, AUX_OBD_DEMAND_LOAD},
         {OBD_POLL_SLOT_CLT, AUX_OBD_DEMAND_CLT},
+        {OBD_POLL_SLOT_IGN, AUX_OBD_DEMAND_IGN},
         {OBD_POLL_SLOT_OIL, AUX_OBD_DEMAND_OIL},
         {OBD_POLL_SLOT_IAT, AUX_OBD_DEMAND_IAT},
         {OBD_POLL_SLOT_BAT, AUX_OBD_DEMAND_BAT},
         {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
-        {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
+        {OBD_POLL_SLOT_BOOST, AUX_OBD_DEMAND_BOOST},
+        {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
+        {OBD_POLL_SLOT_LOAD, AUX_OBD_DEMAND_LOAD},
     };
     static const obd_poll_schedule_entry_t s_poll_seq_boost[] = {
         {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
@@ -789,12 +972,15 @@ static void obd_poll_task(void *arg) {
         {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
         {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
         {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
+        {OBD_POLL_SLOT_LOAD, AUX_OBD_DEMAND_LOAD},
         {OBD_POLL_SLOT_CLT, AUX_OBD_DEMAND_CLT},
+        {OBD_POLL_SLOT_IGN, AUX_OBD_DEMAND_IGN},
         {OBD_POLL_SLOT_OIL, AUX_OBD_DEMAND_OIL},
         {OBD_POLL_SLOT_IAT, AUX_OBD_DEMAND_IAT},
         {OBD_POLL_SLOT_BAT, AUX_OBD_DEMAND_BAT},
         {OBD_POLL_SLOT_RPM, AUX_OBD_DEMAND_RPM},
-        {OBD_POLL_SLOT_SPEED, AUX_OBD_DEMAND_SPEED},
+        {OBD_POLL_SLOT_TPS, AUX_OBD_DEMAND_TPS},
+        {OBD_POLL_SLOT_LOAD, AUX_OBD_DEMAND_LOAD},
     };
 
     (void)arg;
@@ -809,6 +995,8 @@ static void obd_poll_task(void *arg) {
 
     uint32_t tick_count = 0;
     obd_stream_mode_t stream_mode = OBD_STREAM_MODE_PID_POLL;
+    bool pid_poll_inited = false;
+    uint8_t heal_attempts = 0u;
     const nvs_user_cfg_t *cfg = nvs_cfg_get();
     uint8_t protocol_to_use = cfg->protocol;
 
@@ -831,11 +1019,6 @@ static void obd_poll_task(void *arg) {
     }
 
     const char *fixed_header_cmd = get_vehicle_fixed_header_cmd();
-    elm327_send_standard_init_sequence(protocol_to_use, fixed_header_cmd);
-    init_oil_temp_strategy();
-
-    const vehicle_profile_t *active_profile = vehicle_profile_get_active();
-    ESP_LOGI(TAG, "Active vehicle profile: %s", active_profile ? active_profile->name : "Unknown");
 
     while (1) {
         uint16_t slot_delay_ms = nvs_cfg_get_obd_poll_slot_delay_ms(cfg);
@@ -848,10 +1031,48 @@ static void obd_poll_task(void *arg) {
         uint32_t demand_mask = aux_sensor_demand_get_obd_mask();
         bool gforce_monitor_needed = aux_sensor_demand_is_gforce_obd_enabled();
         bool zc6_gear_monitor_needed = aux_sensor_demand_is_zc6_gear_obd_enabled();
+        bool zc6_oil_can_monitor_needed = aux_sensor_demand_is_zc6_oil_can_enabled();
 
-        if (!s_connected) {
+        if (!s_connected || !s_notify_ready) {
+            pid_poll_inited = false;
+            heal_attempts = 0u;
             stream_mode = OBD_STREAM_MODE_PID_POLL;
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            vTaskDelay(pdMS_TO_TICKS(300));
+            continue;
+        }
+
+        if (!pid_poll_inited) {
+            vTaskDelay(pdMS_TO_TICKS(300));
+            fixed_header_cmd = get_vehicle_fixed_header_cmd();
+            elm327_send_standard_init_sequence(protocol_to_use, fixed_header_cmd);
+            init_oil_temp_strategy();
+
+            const vehicle_profile_t *active_profile = vehicle_profile_get_active();
+            ESP_LOGI(TAG, "Active vehicle profile: %s", active_profile ? active_profile->name : "Unknown");
+
+            pid_poll_inited = true;
+            tick_count = 0u;
+            continue;
+        }
+
+        if ((esp_timer_get_time() - s_last_obd_valid_us) < OBD_VALID_DATA_RESET_US) {
+            heal_attempts = 0u;
+        } else if ((esp_timer_get_time() - s_last_obd_valid_us) > OBD_VALID_DATA_TIMEOUT_US) {
+            heal_attempts++;
+            s_last_obd_valid_us = esp_timer_get_time();
+            if (heal_attempts >= OBD_SELF_HEAL_REINIT_LIMIT) {
+                ESP_LOGW(TAG, "Self-heal escalate: force BLE reconnect (re-init didn't help)");
+                heal_attempts = 0u;
+                pid_poll_inited = false;
+                if (s_connected && s_gattc_if != 0 && s_conn_id != 0xFFFF) {
+                    esp_ble_gattc_close(s_gattc_if, s_conn_id);
+                }
+                vTaskDelay(pdMS_TO_TICKS(300));
+                continue;
+            }
+
+            ESP_LOGW(TAG, "No valid OBD data >5s, re-init ELM (self-heal #%u)...", (unsigned)heal_attempts);
+            pid_poll_inited = false;
             continue;
         }
 
@@ -860,6 +1081,7 @@ static void obd_poll_task(void *arg) {
                 elm327_enter_gforce_monitor_mode();
                 stream_mode = OBD_STREAM_MODE_GFORCE_MONITOR;
             }
+            elm327_warn_gforce_monitor_stall();
             vTaskDelay(pdMS_TO_TICKS(120));
             continue;
         }
@@ -873,13 +1095,29 @@ static void obd_poll_task(void *arg) {
             continue;
         }
 
+        if (zc6_oil_can_monitor_needed) {
+            if (stream_mode != OBD_STREAM_MODE_ZC6_OIL_CAN_MONITOR) {
+                elm327_enter_zc6_oil_can_monitor_mode();
+                stream_mode = OBD_STREAM_MODE_ZC6_OIL_CAN_MONITOR;
+            }
+            vTaskDelay(pdMS_TO_TICKS(200));
+            continue;
+        }
+
         if (stream_mode == OBD_STREAM_MODE_GFORCE_MONITOR) {
             elm327_exit_gforce_monitor_mode(protocol_to_use, fixed_header_cmd);
             stream_mode = OBD_STREAM_MODE_PID_POLL;
+            pid_poll_inited = true;
         }
         if (stream_mode == OBD_STREAM_MODE_ZC6_GEAR_MONITOR) {
             elm327_exit_zc6_gear_monitor_mode(protocol_to_use, fixed_header_cmd);
             stream_mode = OBD_STREAM_MODE_PID_POLL;
+            pid_poll_inited = true;
+        }
+        if (stream_mode == OBD_STREAM_MODE_ZC6_OIL_CAN_MONITOR) {
+            elm327_exit_zc6_oil_can_monitor_mode(protocol_to_use, fixed_header_cmd);
+            stream_mode = OBD_STREAM_MODE_PID_POLL;
+            pid_poll_inited = true;
         }
 
         if (!obd_poll_schedule_find_next_active_index(poll_seq,
@@ -954,14 +1192,14 @@ static void obd_poll_task(void *arg) {
             elm327_ble_send_ascii_blocking("01 42\r");
             ESP_LOGD(TAG, "[Slot7] Send 01 42 (bat voltage)");
             break;
-        case OBD_POLL_SLOT_BOOST: {
-            const vehicle_profile_t *vp_for_boost = vehicle_profile_get_active();
-            if (vp_for_boost && vp_for_boost->has_boost) {
-                elm327_ble_send_ascii_blocking("01 0B\r");
-                ESP_LOGD(TAG, "[Slot8] Send 01 0B (boost/MAP)");
-            }
+        case OBD_POLL_SLOT_BOOST:
+            elm327_ble_send_ascii_blocking("01 0B\r");
+            ESP_LOGD(TAG, "[Slot8] Send 01 0B (boost/MAP)");
             break;
-        }
+        case OBD_POLL_SLOT_IGN:
+            elm327_ble_send_ascii_blocking("01 0E\r");
+            ESP_LOGD(TAG, "[Slot9] Send 01 0E (ignition timing)");
+            break;
         default:
             break;
         }
@@ -1113,7 +1351,7 @@ static bool extract_mode21_oil_temp(const uint32_t *d, int count, int32_t *oil_c
 }
 
 static void start_scan(void) {
-    esp_ble_gap_start_scanning(10); // 10s
+    esp_ble_gap_start_scanning(15);
 }
 
 static bool parse_mac_string(const char *s, esp_bd_addr_t out_bda) {
@@ -1366,6 +1604,8 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
     }
     case ESP_GATTC_CONNECT_EVT: {
         s_connected = true;
+        s_notify_ready = false;
+        s_manual_disconnect_requested = false;
         s_conn_id = param->connect.conn_id;
         memcpy(s_peer_bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
         if (s_cbs.on_connected) s_cbs.on_connected();
@@ -1526,8 +1766,11 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
     }
     case ESP_GATTC_WRITE_DESCR_EVT: {
         if (param->write.status == ESP_GATT_OK) {
+            s_notify_ready = true;
+            elm327_mark_obd_valid();
             ESP_LOGI(TAG, "Notifications enabled");
         } else {
+            s_notify_ready = false;
             ESP_LOGW(TAG, "Enable notify failed status=%d", param->write.status);
         }
         break;
@@ -1542,6 +1785,10 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
         }
         if (s_zc6_gear_monitor_active) {
             elm327_feed_zc6_gear_monitor_bytes(v, (size_t)n);
+            break;
+        }
+        if (s_zc6_oil_can_monitor_active) {
+            elm327_feed_zc6_oil_can_monitor_bytes(v, (size_t)n);
             break;
         }
 
@@ -1614,7 +1861,11 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
                     break;  // 鐠哄疇绻冮棃鐐垫窗閺?PID
                 }
                 
-                switch (pid) {
+                if (pid == 0x0E) {
+                    if (dc >= 1 && s_cbs.on_parsed_timing_advance_x10 && s_protocol_detect_idx < 0) {
+                        s_cbs.on_parsed_timing_advance_x10((int16_t)((int32_t)d[0] * 5 - 640));
+                    }
+                } else switch (pid) {
                     case 0x04: // 閸欐垵濮╅張楦跨閼?(0~100%)
                         if (dc >= 1 && s_cbs.on_parsed_load_pct && s_protocol_detect_idx < 0)
                             s_cbs.on_parsed_load_pct((uint32_t)d[0] * 100 / 255);
@@ -1743,6 +1994,7 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
     }
     case ESP_GATTC_DISCONNECT_EVT: {
         s_connected = false;
+        s_notify_ready = false;
         s_conn_id = 0xFFFF;
         s_have_service = false;
         s_service_start = 0x0001;
@@ -1761,9 +2013,9 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
         s_protocol_detect_rpm = -1;
         s_oil_query_mode = 0;  // 闁插秶鐤嗗▽瑙勪刊閺屻儴顕楃拋鈩冩殶
         if (s_cbs.on_disconnected) s_cbs.on_disconnected();
-        // Only restart scan if we were in scan-only mode (BLE selection page)
-        // Otherwise, user must manually reconnect from settings
-        if (s_scan_only_mode) {
+        if (s_manual_disconnect_requested) {
+            s_manual_disconnect_requested = false;
+        } else {
             start_scan();
         }
         break;
@@ -1786,6 +2038,7 @@ void elm327_ble_start_default(const char *target_name) {
         .on_parsed_intake_temp = default_on_parsed_intake_temp,
         .on_parsed_oil_temp = default_on_parsed_oil_temp,
         .on_parsed_load_pct = default_on_parsed_load_pct,
+        .on_parsed_timing_advance_x10 = default_on_parsed_timing_advance_x10,
         .on_parsed_control_module_voltage = default_on_parsed_control_module_voltage,
         .on_parsed_throttle_position = default_on_parsed_throttle_position,
         .on_parsed_manifold_pressure = default_on_parsed_manifold_pressure,
@@ -1843,6 +2096,7 @@ void elm327_ble_connect_by_name(const char *name) {
         s_cbs.on_parsed_intake_temp = default_on_parsed_intake_temp;
         s_cbs.on_parsed_oil_temp = default_on_parsed_oil_temp;
         s_cbs.on_parsed_load_pct = default_on_parsed_load_pct;
+        s_cbs.on_parsed_timing_advance_x10 = default_on_parsed_timing_advance_x10;
         s_cbs.on_parsed_control_module_voltage = default_on_parsed_control_module_voltage;
         s_cbs.on_parsed_throttle_position = default_on_parsed_throttle_position;
         s_cbs.on_parsed_manifold_pressure = default_on_parsed_manifold_pressure;
@@ -1863,6 +2117,7 @@ bool elm327_ble_is_connected(void) {
 void elm327_ble_disconnect(void) {
     if (s_connected && s_gattc_if != 0 && s_conn_id != 0xFFFF) {
         ESP_LOGI(TAG, "Disconnecting from BLE device...");
+        s_manual_disconnect_requested = true;
         esp_ble_gattc_close(s_gattc_if, s_conn_id);
     }
 }

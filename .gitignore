@@ -11,4 +11,5 @@ sdkconfig
 **/.DS_Store
 tools/idf-env.local.ps1
 main/SAX0AC BC CC.pdf
+.codex-tmp/
  

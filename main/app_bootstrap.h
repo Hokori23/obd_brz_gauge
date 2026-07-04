@@ -5,3 +5,4 @@
 void app_bootstrap_init_storage_and_profile(void);
 void app_bootstrap_init_board_and_display(board_display_context_t *out_ctx);
 void app_bootstrap_start_runtime_services(void);
+bool app_bootstrap_display_only_enabled(void);

@@ -22,6 +22,9 @@ typedef enum {
     DISP_ITEM_OILP,
     DISP_ITEM_BKT,
     DISP_ITEM_BOOST,
+    DISP_ITEM_OILC,
+    DISP_ITEM_MAP,
+    DISP_ITEM_IGN,
     DISP_ITEM_COUNT
 } disp_item_t;
 
@@ -37,6 +40,9 @@ bool disp_item_read_value(disp_item_t item,
                           uint16_t rpm,
                           uint16_t speed,
                           int16_t boost_x10,
+                          int16_t oil_can,
+                          int16_t map_kpa,
+                          int16_t ign_x10,
                           int32_t *out);
 int32_t disp_item_sweep_value(disp_item_t item, float ratio);
 void disp_item_set_text(lv_obj_t *label, disp_item_t item, int32_t value, bool valid);

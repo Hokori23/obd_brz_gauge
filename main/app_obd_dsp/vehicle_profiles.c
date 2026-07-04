@@ -23,8 +23,8 @@ static const vehicle_profile_t s_profiles[] = {
         .gear_tolerance = 0.15f,
         .oil_temp_strategy = {
             .primary = OIL_TEMP_MODE_TOYOTA_21_01,  // BRZ ZC6 固定 Mode 21(单一模式，不回退)
-            .secondary = OIL_TEMP_MODE_NONE,
-            .tertiary = OIL_TEMP_MODE_NONE,
+            .secondary = OIL_TEMP_MODE_UDS_22_10_17,
+            .tertiary = OIL_TEMP_MODE_PID_5C,
             .offset_c = 0,  // 无偏移
         },
     },

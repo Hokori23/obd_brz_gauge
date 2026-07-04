@@ -128,6 +128,7 @@ static uint8_t ui_dashboard_gear_segment_step_index_for_rpm(uint16_t rpm_step);
 #define UI_DASHBOARD_PAGE_TYPE_SHIFT       6u
 #define UI_DASHBOARD_PAGE_TYPE_MASK        ((uint8_t)(0x3u << UI_DASHBOARD_PAGE_TYPE_SHIFT))
 #define UI_DASHBOARD_GEAR_FLAG_RPM_RING    0x01u
+#define UI_DASHBOARD_GEAR_FLAG_MONITOR     0x02u
 
 static const uint16_t s_ui_dashboard_gear_segment_rpm_options[] = {100u, 200u, 500u, 800u, 1000u, 2000u};
 
@@ -258,6 +259,11 @@ bool ui_dashboard_item_supported_for_vehicle(uint8_t vehicle_profile_idx, uint8_
         return profile->oil_temp_strategy.primary != OIL_TEMP_MODE_NONE ||
                profile->oil_temp_strategy.secondary != OIL_TEMP_MODE_NONE ||
                profile->oil_temp_strategy.tertiary != OIL_TEMP_MODE_NONE;
+    case DISP_ITEM_OILC:
+        return vehicle_profile_idx == 0u;
+    case DISP_ITEM_MAP:
+    case DISP_ITEM_IGN:
+        return true;
     case DISP_ITEM_BOOST:
         return profile->has_boost;
     default:
@@ -285,8 +291,13 @@ ui_dashboard_page_type_t ui_dashboard_page_get_type(const ui_dashboard_page_cfg_
     }
 
     raw_type = (uint8_t)((page->rsv & UI_DASHBOARD_PAGE_TYPE_MASK) >> UI_DASHBOARD_PAGE_TYPE_SHIFT);
-    if (raw_type >= (uint8_t)UI_DASHBOARD_PAGE_TYPE_COUNT) {
+    if (raw_type > (uint8_t)UI_DASHBOARD_PAGE_TYPE_G_FORCE_ESP32) {
         raw_type = (uint8_t)UI_DASHBOARD_PAGE_TYPE_METRIC;
+    }
+
+    if (raw_type == (uint8_t)UI_DASHBOARD_PAGE_TYPE_GEAR_DERIVED &&
+        (page->gear_flags & UI_DASHBOARD_GEAR_FLAG_MONITOR) != 0u) {
+        return UI_DASHBOARD_PAGE_TYPE_GEAR_MONITOR;
     }
 
     return (ui_dashboard_page_type_t)raw_type;
@@ -295,6 +306,8 @@ ui_dashboard_page_type_t ui_dashboard_page_get_type(const ui_dashboard_page_cfg_
 /** 设置仪表页类型并完成范围收敛。 */
 void ui_dashboard_page_set_type(ui_dashboard_page_cfg_t *page, ui_dashboard_page_type_t type)
 {
+    uint8_t raw_type;
+
     if (page == NULL) {
         return;
     }
@@ -303,8 +316,16 @@ void ui_dashboard_page_set_type(ui_dashboard_page_cfg_t *page, ui_dashboard_page
         type = UI_DASHBOARD_PAGE_TYPE_METRIC;
     }
 
+    raw_type = (uint8_t)type;
+    if (type == UI_DASHBOARD_PAGE_TYPE_GEAR_MONITOR) {
+        raw_type = (uint8_t)UI_DASHBOARD_PAGE_TYPE_GEAR_DERIVED;
+        page->gear_flags |= UI_DASHBOARD_GEAR_FLAG_MONITOR;
+    } else {
+        page->gear_flags &= (uint8_t)~UI_DASHBOARD_GEAR_FLAG_MONITOR;
+    }
+
     page->rsv &= (uint8_t)~UI_DASHBOARD_PAGE_TYPE_MASK;
-    page->rsv |= (uint8_t)((uint8_t)type << UI_DASHBOARD_PAGE_TYPE_SHIFT);
+    page->rsv |= (uint8_t)(raw_type << UI_DASHBOARD_PAGE_TYPE_SHIFT);
 }
 
 /** 读取档位页红线转速。 */
@@ -798,7 +819,7 @@ static void dashboard_cfg_sanitize(ui_dashboard_cfg_t *cfg)
             page->slot_count = 1;
         }
         for (uint8_t j = 0; j < UI_DASHBOARD_MAX_SLOTS; ++j) {
-            if (page->slot_items[j] > 10) {
+            if (page->slot_items[j] >= DISP_ITEM_COUNT) {
                 page->slot_items[j] = 5; /* DISP_ITEM_RPM */
             }
         }

@@ -23,11 +23,19 @@ static const char *TAG = "obd_dsp";
 void app_main(void)
 {
     board_display_context_t board_ctx = {0};
+    bool display_only = false;
 
     ESP_LOGI(TAG, "app_main: enter");
 
     app_bootstrap_init_storage_and_profile();
     app_bootstrap_init_board_and_display(&board_ctx);
+    display_only = app_bootstrap_display_only_enabled();
+    if (display_only) {
+        ESP_LOGW(TAG,
+                 "display-only bootstrap enabled: stop after board_display_init "
+                 "(LVGL, UI, and runtime services are skipped)");
+        return;
+    }
     ESP_ERROR_CHECK(app_lvgl_port_init(&board_ctx));
     ESP_ERROR_CHECK(app_lvgl_port_start_task());
 

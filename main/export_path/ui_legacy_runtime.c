@@ -1,6 +1,7 @@
 #include "ui_runtime_common.h"
 
 #include "ui.h"
+#include "ui_debug_config.h"
 #include "ui_font_profile.h"
 
 #include "bsp_obd_dsp/elm327_ble_client.h"
@@ -17,7 +18,6 @@ typedef struct {
 #define SWEEP_STEPS_UP   6
 #define SWEEP_STEPS_DOWN 6
 #define SWEEP_TOTAL      (SWEEP_STEPS_UP + SWEEP_STEPS_DOWN)
-#define UI_VALUE_DEBUG_MOCK_ENABLED 0
 
 static int s_sweep_step = 0;
 static bool s_sweep_pending = false;
@@ -26,7 +26,7 @@ static bool s_prev_ble_connected = false;
 static const disp_item_meta_t s_disp_meta[DISP_ITEM_COUNT] = {
     {"CLT", "\xC2\xB0" "C", 0x44AAFF},
     {"IAT", "\xC2\xB0" "C", 0x44FF88},
-    {"OIL", "\xC2\xB0" "C", 0xFF7722},
+    {"OIL-PID", "\xC2\xB0" "C", 0xFF7722},
     {"LOD", "%", 0xFFCC00},
     {"TPS", "%", 0xFF8844},
     {"RPM", "rpm", 0x66CCFF},
@@ -35,6 +35,9 @@ static const disp_item_meta_t s_disp_meta[DISP_ITEM_COUNT] = {
     {"OIP", "bar", 0xFFD166},
     {"BKT", "\xC2\xB0" "C", 0xFF5A5A},
     {"BST", "bar", 0x00DD88},
+    {"OIL-CAN", "\xC2\xB0" "C", 0xFF9F1C},
+    {"MAP", "kPa", 0x6CE5E8},
+    {"IGN", "deg", 0xCDB4FF},
 };
 
 static bool disp_item_ui_debug_mock_value(disp_item_t item, int32_t *out)
@@ -47,25 +50,32 @@ static bool disp_item_ui_debug_mock_value(disp_item_t item, int32_t *out)
     case DISP_ITEM_CLT:
     case DISP_ITEM_IAT:
     case DISP_ITEM_OIL:
+    case DISP_ITEM_OILC:
     case DISP_ITEM_BKT:
-        *out = 999;
+        *out = UI_DEBUG_MOCK_TEMP_VALUE_C;
         return true;
     case DISP_ITEM_LOAD:
     case DISP_ITEM_TPS:
-        *out = 100;
+        *out = UI_DEBUG_MOCK_LOAD_VALUE_PCT;
         return true;
     case DISP_ITEM_RPM:
-        *out = 9999;
+        *out = UI_DEBUG_MOCK_RPM_VALUE;
         return true;
     case DISP_ITEM_SPEED:
-        *out = 999;
+        *out = UI_DEBUG_MOCK_SPEED_VALUE_KMH;
         return true;
     case DISP_ITEM_BAT:
-        *out = 99900; /* 99.9 V */
+        *out = UI_DEBUG_MOCK_BAT_VALUE_MV; /* 99.9 V */
         return true;
     case DISP_ITEM_OILP:
     case DISP_ITEM_BOOST:
-        *out = 999; /* 99.9 bar */
+        *out = UI_DEBUG_MOCK_PRESSURE_VALUE_X10; /* 99.9 bar */
+        return true;
+    case DISP_ITEM_MAP:
+        *out = 199;
+        return true;
+    case DISP_ITEM_IGN:
+        *out = 125;
         return true;
     default:
         return false;
@@ -95,6 +105,9 @@ bool disp_item_read_value(disp_item_t item,
                           uint16_t rpm,
                           uint16_t speed,
                           int16_t boost_x10,
+                          int16_t oil_can,
+                          int16_t map_kpa,
+                          int16_t ign_x10,
                           int32_t *out)
 {
     if (!out) {
@@ -117,6 +130,12 @@ bool disp_item_read_value(disp_item_t item,
     case DISP_ITEM_OIL:
         if (oil > -41) {
             *out = oil;
+            return true;
+        }
+        return false;
+    case DISP_ITEM_OILC:
+        if (oil_can > -41) {
+            *out = oil_can;
             return true;
         }
         return false;
@@ -162,6 +181,18 @@ bool disp_item_read_value(disp_item_t item,
             return true;
         }
         return false;
+    case DISP_ITEM_MAP:
+        if (map_kpa >= 0) {
+            *out = map_kpa;
+            return true;
+        }
+        return false;
+    case DISP_ITEM_IGN:
+        if (ign_x10 != -32768) {
+            *out = ign_x10;
+            return true;
+        }
+        return false;
     default:
         return false;
     }
@@ -174,6 +205,7 @@ int32_t disp_item_sweep_value(disp_item_t item, float ratio)
     case DISP_ITEM_CLT:
     case DISP_ITEM_IAT:
     case DISP_ITEM_OIL:
+    case DISP_ITEM_OILC:
         return (int32_t)(120.0f * ratio);
     case DISP_ITEM_LOAD:
     case DISP_ITEM_TPS:
@@ -190,6 +222,10 @@ int32_t disp_item_sweep_value(disp_item_t item, float ratio)
         return (int32_t)(600.0f * ratio);
     case DISP_ITEM_BOOST:
         return (int32_t)(20.0f * ratio);
+    case DISP_ITEM_MAP:
+        return (int32_t)(200.0f * ratio);
+    case DISP_ITEM_IGN:
+        return (int32_t)(300.0f * ratio) - 100;
     default:
         return 0;
     }
@@ -206,7 +242,7 @@ void disp_item_set_text(lv_obj_t *label, disp_item_t item, int32_t value, bool v
         return;
     }
 
-#if UI_VALUE_DEBUG_MOCK_ENABLED
+#if UI_DEBUG_VALUE_MOCK_ENABLED
     if (disp_item_ui_debug_mock_value(item, &value)) {
         valid = true;
     }
@@ -225,6 +261,13 @@ void disp_item_set_text(lv_obj_t *label, disp_item_t item, int32_t value, bool v
     } else if (item == DISP_ITEM_BKT) {
         ui_label_set_text_fmt_if_changed(label, "%ld", (long)(value / 10));
     } else if (item == DISP_ITEM_BOOST) {
+        int32_t abs_val = (value < 0) ? -value : value;
+        ui_label_set_text_fmt_if_changed(label,
+                                         "%s%d.%d",
+                                         (value < 0) ? "-" : "",
+                                         (int)(abs_val / 10),
+                                         (int)(abs_val % 10));
+    } else if (item == DISP_ITEM_IGN) {
         int32_t abs_val = (value < 0) ? -value : value;
         ui_label_set_text_fmt_if_changed(label,
                                          "%s%d.%d",

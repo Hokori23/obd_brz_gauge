@@ -13,6 +13,7 @@
 static volatile uint32_t s_obd_demand_mask = 0u;
 static volatile bool s_gforce_obd_enabled = false;
 static volatile bool s_zc6_gear_obd_enabled = false;
+static volatile bool s_zc6_oil_can_enabled = false;
 
 /** 判断当前激活车型是否为 ZC6。 */
 static bool aux_sensor_is_active_vehicle_zc6(void)
@@ -29,11 +30,11 @@ static uint32_t ui_home_obd_demand_mask(void)
 {
     bool zc6_gear_monitor_needed =
         aux_sensor_is_active_vehicle_zc6() &&
-        ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_GEAR);
+        ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_GEAR_MONITOR);
     bool zc6_gear_rpm_ring_needed =
         ui_home_runtime_active_or_warm_page_gear_rpm_ring_enabled();
     const aux_sensor_obd_page_flags_t flags = {
-        .uses_gear_page = ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_GEAR) &&
+        .uses_gear_page = ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_GEAR_DERIVED) &&
                           !zc6_gear_monitor_needed,
         .uses_gforce_obd_page = ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_G_FORCE_OBD),
         .uses_rpm = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_RPM) || zc6_gear_rpm_ring_needed,
@@ -44,7 +45,9 @@ static uint32_t ui_home_obd_demand_mask(void)
         .uses_tps = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_TPS),
         .uses_oil = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_OIL),
         .uses_bat = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_BAT),
-        .uses_boost = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_BOOST),
+        .uses_boost = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_BOOST) ||
+                      ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_MAP),
+        .uses_ign = ui_home_runtime_active_or_warm_page_uses_item(DISP_ITEM_IGN),
     };
 
     return aux_sensor_demand_mask_from_page_flags(&flags);
@@ -63,7 +66,9 @@ void aux_sensor_demand_refresh(void)
     bool gforce_obd_needed = ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_G_FORCE_OBD);
     bool imu_needed = ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_G_FORCE_ESP32);
     bool zc6_gear_obd_needed = aux_sensor_is_active_vehicle_zc6() &&
-                               ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_GEAR);
+                               ui_home_runtime_active_page_uses_type(UI_DASHBOARD_PAGE_TYPE_GEAR_MONITOR);
+    bool zc6_oil_can_needed = aux_sensor_is_active_vehicle_zc6() &&
+                              ui_home_runtime_active_page_uses_item(DISP_ITEM_OILC);
     bool oil_pressure_needed = !nvs_cfg_is_oil_pressure_demand_driven(cfg) ||
                                ui_home_runtime_active_page_uses_item(DISP_ITEM_OILP);
 
@@ -72,6 +77,7 @@ void aux_sensor_demand_refresh(void)
     s_obd_demand_mask = ui_home_obd_demand_mask();
     s_gforce_obd_enabled = gforce_obd_needed;
     s_zc6_gear_obd_enabled = zc6_gear_obd_needed;
+    s_zc6_oil_can_enabled = zc6_oil_can_needed;
     rs485_brake_temp_set_enabled(brake_needed);
     qmi8658_gforce_set_enabled(imu_needed);
     oil_pressure_set_enabled(oil_pressure_needed);
@@ -93,4 +99,9 @@ bool aux_sensor_demand_is_gforce_obd_enabled(void)
 bool aux_sensor_demand_is_zc6_gear_obd_enabled(void)
 {
     return s_zc6_gear_obd_enabled;
+}
+
+bool aux_sensor_demand_is_zc6_oil_can_enabled(void)
+{
+    return s_zc6_oil_can_enabled;
 }

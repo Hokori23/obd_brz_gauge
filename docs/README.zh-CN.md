@@ -94,3 +94,19 @@ idf.py -p PORT flash monitor
 - 标明哪些 PID 是通用 OBD，哪些可能是当前车型相关逻辑
 
 英文版说明见 [docs/README.en.md](README.en.md)。
+
+## Update 2026-07-04
+
+近期与 ZC6 / OBD 运行时相关的新增点：
+
+- 指标层已区分 `OIL-PID` 与 `OIL-CAN`
+- 新增独立指标：
+  - `MAP`
+  - `IGN`
+- 档位页现在分为两条路径：
+  - `GEAR-DERIVED`
+  - `GEAR-MONITOR`
+- `GEAR-MONITOR` 继续使用 ZC6 `0x141`
+- `OIL-CAN` 当前为 ZC6 低频 monitor-mode 路径，监听 `0x360`
+- 启动阶段支持打印最近 20 条持久化错误日志
+- UI 调试开关已集中到 `main/export_path/ui_debug_config.h`

@@ -1,5 +1,6 @@
 #include "ui_home_runtime_widgets.h"
 
+#include "ui_debug_config.h"
 #include "ui_font_profile.h"
 #include "ui_layout.h"
 #include "ui_round_shell.h"
@@ -23,25 +24,30 @@ static const char *ui_home_widgets_value_sample_text(disp_item_t item)
 {
     switch (item) {
     case DISP_ITEM_RPM:
-        return "9999";
+        return UI_DEBUG_SAMPLE_TEXT_RPM;
     case DISP_ITEM_SPEED:
-        return "999";
+        return UI_DEBUG_SAMPLE_TEXT_SPEED;
     case DISP_ITEM_BAT:
-        return "99.9";
+        return UI_DEBUG_SAMPLE_TEXT_BAT;
     case DISP_ITEM_OILP:
-        return "99.9";
+        return UI_DEBUG_SAMPLE_TEXT_PRESSURE;
     case DISP_ITEM_BOOST:
-        return "-99.9";
+        return UI_DEBUG_SAMPLE_TEXT_BOOST;
+    case DISP_ITEM_MAP:
+        return "199";
+    case DISP_ITEM_IGN:
+        return "12.5";
     case DISP_ITEM_LOAD:
     case DISP_ITEM_TPS:
-        return "100";
+        return UI_DEBUG_SAMPLE_TEXT_LOAD;
     case DISP_ITEM_BKT:
-        return "999";
+        return UI_DEBUG_SAMPLE_TEXT_TEMP;
     case DISP_ITEM_CLT:
     case DISP_ITEM_IAT:
     case DISP_ITEM_OIL:
+    case DISP_ITEM_OILC:
     default:
-        return "999";
+        return UI_DEBUG_SAMPLE_TEXT_TEMP;
     }
 }
 

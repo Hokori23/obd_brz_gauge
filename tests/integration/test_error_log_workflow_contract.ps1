@@ -2,11 +2,13 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 
 $nvsStoragePath = Join-Path $repoRoot "main\bsp_obd_dsp\nvs_storage.c"
 $nvsStorageHeaderPath = Join-Path $repoRoot "main\bsp_obd_dsp\nvs_storage.h"
+$appBootstrapPath = Join-Path $repoRoot "main\app_bootstrap.c"
 $elmPath = Join-Path $repoRoot "main\bsp_obd_dsp\elm327_ble_client.c"
 $racechronoPath = Join-Path $repoRoot "main\bsp_obd_dsp\racechrono_ble_diy.c"
 
 $nvsStorage = Get-Content $nvsStoragePath -Raw
 $nvsStorageHeader = Get-Content $nvsStorageHeaderPath -Raw
+$appBootstrap = Get-Content $appBootstrapPath -Raw
 $elm = Get-Content $elmPath -Raw
 $racechrono = Get-Content $racechronoPath -Raw
 
@@ -25,6 +27,10 @@ if ($nvsStorage -notmatch '(?s)if \(load_blob_or_create\(NS_DIAG,\s*KEY_ERR_LOG,
 
 if ($nvsStorage -notmatch '(?s)void nvs_error_log_record\(const char \*tag,\s*esp_err_t err,\s*const char \*message\).*error_log_append_locked') {
     throw "Persistent error-log workflow must funnel writes through nvs_error_log_record()"
+}
+
+if ($appBootstrap -notmatch '(?s)app_bootstrap_dump_error_log\(void\).*nvs_error_log_copy\(&log\).*log\.count == 0u.*NVS_ERROR_LOG_CAPACITY') {
+    throw "Persistent error-log workflow must support boot-time dumping from the restored ring buffer"
 }
 
 if ($nvsStorage -notmatch '(?s)while \(1\) \{\s*esp_err_t error_log_err = ESP_OK;.*nvs_storage_collect_flush_snapshot_locked\((?:&snapshot|snapshot),\s*stat_elapsed_ms >= STAT_FLUSH_PERIOD_MS\);.*save_blob\(NS_DIAG,\s*KEY_ERR_LOG,\s*&(?:snapshot|snapshot->)error_log,\s*sizeof\((?:snapshot|snapshot->)error_log\)\);.*nvs_storage_commit_flush_snapshot\((?:&snapshot|snapshot),\s*error_log_err,\s*stat_err\);') {

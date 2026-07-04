@@ -6,6 +6,7 @@ $appBootstrapHeaderPath = Join-Path $repoRoot "main\app_bootstrap.h"
 $lvglPortPath = Join-Path $repoRoot "main\app_lvgl_port.c"
 $lvglPortHeaderPath = Join-Path $repoRoot "main\app_lvgl_port.h"
 $bleScanPath = Join-Path $repoRoot "main\export_path\screens\ui_ScreenPageBLEScan.c"
+$kconfigPath = Join-Path $repoRoot "main\Kconfig.projbuild"
 
 $appMain = Get-Content $appMainPath -Raw
 $appBootstrap = Get-Content $appBootstrapPath -Raw
@@ -13,6 +14,7 @@ $appBootstrapHeader = Get-Content $appBootstrapHeaderPath -Raw
 $lvglPort = Get-Content $lvglPortPath -Raw
 $lvglPortHeader = Get-Content $lvglPortHeaderPath -Raw
 $bleScan = Get-Content $bleScanPath -Raw
+$kconfig = Get-Content $kconfigPath -Raw
 
 if ($appMain -match 'extern void ui_init') {
     throw "app_main.c must include ui.h directly instead of forward-declaring ui_init()"
@@ -46,6 +48,15 @@ if ($appBootstrap -notmatch 'vehicle_profile_set_active' -or
     $appBootstrap -notmatch 'elm327_ble_start_default' -or
     $appBootstrap -notmatch 'vMileageDataStatisticTask') {
     throw "app_bootstrap.c must own storage/profile, board/display, and runtime service startup responsibilities"
+}
+
+if ($kconfig -notmatch 'config OBD_BOOT_PRINT_ERROR_LOG') {
+    throw "Kconfig must expose a boot-time stored-error-log print switch"
+}
+
+if ($appBootstrap -notmatch '(?s)#if CONFIG_OBD_BOOT_PRINT_ERROR_LOG.*app_bootstrap_dump_error_log\(void\).*nvs_error_log_copy\(&log\).*#endif' -or
+    $appBootstrap -notmatch '(?s)app_bootstrap_init_storage_and_profile\(void\).*#if CONFIG_OBD_BOOT_PRINT_ERROR_LOG\s*app_bootstrap_dump_error_log\(\);\s*#endif') {
+    throw "app_bootstrap.c must gate boot-time stored-error-log dumping behind CONFIG_OBD_BOOT_PRINT_ERROR_LOG"
 }
 
 if ($lvglPortHeader -notmatch 'esp_err_t app_lvgl_port_init\(const board_display_context_t \*ctx\);' -or

@@ -286,7 +286,8 @@ static void ui_dashboard_config_refresh_rows(void)
         return;
     }
 
-    if (page_type == UI_DASHBOARD_PAGE_TYPE_GEAR) {
+    if (page_type == UI_DASHBOARD_PAGE_TYPE_GEAR_DERIVED ||
+        page_type == UI_DASHBOARD_PAGE_TYPE_GEAR_MONITOR) {
         uint16_t redline_rpm = ui_dashboard_page_get_gear_redline_rpm(page_cfg);
         uint16_t max_rpm = ui_dashboard_page_get_gear_max_rpm(page_cfg);
         uint16_t gap_rpm = ui_dashboard_page_get_gear_segment_rpm_step(page_cfg);
@@ -419,7 +420,8 @@ static void ui_dashboard_config_slot_count_changed(lv_event_t *e)
         return;
     }
 
-    if (ui_dashboard_config_selected_page_type() == UI_DASHBOARD_PAGE_TYPE_GEAR) {
+    if (ui_dashboard_config_selected_page_type() == UI_DASHBOARD_PAGE_TYPE_GEAR_DERIVED ||
+        ui_dashboard_config_selected_page_type() == UI_DASHBOARD_PAGE_TYPE_GEAR_MONITOR) {
         uint16_t redline_rpm =
             (uint16_t)(UI_DASHBOARD_GEAR_REDLINE_RPM_MIN +
                        (lv_roller_get_selected(s_dashboard_cfg_slot_count_roller) * 100u));
@@ -456,7 +458,8 @@ static void ui_dashboard_config_slot_edit_changed(lv_event_t *e)
         return;
     }
 
-    if (ui_dashboard_config_selected_page_type() == UI_DASHBOARD_PAGE_TYPE_GEAR) {
+    if (ui_dashboard_config_selected_page_type() == UI_DASHBOARD_PAGE_TYPE_GEAR_DERIVED ||
+        ui_dashboard_config_selected_page_type() == UI_DASHBOARD_PAGE_TYPE_GEAR_MONITOR) {
         nvs_user_cfg_t cfg = *nvs_cfg_get();
         ui_dashboard_page_cfg_t *page;
         uint16_t redline_rpm;
@@ -635,7 +638,7 @@ static void ui_dashboard_config_apply_roller_style(lv_obj_t *roller,
  */
 static void ui_dashboard_config_screen_init(void)
 {
-    const char *type_options = "METRIC\nGEAR\nG-OBD\nG-ESP32";
+    const char *type_options = "METRIC\nGEAR-DER\nG-OBD\nG-ESP32\nGEAR-MON";
     const char *slot_count_options = "1\n2\n3\n4\n5\n6";
     char item_options[128] = {0};
     const ui_dashboard_page_cfg_t *page;

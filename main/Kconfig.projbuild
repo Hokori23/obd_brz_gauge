@@ -41,4 +41,21 @@ menu "OBD DSP Configuration"
             Optional GPIO to control RS485 transceiver direction.
             Set HIGH when transmitting and LOW when receiving.
             Keep -1 if your USB/RS485 module handles direction automatically.
+
+    config OBD_BOOT_PRINT_ERROR_LOG
+        bool "Print stored error log during boot"
+        default y
+        help
+            When enabled, dump the persisted diagnostic error-log ring buffer
+            during startup after NVS initialization. This prints up to the
+            latest 20 stored error entries in chronological order.
+
+    config OBD_BOOTSTRAP_DISPLAY_ONLY
+        bool "Display-only bootstrap"
+        default n
+        help
+            When enabled, boot only through storage/profile setup and board
+            display initialization. LVGL task creation, UI startup, BLE OBD,
+            and other runtime services are skipped. Use this to isolate
+            early display bring-up and panel/SPI crashes.
 endmenu

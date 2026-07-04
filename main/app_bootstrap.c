@@ -20,6 +20,45 @@
 
 static const char *TAG = "app_bootstrap";
 
+bool app_bootstrap_display_only_enabled(void)
+{
+#if CONFIG_OBD_BOOTSTRAP_DISPLAY_ONLY
+    return true;
+#else
+    return false;
+#endif
+}
+
+#if CONFIG_OBD_BOOT_PRINT_ERROR_LOG
+static void app_bootstrap_dump_error_log(void)
+{
+    nvs_error_log_t log = {0};
+    uint8_t start = 0u;
+
+    nvs_error_log_copy(&log);
+    if (log.count == 0u) {
+        ESP_LOGI(TAG, "boot error log: empty");
+        return;
+    }
+
+    start = (uint8_t)((log.head + NVS_ERROR_LOG_CAPACITY - log.count) % NVS_ERROR_LOG_CAPACITY);
+    ESP_LOGI(TAG, "boot error log: dumping %u stored entries", (unsigned)log.count);
+
+    for (uint8_t i = 0u; i < log.count; ++i) {
+        uint8_t index = (uint8_t)((start + i) % NVS_ERROR_LOG_CAPACITY);
+        const nvs_error_entry_t *entry = &log.entries[index];
+        ESP_LOGI(TAG,
+                 "err[%u] seq=%" PRIu32 " up=%" PRIu32 "s code=%" PRId32 " tag=%s msg=%s",
+                 (unsigned)i,
+                 entry->seq,
+                 entry->uptime_s,
+                 entry->err_code,
+                 entry->tag,
+                 entry->message);
+    }
+}
+#endif
+
 /**
  * Initialize persisted state and select the active vehicle profile.
  *
@@ -43,6 +82,10 @@ void app_bootstrap_init_storage_and_profile(void)
         ESP_LOGI("NVS", "odo=%" PRIu64 " trip=%" PRIu64 " max_spd=%d avg_spd=%d runtime=%" PRIu64,
                  stat->odometer_m, stat->trip_m, stat->max_speed_kmh, stat->avg_speed_kmh, stat->run_time_s);
     }
+
+#if CONFIG_OBD_BOOT_PRINT_ERROR_LOG
+    app_bootstrap_dump_error_log();
+#endif
 
     ESP_LOGI(TAG, "bootstrap: load vehicle profile");
     vehicle_profile_set_active(nvs_cfg_get()->vehicle_profile_idx);
@@ -98,6 +141,11 @@ void app_bootstrap_start_runtime_services(void)
     const nvs_user_cfg_t *user_cfg = nvs_cfg_get();
     const char *ble_name = (user_cfg->ble_device_name[0] != '\0') ? user_cfg->ble_device_name : "OBDII";
 
+    if (app_bootstrap_display_only_enabled()) {
+        ESP_LOGW(TAG, "display-only bootstrap enabled: skip runtime services");
+        return;
+    }
+
     ESP_LOGI(TAG, "BLE target device: %s", ble_name);
     elm327_ble_start_default(ble_name);
 
@@ -115,12 +163,7 @@ void app_bootstrap_start_runtime_services(void)
     qmi8658_gforce_start();
     aux_sensor_demand_refresh();
 
-#if CONFIG_OBD_BOARD_WS_185
     oil_pressure_start();
-#else
-    // This sensor path is physically absent on other boards.
-    ESP_LOGI(TAG, "Skip ADS1115 oil pressure task on this board profile");
-#endif
 
     vMileageDataStatisticTask();
 }

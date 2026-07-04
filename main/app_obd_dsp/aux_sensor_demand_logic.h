@@ -19,6 +19,7 @@ typedef struct {
     bool uses_oil;
     bool uses_bat;
     bool uses_boost;
+    bool uses_ign;
 } aux_sensor_obd_page_flags_t;
 
 #define AUX_SENSOR_DEMAND_MASK_COMPOSE(uses_gear_page,           \
@@ -31,7 +32,8 @@ typedef struct {
                                        uses_tps,                 \
                                        uses_oil,                 \
                                        uses_bat,                 \
-                                       uses_boost)               \
+                                       uses_boost,               \
+                                       uses_ign)                 \
     ((uses_gear_page)                                                   \
          ? (AUX_OBD_DEMAND_RPM | AUX_OBD_DEMAND_SPEED)                  \
          : ((uses_gforce_obd_page)                                      \
@@ -44,7 +46,8 @@ typedef struct {
                    ((uses_tps) ? AUX_OBD_DEMAND_TPS : 0u) |            \
                    ((uses_oil) ? AUX_OBD_DEMAND_OIL : 0u) |            \
                    ((uses_bat) ? AUX_OBD_DEMAND_BAT : 0u) |            \
-                   ((uses_boost) ? AUX_OBD_DEMAND_BOOST : 0u))))
+                   ((uses_boost) ? AUX_OBD_DEMAND_BOOST : 0u) |        \
+                   ((uses_ign) ? AUX_OBD_DEMAND_IGN : 0u))))
 
 static inline uint32_t aux_sensor_demand_mask_from_page_flags(
     const aux_sensor_obd_page_flags_t *flags)
@@ -63,7 +66,8 @@ static inline uint32_t aux_sensor_demand_mask_from_page_flags(
                                           flags->uses_tps,
                                           flags->uses_oil,
                                           flags->uses_bat,
-                                          flags->uses_boost);
+                                          flags->uses_boost,
+                                          flags->uses_ign);
 }
 
 #endif

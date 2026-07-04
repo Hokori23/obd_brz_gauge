@@ -29,6 +29,7 @@ typedef struct {
     void (*on_parsed_oil_temp)(uint32_t oil_temp);  // 机油温度 °C (公式已应用)
     void (*on_parsed_load_pct)(uint32_t load_pct);   // 发动机负荷 0~100%
     void (*on_parsed_manifold_pressure)(uint32_t manifold_pressure);//进气歧管绝对压力
+    void (*on_parsed_timing_advance_x10)(int16_t timing_advance_x10);//点火提前角 0.1deg
     void (*on_parsed_throttle_position)(uint32_t throttle_position);//节气门位置
     void (*on_parsed_fuel_level)(uint32_t fuel_level);//燃油液位
     void (*on_parsed_control_module_voltage)(uint32_t control_module_voltage);//控制模块电压

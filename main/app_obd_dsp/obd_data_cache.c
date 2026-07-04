@@ -7,6 +7,7 @@
 #include "bsp_obd_dsp/nvs_storage.h"
 #include "esp_log.h"
 #include <inttypes.h>
+#include <math.h>
 
 /*
  * Shared runtime sensor cache.
@@ -21,6 +22,7 @@ static volatile uint16_t s_rpm = 0;
 static volatile uint8_t  s_speed = 0;
 static volatile int16_t  s_coolant_temp = -40;
 static volatile int16_t  s_oil_temp = -100;  // 真实机油温度 °C, -100=无效
+static volatile int16_t  s_oil_temp_can = -100; // CAN机油温度 °C, -100=无效
 static volatile int16_t  s_intake_temp = -40;
 static volatile int16_t  s_load_pct = -1;   // 发动机负荷 0~100%, -1=无效
 static volatile int16_t  s_tps = -1;         // 节气门开度 0~100%, -1=无效
@@ -28,6 +30,8 @@ static volatile int32_t  s_bat_mv = -1;     // 电压 mV, -1=无效
 static volatile int16_t  s_oil_pressure_x10 = -1; // 油压, 0.1bar, -1=无效
 static volatile int16_t  s_brake_temp_x10 = -1000; // 刹车温度, 0.1°C, -1000=无效
 static volatile int16_t  s_boost_x10 = -32768; // 涡轮表压, 0.1bar(可为负=真空), -32768=无效
+static volatile int16_t  s_map_kpa = -1; // 进气歧管绝对压力 kPa, -1=无效
+static volatile int16_t  s_ign_timing_x10 = -32768; // 点火提前角 0.1deg, -32768=无效
 static volatile int16_t  s_lat_accel_x100 = -32768; // 0.01g, -32768=invalid
 static volatile int16_t  s_lon_accel_x100 = -32768; // 0.01g, -32768=invalid
 static volatile int16_t  s_lat_accel_imu_x100 = -32768; // 0.01g, -32768=invalid
@@ -81,6 +85,14 @@ void obd_data_set_intake_temp(int16_t temp)
 {
     portENTER_CRITICAL(&s_mux);
     s_intake_temp = temp;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+void obd_data_set_oil_temp_can(int16_t temp)
+{
+    if (temp < -20 || temp > 150) return;
+    portENTER_CRITICAL(&s_mux);
+    s_oil_temp_can = temp;
     portEXIT_CRITICAL(&s_mux);
 }
 
@@ -174,6 +186,15 @@ int16_t obd_data_get_intake_temp(void)
     return val;
 }
 
+int16_t obd_data_get_oil_temp_can(void)
+{
+    int16_t val;
+    portENTER_CRITICAL(&s_mux);
+    val = s_oil_temp_can;
+    portEXIT_CRITICAL(&s_mux);
+    return val;
+}
+
 /** 写入最新的发动机负载百分比。 */
 void obd_data_set_load_pct(int16_t pct)
 {
@@ -256,6 +277,40 @@ void obd_data_set_boost_x10(int16_t boost_x10)
     portENTER_CRITICAL(&s_mux);
     s_boost_x10 = boost_x10;
     portEXIT_CRITICAL(&s_mux);
+}
+
+void obd_data_set_map_kpa(int16_t map_kpa)
+{
+    if (map_kpa < 0 || map_kpa > 255) return;
+    portENTER_CRITICAL(&s_mux);
+    s_map_kpa = map_kpa;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+int16_t obd_data_get_map_kpa(void)
+{
+    int16_t val;
+    portENTER_CRITICAL(&s_mux);
+    val = s_map_kpa;
+    portEXIT_CRITICAL(&s_mux);
+    return val;
+}
+
+void obd_data_set_ign_timing_x10(int16_t ign_x10)
+{
+    if (ign_x10 < -640 || ign_x10 > 635) return;
+    portENTER_CRITICAL(&s_mux);
+    s_ign_timing_x10 = ign_x10;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+int16_t obd_data_get_ign_timing_x10(void)
+{
+    int16_t val;
+    portENTER_CRITICAL(&s_mux);
+    val = s_ign_timing_x10;
+    portEXIT_CRITICAL(&s_mux);
+    return val;
 }
 
 /** 返回最新的增压压力，单位为 0.1 bar。 */
@@ -426,7 +481,7 @@ bool obd_data_get_actual_gear(enGear *gear_out)
  *
  * 核心职责：结合车型传动比范围，给 UI 和业务逻辑提供稳定档位。
  */
-enGear calculate_gear(float rpm, float speed) {
+static enGear calculate_gear_legacy(float rpm, float speed) {
     static enGear s_last_gear = GEAR_NEUTRAL;
     // ========== 输入校验 ==========
     // 任一信号缺失时直接回到空挡，避免沿用上一次档位造成误判。
@@ -478,6 +533,101 @@ enGear calculate_gear(float rpm, float speed) {
  *
  * 每秒刷新一次里程相关统计，并按节流频率输出调试日志。
  */
+enGear calculate_gear(float rpm, float speed)
+{
+    static enGear s_last_gear = GEAR_NEUTRAL;
+    static int64_t s_last_gear_change_us = 0;
+    const vehicle_profile_t *profile;
+    const gear_ratio_range_t *ranges;
+    float calc_const;
+    float total_ratio;
+    float best_error = 1000.0f;
+    float last_error = 1000.0f;
+    enGear best_gear = GEAR_NEUTRAL;
+    uint8_t range_count = 0;
+    int64_t now_us = esp_timer_get_time();
+
+    if (rpm < 450.0f || speed < 2.0f) {
+        s_last_gear = GEAR_NEUTRAL;
+        s_last_gear_change_us = now_us;
+        return GEAR_NEUTRAL;
+    }
+
+    profile = vehicle_profile_get_active();
+    calc_const = vehicle_profile_calc_constant(profile);
+    if (profile == NULL || calc_const <= 0.0f) {
+        s_last_gear = GEAR_NEUTRAL;
+        s_last_gear_change_us = now_us;
+        return GEAR_NEUTRAL;
+    }
+
+    total_ratio = rpm / (speed * calc_const);
+    ranges = vehicle_profile_get_gear_ranges(&range_count);
+    ESP_LOGD("gear", "GEAR-DERIVED rpm=%.0f speed=%.1f ratio=%.3f", rpm, speed, total_ratio);
+
+    for (uint8_t i = 0; i < range_count; ++i) {
+        float center_ratio;
+        float error;
+
+        if (ranges[i].max_ratio <= 0.0f || ranges[i].min_ratio <= 0.0f) {
+            continue;
+        }
+
+        center_ratio = (ranges[i].min_ratio + ranges[i].max_ratio) * 0.5f;
+        error = fabsf(total_ratio - center_ratio) / center_ratio;
+
+        if (ranges[i].gear == s_last_gear) {
+            last_error = error;
+        }
+
+        if (total_ratio >= ranges[i].min_ratio &&
+            total_ratio <= ranges[i].max_ratio &&
+            error < best_error) {
+            best_error = error;
+            best_gear = ranges[i].gear;
+        }
+    }
+
+    if (best_gear != GEAR_NEUTRAL) {
+        if (s_last_gear != GEAR_NEUTRAL &&
+            best_gear != s_last_gear &&
+            last_error <= (profile->gear_tolerance + 0.03f) &&
+            (now_us - s_last_gear_change_us) < 400000LL) {
+            return s_last_gear;
+        }
+
+        if (best_gear != s_last_gear) {
+            s_last_gear = best_gear;
+            s_last_gear_change_us = now_us;
+        }
+        return best_gear;
+    }
+
+    if (rpm > 800.0f && speed < 5.0f) {
+        s_last_gear = GEAR_NEUTRAL;
+        s_last_gear_change_us = now_us;
+        return GEAR_NEUTRAL;
+    }
+
+    if (s_last_gear != GEAR_NEUTRAL &&
+        (now_us - s_last_gear_change_us) < 800000LL) {
+        return s_last_gear;
+    }
+
+    if (speed >= 5.0f) {
+        enGear fallback = calculate_gear_legacy(rpm, speed);
+        if (fallback != GEAR_NEUTRAL) {
+            s_last_gear = fallback;
+            s_last_gear_change_us = now_us;
+            return fallback;
+        }
+    }
+
+    s_last_gear = GEAR_NEUTRAL;
+    s_last_gear_change_us = now_us;
+    return GEAR_NEUTRAL;
+}
+
 static void mileage_timer_cb(void* arg)
 {
     static uint16_t usPrintCnt = 0;

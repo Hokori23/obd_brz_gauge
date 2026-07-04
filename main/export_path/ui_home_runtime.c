@@ -1,6 +1,7 @@
 #include "ui_home_runtime.h"
 
 #include "ui_dashboard_config.h"
+#include "ui_debug_config.h"
 #include "ui.h"
 #include "ui_font_profile.h"
 #include "ui_helpers.h"
@@ -44,7 +45,6 @@
 #define UI_HOME_GEAR_RING_MAX_SEGMENTS 99u
 #define UI_HOME_GEAR_RING_GAP_DEG 3.0f
 #define UI_HOME_GEAR_BLINK_PERIOD_US 250000LL
-#define UI_HOME_METRIC_LAYOUT_DEBUG 0
 #define UI_HOME_PAGE_SWITCH_PERF_LOG 0
 #define UI_HOME_METRIC_LAYOUT_LOG_BUF_LEN 256u
 
@@ -203,6 +203,7 @@ static void ui_home_page_switch_perf_cancel(void);
 static void ui_home_refresh_timer_suspend(void);
 static void ui_home_refresh_timer_resume(void);
 static ui_dashboard_page_type_t ui_home_page_type_for_gauge(uint8_t gauge_index);
+static bool ui_home_page_type_is_gear(ui_dashboard_page_type_t page_type);
 static bool ui_home_read_disp_item_value(disp_item_t item, int32_t *out);
 static bool ui_home_interaction_blocked(void);
 static void ui_home_update_tile_activity(uint8_t active_page);
@@ -220,7 +221,8 @@ static void ui_home_update_gear_ring(ui_home_tile_runtime_t *rt,
                                      uint16_t segment_rpm,
                                      bool enabled,
                                      bool blink_red);
-static void ui_home_refresh_gear_tile(ui_home_tile_runtime_t *rt);
+static void ui_home_refresh_gear_tile(ui_home_tile_runtime_t *rt,
+                                      ui_dashboard_page_type_t page_type);
 static void ui_home_refresh_gforce_tile(ui_home_tile_runtime_t *rt,
                                         ui_dashboard_page_type_t page_type);
 static void ui_home_refresh_metric_tile(ui_home_tile_runtime_t *rt,
@@ -300,6 +302,12 @@ static ui_dashboard_page_type_t ui_home_page_type_for_gauge(uint8_t gauge_index)
     return ui_dashboard_page_get_type(page);
 }
 
+static bool ui_home_page_type_is_gear(ui_dashboard_page_type_t page_type)
+{
+    return page_type == UI_DASHBOARD_PAGE_TYPE_GEAR_DERIVED ||
+           page_type == UI_DASHBOARD_PAGE_TYPE_GEAR_MONITOR;
+}
+
 /**
  * 读取某个仪表项的当前值
  *
@@ -330,6 +338,14 @@ static bool ui_home_read_disp_item_value(disp_item_t item, int32_t *out)
     }
     case DISP_ITEM_OIL: {
         int16_t value = obd_data_get_oil_temp();
+        if (value > -41) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_OILC: {
+        int16_t value = obd_data_get_oil_temp_can();
         if (value > -41) {
             *out = value;
             return true;
@@ -384,6 +400,22 @@ static bool ui_home_read_disp_item_value(disp_item_t item, int32_t *out)
     }
     case DISP_ITEM_BOOST: {
         int16_t value = obd_data_get_boost_x10();
+        if (value != -32768) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_MAP: {
+        int16_t value = obd_data_get_map_kpa();
+        if (value >= 0) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+    case DISP_ITEM_IGN: {
+        int16_t value = obd_data_get_ign_timing_x10();
         if (value != -32768) {
             *out = value;
             return true;
@@ -786,7 +818,8 @@ static uint32_t ui_home_refresh_period_ms_for_page(uint8_t page_id)
         ui_dashboard_page_type_t page_type =
             ui_home_page_type_for_gauge((uint8_t)s_home_tile_descs[page_id].gauge_index);
         switch (page_type) {
-        case UI_DASHBOARD_PAGE_TYPE_GEAR:
+        case UI_DASHBOARD_PAGE_TYPE_GEAR_DERIVED:
+        case UI_DASHBOARD_PAGE_TYPE_GEAR_MONITOR:
             return UI_HOME_REFRESH_PERIOD_GEAR_MS;
         case UI_DASHBOARD_PAGE_TYPE_G_FORCE_OBD:
         case UI_DASHBOARD_PAGE_TYPE_G_FORCE_ESP32:
@@ -1117,7 +1150,7 @@ static bool ui_home_slot_layout_build_row_model(uint8_t slot_count,
 
 static bool ui_home_metric_layout_debug_should_log(uint8_t slot_count)
 {
-#if UI_HOME_METRIC_LAYOUT_DEBUG
+#if UI_DEBUG_METRIC_LAYOUT_LOG_ENABLED
     uint8_t bit;
 
     if (slot_count >= 8u) {
@@ -1140,7 +1173,7 @@ static void ui_home_log_metric_layout_summary(uint8_t slot_count,
                                               const disp_item_t visible_items[UI_DASHBOARD_MAX_SLOTS],
                                               const ui_home_metric_layout_style_t *styles)
 {
-#if UI_HOME_METRIC_LAYOUT_DEBUG
+#if UI_DEBUG_METRIC_LAYOUT_LOG_ENABLED
     char slots[UI_HOME_METRIC_LAYOUT_LOG_BUF_LEN] = {0};
 
     if (layouts == NULL || visible_items == NULL || styles == NULL ||
@@ -1414,7 +1447,7 @@ static void ui_home_create_gauge_content(uint8_t tile_id, lv_obj_t *parent, uint
         return;
     }
 
-    if (page_type == UI_DASHBOARD_PAGE_TYPE_GEAR) {
+    if (ui_home_page_type_is_gear(page_type)) {
         ui_home_create_gear_content(tile_id, parent);
         return;
     }
@@ -2493,11 +2526,13 @@ static void ui_home_update_gear_ring(ui_home_tile_runtime_t *rt,
  *
  * 负责同步档位文本、状态提示和 RPM ring 显示。
  */
-static void ui_home_refresh_gear_tile(ui_home_tile_runtime_t *rt)
+static void ui_home_refresh_gear_tile(ui_home_tile_runtime_t *rt,
+                                      ui_dashboard_page_type_t page_type)
 {
     uint16_t rpm = obd_data_get_rpm();
-    // Debug mock: force gear page RPM to 9000 for ring performance validation.
-    // uint16_t rpm = 9000u;
+#if UI_DEBUG_GEAR_PAGE_FORCE_RPM_ENABLED
+    rpm = UI_DEBUG_GEAR_PAGE_FORCE_RPM_VALUE;
+#endif
     uint16_t speed = obd_data_get_speed();
     const ui_dashboard_page_cfg_t *page_cfg = NULL;
     uint16_t redline_rpm = UI_DASHBOARD_GEAR_REDLINE_RPM_DEFAULT;
@@ -2534,7 +2569,8 @@ static void ui_home_refresh_gear_tile(ui_home_tile_runtime_t *rt)
                                 blink_red ? lv_color_hex(0xFF3B30) : lv_color_hex(0xFFFFFF),
                                 LV_PART_MAIN);
 
-    if (vehicle_profile_is_active_zc6()) {
+    if (vehicle_profile_is_active_zc6() &&
+        page_type == UI_DASHBOARD_PAGE_TYPE_GEAR_MONITOR) {
         valid_gear = obd_data_get_actual_gear(&gear);
         if (!valid_gear) {
             gear_text = "N";
@@ -2718,8 +2754,8 @@ static void ui_home_runtime_refresh_tile(uint8_t tile_id)
         if (page == NULL) {
             break;
         }
-        if (page_type == UI_DASHBOARD_PAGE_TYPE_GEAR) {
-            ui_home_refresh_gear_tile(rt);
+        if (ui_home_page_type_is_gear(page_type)) {
+            ui_home_refresh_gear_tile(rt, page_type);
             break;
         }
         if (page_type == UI_DASHBOARD_PAGE_TYPE_G_FORCE_OBD ||
@@ -2979,7 +3015,15 @@ static bool ui_home_page_uses_type(uint8_t page_id, ui_dashboard_page_type_t pag
         return false;
     }
 
-    return ui_dashboard_page_get_type(page) == page_type;
+    {
+        ui_dashboard_page_type_t actual_type = ui_dashboard_page_get_type(page);
+
+        if (page_type == UI_DASHBOARD_PAGE_TYPE_GEAR_DERIVED) {
+            return ui_home_page_type_is_gear(actual_type);
+        }
+
+        return actual_type == page_type;
+    }
 }
 
 /** 判断当前激活的档位页是否启用了 RPM ring。 */
@@ -2987,7 +3031,7 @@ static bool ui_home_page_gear_rpm_ring_enabled(uint8_t page_id)
 {
     const ui_dashboard_page_cfg_t *page;
 
-    if (!ui_home_page_uses_type(page_id, UI_DASHBOARD_PAGE_TYPE_GEAR)) {
+    if (!ui_home_page_uses_type(page_id, UI_DASHBOARD_PAGE_TYPE_GEAR_DERIVED)) {
         return false;
     }
 
