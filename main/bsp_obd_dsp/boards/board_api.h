@@ -41,6 +41,14 @@ esp_err_t board_register_display_flush_ready_callback(board_display_flush_ready_
 esp_err_t board_display_init(board_display_context_t *ctx);
 esp_err_t board_set_brightness(uint8_t percent);
 esp_err_t board_get_shared_i2c_bus(i2c_master_bus_handle_t *out_bus);
+esp_err_t board_i2c_reg_write(uint8_t device_addr,
+                              uint8_t reg_addr,
+                              const uint8_t *data,
+                              size_t len);
+esp_err_t board_i2c_reg_read(uint8_t device_addr,
+                             uint8_t reg_addr,
+                             uint8_t *data,
+                             size_t len);
 const board_profile_t *board_profile(void);
 const char *board_name(void);
 bool board_has_touch(void);

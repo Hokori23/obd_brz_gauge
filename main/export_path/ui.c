@@ -16,6 +16,7 @@
 #include <driver/gpio.h>
 
 #include "bsp_obd_dsp/boards/board_api.h"
+#include "bsp_obd_dsp/elm327_ble_client.h"
 #include "bsp_obd_dsp/nvs_storage.h"
 #include "esp_system.h"
 
@@ -23,6 +24,12 @@ static const char *TAG = "ui";
 static bool s_logo_transition_started = false;
 
 #define UI_NAV_ANIM_MS 0
+#define UI_WAIT_BRIGHTNESS_BURST_COUNT 3u
+#define UI_WAIT_BRIGHTNESS_BURST_LOW_PCT 30u
+#define UI_WAIT_BRIGHTNESS_BURST_ON_TICKS 1u
+#define UI_WAIT_BRIGHTNESS_BURST_OFF_TICKS 1u
+
+static void ui_apply_waiting_brightness_pulse(void);
 
 /**
  * Tear down the splash screen once it is no longer active.
@@ -119,6 +126,8 @@ void my_timerMain(lv_timer_t *timer)
         }
     }
 
+    ui_apply_waiting_brightness_pulse();
+
     // ========== SPLASH EXIT ==========
     // The home screen is prepared before switching so the splash can
     // disappear without a blank intermediate frame.
@@ -139,6 +148,74 @@ void my_timerMain(lv_timer_t *timer)
             ui_logo_transition_to(target_scr, target_init, "timeout");
             ui_legacy_runtime_on_logo_exit();
         }
+    }
+}
+
+static void ui_apply_waiting_brightness_pulse(void)
+{
+    static bool s_wait_pulse_active = false;
+    static uint8_t s_last_applied_brightness = 0xFF;
+    static uint8_t s_wait_burst_tick = 0u;
+    static uint8_t s_wait_burst_count = 0u;
+    const nvs_user_cfg_t *cfg = nvs_cfg_get();
+    uint8_t base_brightness = cfg->brightness_day;
+    uint8_t pulse_brightness = base_brightness;
+    bool waiting_for_first_data;
+
+    if (base_brightness < 10u) {
+        base_brightness = 100u;
+    }
+
+    waiting_for_first_data = (ui_ScreenPageLogo == NULL) &&
+                             (ui_runtime_sweep_step_get() == 0) &&
+                             elm327_ble_is_waiting_for_first_valid_payload();
+
+    if (waiting_for_first_data) {
+        uint8_t burst_cycle_ticks = UI_WAIT_BRIGHTNESS_BURST_ON_TICKS + UI_WAIT_BRIGHTNESS_BURST_OFF_TICKS;
+        uint8_t dim_brightness =
+            (uint8_t)((uint32_t)base_brightness * UI_WAIT_BRIGHTNESS_BURST_LOW_PCT / 100u);
+
+        if (dim_brightness >= base_brightness) {
+            dim_brightness = (base_brightness > 1u) ? (uint8_t)(base_brightness - 1u) : 0u;
+        }
+
+        if (!s_wait_pulse_active) {
+            s_wait_burst_tick = 0u;
+            s_wait_burst_count = 0u;
+        }
+
+        if (s_wait_burst_count < UI_WAIT_BRIGHTNESS_BURST_COUNT) {
+            if (s_wait_burst_tick < UI_WAIT_BRIGHTNESS_BURST_ON_TICKS) {
+                pulse_brightness = dim_brightness;
+            } else {
+                pulse_brightness = base_brightness;
+            }
+
+            s_wait_burst_tick++;
+            if (s_wait_burst_tick >= burst_cycle_ticks) {
+                s_wait_burst_tick = 0u;
+                s_wait_burst_count++;
+            }
+        } else {
+            pulse_brightness = dim_brightness;
+        }
+
+        s_wait_pulse_active = true;
+    } else {
+        pulse_brightness = base_brightness;
+        s_wait_burst_tick = 0u;
+        s_wait_burst_count = 0u;
+        s_wait_pulse_active = false;
+    }
+
+    if (pulse_brightness == s_last_applied_brightness) {
+        return;
+    }
+
+    if (board_set_brightness(pulse_brightness) == ESP_OK) {
+        s_last_applied_brightness = pulse_brightness;
+    } else if (s_wait_pulse_active) {
+        ESP_LOGW(TAG, "Waiting brightness pulse update failed");
     }
 }
 

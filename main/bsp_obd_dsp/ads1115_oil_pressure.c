@@ -9,7 +9,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 
-#include "bsp_obd_dsp/i2c_driver/I2C_Driver.h"
+#include "bsp_obd_dsp/boards/board_api.h"
 #include "app_obd_dsp/obd_data_cache.h"
 
 #define TAG "oil_press"
@@ -50,7 +50,7 @@ static esp_err_t ads1115_read_ain0_mv(int32_t *out_mv)
     uint16_t cfg = 0xC3E3u;
     uint8_t cfg_bytes[2] = {(uint8_t)(cfg >> 8), (uint8_t)(cfg & 0xFF)};
 
-    esp_err_t err = I2C_Write(ADS1115_ADDR, ADS1115_REG_CONFIG, cfg_bytes, sizeof(cfg_bytes));
+    esp_err_t err = board_i2c_reg_write(ADS1115_ADDR, ADS1115_REG_CONFIG, cfg_bytes, sizeof(cfg_bytes));
     if (err != ESP_OK) {
         return err;
     }
@@ -59,7 +59,7 @@ static esp_err_t ads1115_read_ain0_mv(int32_t *out_mv)
     vTaskDelay(pdMS_TO_TICKS(3));
 
     uint8_t conv[2] = {0};
-    err = I2C_Read(ADS1115_ADDR, ADS1115_REG_CONV, conv, sizeof(conv));
+    err = board_i2c_reg_read(ADS1115_ADDR, ADS1115_REG_CONV, conv, sizeof(conv));
     if (err != ESP_OK) {
         return err;
     }

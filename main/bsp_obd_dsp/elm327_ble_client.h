@@ -73,6 +73,7 @@ void elm327_ble_connect_by_name(const char *name);
 
 // 查询当前连接状态
 bool elm327_ble_is_connected(void);
+bool elm327_ble_is_waiting_for_first_valid_payload(void);
 void elm327_ble_disconnect(void);
 
 // 获取当前连接/目标设备名称

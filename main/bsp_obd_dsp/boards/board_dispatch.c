@@ -4,6 +4,8 @@ esp_err_t board_ws_185_init(void);
 esp_err_t board_ws_185_register_display_flush_ready_callback(board_display_flush_ready_cb_t cb, void *user_ctx);
 esp_err_t board_ws_185_display_init(board_display_context_t *ctx);
 esp_err_t board_ws_185_set_brightness(uint8_t percent);
+esp_err_t board_ws_185_i2c_reg_write(uint8_t device_addr, uint8_t reg_addr, const uint8_t *data, size_t len);
+esp_err_t board_ws_185_i2c_reg_read(uint8_t device_addr, uint8_t reg_addr, uint8_t *data, size_t len);
 const board_profile_t *board_ws_185_profile(void);
 const char *board_ws_185_name(void);
 bool board_ws_185_has_touch(void);
@@ -12,6 +14,8 @@ esp_err_t board_ws_175_amoled_init(void);
 esp_err_t board_ws_175_amoled_register_display_flush_ready_callback(board_display_flush_ready_cb_t cb, void *user_ctx);
 esp_err_t board_ws_175_amoled_display_init(board_display_context_t *ctx);
 esp_err_t board_ws_175_amoled_set_brightness(uint8_t percent);
+esp_err_t board_ws_175_amoled_i2c_reg_write(uint8_t device_addr, uint8_t reg_addr, const uint8_t *data, size_t len);
+esp_err_t board_ws_175_amoled_i2c_reg_read(uint8_t device_addr, uint8_t reg_addr, uint8_t *data, size_t len);
 const board_profile_t *board_ws_175_amoled_profile(void);
 const char *board_ws_175_amoled_name(void);
 bool board_ws_175_amoled_has_touch(void);
@@ -73,6 +77,34 @@ esp_err_t board_get_shared_i2c_bus(i2c_master_bus_handle_t *out_bus)
 #elif CONFIG_OBD_BOARD_WS_175_AMOLED
     extern esp_err_t board_ws_175_amoled_get_shared_i2c_bus(i2c_master_bus_handle_t *out_bus);
     return board_ws_175_amoled_get_shared_i2c_bus(out_bus);
+#else
+#error "No board selected"
+#endif
+}
+
+esp_err_t board_i2c_reg_write(uint8_t device_addr,
+                              uint8_t reg_addr,
+                              const uint8_t *data,
+                              size_t len)
+{
+#if CONFIG_OBD_BOARD_WS_185
+    return board_ws_185_i2c_reg_write(device_addr, reg_addr, data, len);
+#elif CONFIG_OBD_BOARD_WS_175_AMOLED
+    return board_ws_175_amoled_i2c_reg_write(device_addr, reg_addr, data, len);
+#else
+#error "No board selected"
+#endif
+}
+
+esp_err_t board_i2c_reg_read(uint8_t device_addr,
+                             uint8_t reg_addr,
+                             uint8_t *data,
+                             size_t len)
+{
+#if CONFIG_OBD_BOARD_WS_185
+    return board_ws_185_i2c_reg_read(device_addr, reg_addr, data, len);
+#elif CONFIG_OBD_BOARD_WS_175_AMOLED
+    return board_ws_175_amoled_i2c_reg_read(device_addr, reg_addr, data, len);
 #else
 #error "No board selected"
 #endif

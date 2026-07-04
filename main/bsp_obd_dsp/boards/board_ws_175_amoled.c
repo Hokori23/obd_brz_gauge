@@ -133,6 +133,20 @@ static esp_err_t board_ws_175_amoled_i2c_init(void)
     return ESP_OK;
 }
 
+static esp_err_t board_ws_175_amoled_open_i2c_device(uint8_t device_addr,
+                                                      i2c_master_dev_handle_t *out_dev)
+{
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = device_addr,
+        .scl_speed_hz = BOARD_WS_175_AMOLED_I2C_SPEED_HZ,
+    };
+
+    ESP_RETURN_ON_FALSE(out_dev != NULL, ESP_ERR_INVALID_ARG, TAG, "i2c device handle output is null");
+    ESP_RETURN_ON_ERROR(board_ws_175_amoled_i2c_init(), TAG, "i2c prepare failed");
+    return i2c_master_bus_add_device(s_i2c_handle, &dev_cfg, out_dev);
+}
+
 /**
  * 初始化 AMOLED 面板链路
  *
@@ -344,22 +358,42 @@ bool board_ws_175_amoled_has_touch(void)
     return s_board_profile.has_touch;
 }
 
-/** 在 WS175 AMOLED 板型上屏蔽油压采样入口。 */
-void oil_pressure_start(void)
+esp_err_t board_ws_175_amoled_i2c_reg_write(uint8_t device_addr,
+                                            uint8_t reg_addr,
+                                            const uint8_t *data,
+                                            size_t len)
 {
-    ESP_LOGI(TAG, "oil pressure task requested on WS175; no board-specific sampler is configured in this build");
+    esp_err_t err;
+    i2c_master_dev_handle_t dev = NULL;
+    uint8_t payload[33];
+
+    ESP_RETURN_ON_FALSE(len <= (sizeof(payload) - 1u), ESP_ERR_INVALID_ARG, TAG, "i2c write payload too large");
+    ESP_RETURN_ON_FALSE((len == 0u) || (data != NULL), ESP_ERR_INVALID_ARG, TAG, "i2c write data is null");
+    ESP_RETURN_ON_ERROR(board_ws_175_amoled_open_i2c_device(device_addr, &dev), TAG, "open i2c device failed");
+
+    payload[0] = reg_addr;
+    if (len > 0u) {
+        memcpy(&payload[1], data, len);
+    }
+
+    err = i2c_master_transmit(dev, payload, len + 1u, -1);
+    i2c_master_bus_rm_device(dev);
+    return err;
 }
 
-/** 在 WS175 AMOLED 板型上忽略油压采样开关。 */
-void oil_pressure_set_enabled(bool enabled)
+esp_err_t board_ws_175_amoled_i2c_reg_read(uint8_t device_addr,
+                                           uint8_t reg_addr,
+                                           uint8_t *data,
+                                           size_t len)
 {
-    (void)enabled;
-}
+    esp_err_t err;
+    i2c_master_dev_handle_t dev = NULL;
 
-/** 兼容旧接口名，仍然走 WS175 的空实现。 */
-void ads1115_oil_pressure_start(void)
-{
-    oil_pressure_start();
+    ESP_RETURN_ON_FALSE(data != NULL, ESP_ERR_INVALID_ARG, TAG, "i2c read data is null");
+    ESP_RETURN_ON_ERROR(board_ws_175_amoled_open_i2c_device(device_addr, &dev), TAG, "open i2c device failed");
+    err = i2c_master_transmit_receive(dev, &reg_addr, 1, data, len, -1);
+    i2c_master_bus_rm_device(dev);
+    return err;
 }
 
 /** 导出 WS175 AMOLED 共用的 I2C 总线句柄。 */

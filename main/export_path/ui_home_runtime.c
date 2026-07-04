@@ -1112,9 +1112,9 @@ static void ui_home_build_gauge_layout(lv_obj_t *parent,
 
         // 3槽微调
         if (apply_row_nudges && slot_count == 3u && row_count == 2u && row == 1u) {
-            // 上排向下5px
+            // 上排向下10px
             // 下排向上5px
-            row_y = (lv_coord_t)(row_y +  ((row == 0u) ? ui_layout_px(5) : -ui_layout_px(5)));
+            row_y = (lv_coord_t)(row_y +  ((row == 0u) ? ui_layout_px(10) : -ui_layout_px(5)));
         }
 
         if (dense_metric_layout) {

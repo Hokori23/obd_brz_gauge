@@ -66,6 +66,25 @@ esp_err_t board_ws_185_set_brightness(uint8_t percent)
     return ESP_OK;
 }
 
+esp_err_t board_ws_185_i2c_reg_write(uint8_t device_addr,
+                                     uint8_t reg_addr,
+                                     const uint8_t *data,
+                                     size_t len)
+{
+    ESP_RETURN_ON_FALSE(len <= UINT32_MAX, ESP_ERR_INVALID_ARG, "board_ws_185", "i2c write length too large");
+    return I2C_Write(device_addr, reg_addr, data, (uint32_t)len);
+}
+
+esp_err_t board_ws_185_i2c_reg_read(uint8_t device_addr,
+                                    uint8_t reg_addr,
+                                    uint8_t *data,
+                                    size_t len)
+{
+    ESP_RETURN_ON_FALSE(data != NULL, ESP_ERR_INVALID_ARG, "board_ws_185", "i2c read data is null");
+    ESP_RETURN_ON_FALSE(len <= UINT32_MAX, ESP_ERR_INVALID_ARG, "board_ws_185", "i2c read length too large");
+    return I2C_Read(device_addr, reg_addr, data, (uint32_t)len);
+}
+
 /** 返回 WS185 板卡静态配置。 */
 const board_profile_t *board_ws_185_profile(void)
 {

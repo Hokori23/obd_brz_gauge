@@ -21,6 +21,8 @@
 #include "app_obd_dsp/zc6_gforce_decode.h"
 #include "bsp_obd_dsp/ble_scan_buffer_profile.h"
 #include "racechrono_ble_diy.h"
+#include "app_lvgl_port.h"
+#include "export_path/ui_home_runtime.h"
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -125,6 +127,7 @@ static volatile bool s_zc6_oil_can_monitor_active = false;
 static volatile bool s_notify_ready = false;
 static volatile bool s_manual_disconnect_requested = false;
 static volatile int64_t s_last_obd_valid_us = 0;
+static volatile bool s_home_refresh_on_first_valid_pending = true;
 bool elm327_ble_send_ascii_blocking(const char *ascii_cmd);
 
 #define OBD_VALID_DATA_RESET_US    2000000LL
@@ -331,6 +334,27 @@ static void record_oil_temp_failure(oil_temp_query_mode_t mode) {
 static void elm327_mark_obd_valid(void)
 {
     s_last_obd_valid_us = esp_timer_get_time();
+}
+
+static void elm327_refresh_home_on_first_valid_data(void)
+{
+    if (!s_home_refresh_on_first_valid_pending) {
+        return;
+    }
+
+    if (!app_lvgl_lock(10)) {
+        return;
+    }
+
+    s_home_refresh_on_first_valid_pending = false;
+    ui_home_runtime_refresh_active_tile();
+    app_lvgl_unlock();
+}
+
+static void elm327_mark_obd_payload_valid(void)
+{
+    elm327_mark_obd_valid();
+    elm327_refresh_home_on_first_valid_data();
 }
 
 // 姒涙顓婚崶鐐剁殶娑撳氦鐤嗙拠顫崲閸斺槄绱欓崣顖炩偓澶涚礆
@@ -553,7 +577,7 @@ static bool elm327_parse_gforce_monitor_line(const char *line)
 
         obd_data_set_lat_accel_x100(lat_x100);
         obd_data_set_lon_accel_x100(lon_x100);
-        elm327_mark_obd_valid();
+        elm327_mark_obd_payload_valid();
         s_gforce_monitor_last_sample_us = esp_timer_get_time();
         elm327_log_gforce_monitor_sample(line, lat_x100, lon_x100);
         return true;
@@ -648,7 +672,7 @@ static bool elm327_parse_zc6_gear_monitor_line(const char *line)
     }
 
     obd_data_set_actual_gear(gear);
-    elm327_mark_obd_valid();
+    elm327_mark_obd_payload_valid();
     elm327_log_zc6_gear_monitor_sample(line, gear);
     return true;
 }
@@ -710,7 +734,7 @@ static bool elm327_parse_zc6_oil_can_monitor_line(const char *line)
     }
 
     obd_data_set_oil_temp_can(oil_temp_c);
-    elm327_mark_obd_valid();
+    elm327_mark_obd_payload_valid();
     elm327_log_zc6_oil_can_monitor_sample(line, oil_temp_c);
     return true;
 }
@@ -808,10 +832,10 @@ static int elm327_auto_detect_protocol(void) {
     return 0;  // 鏉╂柨娲?0 鐞涖劎銇氬Λ鈧ù瀣亼鐠愩儻绱濇担璺ㄦ暏姒涙顓婚崡蹇氼唴 6
 }
 
-static void default_on_parsed_rpm(uint16_t rpm) { ESP_LOGD(TAG, "RPM: %u", rpm); obd_data_set_rpm(rpm); elm327_mark_obd_valid(); }
-static void default_on_parsed_speed(uint8_t kmh) { ESP_LOGD(TAG, "SPEED: %u km/h", kmh); obd_data_set_speed(kmh); elm327_mark_obd_valid(); }
-static void default_on_parsed_coolant_temp(uint32_t coolant_temp) { ESP_LOGD(TAG, "CLT: %u C", coolant_temp); obd_data_set_coolant_temp((int16_t)coolant_temp); elm327_mark_obd_valid(); }
-static void default_on_parsed_intake_temp(uint32_t intake_temp) { ESP_LOGD(TAG, "IAT: %u C", intake_temp); obd_data_set_intake_temp((int16_t)intake_temp); elm327_mark_obd_valid(); }
+static void default_on_parsed_rpm(uint16_t rpm) { ESP_LOGD(TAG, "RPM: %u", rpm); obd_data_set_rpm(rpm); elm327_mark_obd_payload_valid(); }
+static void default_on_parsed_speed(uint8_t kmh) { ESP_LOGD(TAG, "SPEED: %u km/h", kmh); obd_data_set_speed(kmh); elm327_mark_obd_payload_valid(); }
+static void default_on_parsed_coolant_temp(uint32_t coolant_temp) { ESP_LOGD(TAG, "CLT: %u C", coolant_temp); obd_data_set_coolant_temp((int16_t)coolant_temp); elm327_mark_obd_payload_valid(); }
+static void default_on_parsed_intake_temp(uint32_t intake_temp) { ESP_LOGD(TAG, "IAT: %u C", intake_temp); obd_data_set_intake_temp((int16_t)intake_temp); elm327_mark_obd_payload_valid(); }
 
 // 閸愬懓浠堝銉ュ徔閸戣姤鏆熼敍姘安閻劍琛ュ〒鈺佷焊缁夊鍣洪崥搴＄摠閸?
 static inline void obd_data_set_oil_temp_with_offset(int16_t temp) {
@@ -851,7 +875,7 @@ static void default_on_parsed_oil_temp(uint32_t oil_temp)
         s_oil_diag.last_filtered_temp = in;
         ESP_LOGI(TAG, "OIL: Init with raw=%d", in);
         obd_data_set_oil_temp_with_offset(s_oil_filtered);
-        elm327_mark_obd_valid();
+        elm327_mark_obd_payload_valid();
         return;
     }
 
@@ -866,7 +890,7 @@ static void default_on_parsed_oil_temp(uint32_t oil_temp)
         s_oil_diag.last_filtered_temp = s_oil_filtered;
         ESP_LOGD(TAG, "OIL: Small change raw=%d filtered=%d", in, s_oil_filtered);
         obd_data_set_oil_temp_with_offset(s_oil_filtered);
-        elm327_mark_obd_valid();
+        elm327_mark_obd_payload_valid();
         return;
     }
 
@@ -889,7 +913,7 @@ static void default_on_parsed_oil_temp(uint32_t oil_temp)
             s_oil_diag.last_filtered_temp = s_oil_filtered;
             ESP_LOGI(TAG, "OIL: Medium change confirmed raw=%d filtered=%d", in, s_oil_filtered);
             obd_data_set_oil_temp_with_offset(s_oil_filtered);
-            elm327_mark_obd_valid();
+            elm327_mark_obd_payload_valid();
             return;
         }
         
@@ -918,14 +942,14 @@ static void default_on_parsed_oil_temp(uint32_t oil_temp)
             s_oil_diag.last_filtered_temp = s_oil_filtered;
             ESP_LOGI(TAG, "OIL: Large change ACCEPTED raw=%d filtered=%d (confirmed 3x)", in, s_oil_filtered);
             obd_data_set_oil_temp_with_offset(s_oil_filtered);
-            elm327_mark_obd_valid();
+            elm327_mark_obd_payload_valid();
         }
     }
 }
-static void default_on_parsed_load_pct(uint32_t load_pct) { ESP_LOGD(TAG, "LOAD: %u%%", load_pct); obd_data_set_load_pct((int16_t)load_pct); elm327_mark_obd_valid(); }
-static void default_on_parsed_control_module_voltage(uint32_t bat_mv) { ESP_LOGD(TAG, "BAT: %u.%uV", bat_mv/1000, (bat_mv%1000)/100); obd_data_set_bat_mv((int32_t)bat_mv); elm327_mark_obd_valid(); }
-static void default_on_parsed_throttle_position(uint32_t tps_pct) { ESP_LOGD(TAG, "TPS: %u%%", tps_pct); obd_data_set_tps((int16_t)tps_pct); elm327_mark_obd_valid(); }
-static void default_on_parsed_timing_advance_x10(int16_t timing_advance_x10) { ESP_LOGD(TAG, "IGN: %d.%d deg", timing_advance_x10 / 10, abs(timing_advance_x10 % 10)); obd_data_set_ign_timing_x10(timing_advance_x10); elm327_mark_obd_valid(); }
+static void default_on_parsed_load_pct(uint32_t load_pct) { ESP_LOGD(TAG, "LOAD: %u%%", load_pct); obd_data_set_load_pct((int16_t)load_pct); elm327_mark_obd_payload_valid(); }
+static void default_on_parsed_control_module_voltage(uint32_t bat_mv) { ESP_LOGD(TAG, "BAT: %u.%uV", bat_mv/1000, (bat_mv%1000)/100); obd_data_set_bat_mv((int32_t)bat_mv); elm327_mark_obd_payload_valid(); }
+static void default_on_parsed_throttle_position(uint32_t tps_pct) { ESP_LOGD(TAG, "TPS: %u%%", tps_pct); obd_data_set_tps((int16_t)tps_pct); elm327_mark_obd_payload_valid(); }
+static void default_on_parsed_timing_advance_x10(int16_t timing_advance_x10) { ESP_LOGD(TAG, "IGN: %d.%d deg", timing_advance_x10 / 10, abs(timing_advance_x10 % 10)); obd_data_set_ign_timing_x10(timing_advance_x10); elm327_mark_obd_payload_valid(); }
 // MAP(kPa) 閳?濞懧ょ枂鐞涖劌甯?0.1bar)閿涙俺銆冮崢?= (MAP - 婢堆勭毜閳?00kPa)閿?0kPa = 0.1bar
 static void default_on_parsed_manifold_pressure(uint32_t map_kpa) {
     int16_t boost_x10 = (int16_t)(((int32_t)map_kpa - 100) / 10);
@@ -933,7 +957,7 @@ static void default_on_parsed_manifold_pressure(uint32_t map_kpa) {
     ESP_LOGD(TAG, "MAP: %u kPa -> boost %d.%d bar", map_kpa, boost_x10/10, boost_x10%10);
     obd_data_set_map_kpa((int16_t)map_kpa);
     obd_data_set_boost_x10(boost_x10);
-    elm327_mark_obd_valid();
+    elm327_mark_obd_payload_valid();
 }
  
 static void obd_poll_task(void *arg) {
@@ -1605,6 +1629,7 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
     case ESP_GATTC_CONNECT_EVT: {
         s_connected = true;
         s_notify_ready = false;
+        s_home_refresh_on_first_valid_pending = true;
         s_manual_disconnect_requested = false;
         s_conn_id = param->connect.conn_id;
         memcpy(s_peer_bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
@@ -1995,6 +2020,7 @@ static void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_
     case ESP_GATTC_DISCONNECT_EVT: {
         s_connected = false;
         s_notify_ready = false;
+        s_home_refresh_on_first_valid_pending = true;
         s_conn_id = 0xFFFF;
         s_have_service = false;
         s_service_start = 0x0001;
@@ -2112,6 +2138,11 @@ void elm327_ble_connect_by_name(const char *name) {
 
 bool elm327_ble_is_connected(void) {
     return s_connected;
+}
+
+bool elm327_ble_is_waiting_for_first_valid_payload(void)
+{
+    return s_connected && s_home_refresh_on_first_valid_pending;
 }
 
 void elm327_ble_disconnect(void) {

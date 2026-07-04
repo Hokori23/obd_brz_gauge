@@ -20,7 +20,6 @@ endif()
 
 if (CONFIG_OBD_BOARD_WS_175_AMOLED)
     list(REMOVE_ITEM SOURCES_C
-        "${CMAKE_CURRENT_LIST_DIR}/bsp_obd_dsp/ads1115_oil_pressure.c"
         "${CMAKE_CURRENT_LIST_DIR}/bsp_obd_dsp/boards/board_ws_185.c"
         "${CMAKE_CURRENT_LIST_DIR}/bsp_obd_dsp/exio/TCA9554PWR.c"
         "${CMAKE_CURRENT_LIST_DIR}/bsp_obd_dsp/i2c_driver/I2C_Driver.c"
